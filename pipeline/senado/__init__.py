@@ -1,0 +1,1 @@
+"""Federal Senate data domain."""

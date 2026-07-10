@@ -1,0 +1,15 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    env_file: ${MINIO_ENV_FILE:-.env}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  minio_data:

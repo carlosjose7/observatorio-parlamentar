@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.kdb
+secrets/
+credentials/
+
+# Private working notes (use docs/ for shared project documentation)
+notes/
+
+# Local orchestration and transformation artifacts
+.airflow/
+target/
+dbt_packages/
+
+# Generated data and local services
+data/bronze/*
+!data/bronze/.gitkeep
+data/silver/*
+!data/silver/.gitkeep
+data/gold/*
+!data/gold/.gitkeep
+logs/*
+!logs/.gitkeep
+minio_data/
+*.duckdb
+
+# Tooling and IDEs
+.DS_Store
+.idea/
+.vscode/

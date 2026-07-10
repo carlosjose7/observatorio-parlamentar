@@ -1,0 +1,11 @@
+name: Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    name: Architecture scaffold
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "CI/CD will be implemented in Sprint 9."

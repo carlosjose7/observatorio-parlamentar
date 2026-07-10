@@ -1,0 +1,2 @@
+# Runtime and storage settings belong here; do not hardcode them in Python.
+pipeline: {}
