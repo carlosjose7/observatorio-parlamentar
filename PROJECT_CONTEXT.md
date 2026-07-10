@@ -223,7 +223,7 @@ Fontes Externas (APIs + CSVs)
 ## 6. Estrutura de Diretórios
  
 ```
-parliamentary-intelligence/
+observatorio-parlamentar/
 ├── .github/
 │   └── workflows/
 │       └── pipeline.yml          # CI/CD diário
@@ -299,8 +299,8 @@ parliamentary-intelligence/
 │   ├── architecture.md
 │   ├── api_guide.md
 │   └── deploy_guide.md
-├── infra/
-│   └── cloud-config.yaml
+├── infra/                        # Provisionamento de infraestrutura
+│   └── cloud-init.yml            # Cloud-init Oracle Cloud (Docker + UFW + SSH hardening)
 ├── PROJECT_CONTEXT.md            # Este arquivo
 ├── ADR.md                        # Architecture Decision Records
 ├── BACKLOG.md                    # Backlog vivo
