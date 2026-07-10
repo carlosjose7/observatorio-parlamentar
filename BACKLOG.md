@@ -38,7 +38,7 @@
 ☐ Detalhar stack tecnológica (já referenciada em `PROJECT_CONTEXT.md §4`, revisar formalmente nesta sprint)
 ☐ Consolidar diagramas de alto nível (arquitetura medalhão)
 ☐ Validar estrutura de diretórios (`PROJECT_CONTEXT.md §6`)
-☐ Formalizar convenções de nomenclatura (`PROJECT_CONTEXT.md §14`)
+☑ Formalizar diretório infra/ no PROJECT_CONTEXT.md §6 (cloud-init Oracle Cloud)
 ☐ Registrar ADRs iniciais de arquitetura (além de 002/003/004 já existentes)
 ☐ Consolidar `PROJECT_CONTEXT.md` v1 completo ao final da sprint
 ---
