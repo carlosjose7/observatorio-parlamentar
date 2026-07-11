@@ -75,7 +75,9 @@ flowchart TD
 | Dashboard | Streamlit | Dash, Metabase | Menor tempo de desenvolvimento para camada de apresentação, adequado ao escopo de portfólio |
  
 ### II.3 Ingestão: Batch vs. Streaming (Kappa/Lambda)
- 
+
+> Decisão formalizada em ADR-009 (`ADR.md`). Resumo abaixo.
+
 **Decisão adotada:** arquitetura **batch (estilo Lambda simplificado,
 sem camada de velocidade dedicada)**, com ingestão incremental diária
 via watermark.
