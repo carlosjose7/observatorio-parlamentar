@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 0A (pós-reconciliação de ADRs 002/003/004)
+> Última atualização: Sprint 0B (ADRs 001-008 registrados; stack, diagramas, diretórios e configuração consolidados)
  
 ---
  
@@ -132,21 +132,33 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
  
 ## 4. Stack Tecnológica
  
-| Componente | Tecnologia | Versão Alvo | Justificativa |
-|---|---|---|---|
-| Orquestração | Apache Airflow | 2.9+ | DAGs versionadas, retry nativo, observabilidade |
-| Storage Raw | Parquet + MinIO | latest | Open source, compatível com Delta Lake |
+| Componente | Tecnologia | Versão | Justificativa |
+|---|---|---|---|---|
+| Orquestração | Apache Airflow | 2.9.3 | DAGs versionadas, retry nativo, observabilidade |
+| Storage Raw | Parquet + MinIO | RELEASE.2025-09-07 | Open source, compatível com Delta Lake |
 | Banco Analítico | DuckDB | 1.0+ | Serverless, OLAP embarcado, integração nativa com Parquet |
-| Transformações | dbt Core | 1.7+ | Versionamento SQL, lineage, testes nativos |
-| Qualidade | Pandera | latest | Data contracts, validação de schema em runtime |
+| Transformações | dbt Core | 1.7+ | Versionamento SQL, lineage, testes nativos (RF-07) |
+| Qualidade | Pandera | 0.18+ | Data contracts, validação de schema em runtime |
 | API | FastAPI | 0.110+ | Alta performance, OpenAPI automático, agent-ready |
-| Dashboard | Streamlit | latest | Camada de apresentação exclusivamente |
-| ML | scikit-learn | latest | Isolation Forest, DBSCAN, KMeans, PCA |
-| Grafos | NetworkX | latest | Análise de redes; exportação para Gephi |
-| Testes | Pytest | latest | Cobertura mínima 80% |
+| Dashboard | Streamlit | 1.35+ | Camada de apresentação exclusivamente |
+| ML | scikit-learn | 1.4+ | Isolation Forest, DBSCAN, KMeans, PCA |
+| Grafos | NetworkX | 3.2+ | Análise de redes; exportação para Gephi |
+| Testes | Pytest | 8.0+ | Cobertura mínima 80% |
 | CI/CD | GitHub Actions | — | Deploy automatizado diário |
 | Containerização | Docker + Docker Compose | latest | Ambiente reproduzível |
-| Linguagem | Python 3.11+ | 3.11 | Type hints, performance, ecossistema |
+| Linguagem | Python | 3.11 | Type hints, performance, ecossistema |
+| **CLI HTTP** | **httpx** | 0.27+ | Chamadas às APIs externas (Câmara, Senado, CGU) |
+| **Logging** | **structlog** | 24.1+ | Logging estruturado em todos os módulos |
+| **Retry** | **tenacity** | 8.2+ | Exponential backoff em operações de rede |
+| **Config** | **PyYAML + pydantic-settings** | 6.0+ / 2.0+ | Config externa via YAML + .env, zero hardcode |
+| **Validação** | **Pydantic** | 2.0+ | Schemas de dados e settings |
+| **Manipulação** | **Pandas + NumPy** | 2.0+ / 1.24+ | Transformações e análise exploratória |
+| **Client MinIO** | **minio** | 7.2+ | SDK Python para object storage |
+| **Adapter dbt** | **dbt-duckdb** | 1.7+ | Conector dbt ↔ DuckDB |
+| **Server ASGI** | **uvicorn** | 0.29+ | Servidor ASGI para FastAPI |
+| **Env loader** | **python-dotenv** | 1.0+ | Carregamento de `.env` |
+| **Cobertura** | **pytest-cov** | 4.0+ | Relatório de cobertura de testes |
+| **Banco auxiliar** | **PostgreSQL** | 16-alpine | Metadados do Airflow |
  
 ### Infraestrutura de Deploy (gratuita)
 - **Compute:** Oracle Cloud Always Free Tier — instância `VM.Standard.A1.Flex`
@@ -172,6 +184,8 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 
 ## 5. Arquitetura — Visão Geral
  
+> Diagramas e documentos de arquitetura em `docs/architecture/`: `arch_medalhao.md`, `arch_deploy.md`, `arch_pipeline.md`, `ai_architecture.md` (agentes) e `ddd.md` (organização por domínio).
+
 ```
 Fontes Externas (APIs + CSVs)
         │
@@ -221,92 +235,147 @@ Fontes Externas (APIs + CSVs)
 ---
  
 ## 6. Estrutura de Diretórios
- 
+
 ```
 observatorio-parlamentar/
 ├── .github/
 │   └── workflows/
-│       └── pipeline.yml          # CI/CD diário
-├── api/                          # FastAPI
+│       └── pipeline.yml              # CI/CD (placeholder, Sprint 9)
+├── api/                              # FastAPI (scaffold, Sprint 6)
 │   ├── routers/
-│   │   ├── parlamentares.py
-│   │   ├── fornecedores.py
-│   │   ├── anomalias.py
-│   │   ├── rede.py
-│   │   └── agent.py              # Endpoints agent-ready
-│   ├── schemas/                  # Pydantic models
-│   ├── dependencies.py
+│   │   ├── __init__.py
+│   │   ├── parlamentares.py          # ┐
+│   │   ├── fornecedores.py           # │ Sprint 6
+│   │   ├── anomalias.py              # │
+│   │   ├── rede.py                   # │
+│   │   └── agent.py                  # ┘
+│   ├── schemas/
+│   │   └── __init__.py
+│   ├── __init__.py
+│   ├── Dockerfile
+│   ├── dependencies.py               # Sprint 6
 │   └── main.py
-├── pipeline/                     # ETL por domínio (DDD)
+├── pipeline/                         # ETL (scaffold, Sprint 2-4)
 │   ├── camara/
-│   │   ├── extract.py
-│   │   └── transform.py
+│   │   ├── __init__.py
+│   │   ├── extract.py                # ┐ Sprint 2
+│   │   └── transform.py              # ┘
 │   ├── senado/
-│   │   ├── extract.py
-│   │   └── transform.py
+│   │   ├── __init__.py
+│   │   ├── extract.py                # ┐ Sprint 2
+│   │   └── transform.py              # ┘
 │   ├── transparencia/
-│   │   ├── extract.py
-│   │   └── transform.py
-│   ├── bronze.py                 # Orquestração Bronze
-│   ├── silver.py                 # Orquestração Silver
-│   ├── gold.py                   # Orquestração Gold
-│   ├── quality.py                # Pandera + relatórios
-│   ├── analytics.py              # Estatística
-│   ├── network.py                # NetworkX
-│   ├── features.py               # Feature Store
+│   │   ├── __init__.py
+│   │   ├── extract.py                # ┐ Sprint 2
+│   │   └── transform.py              # ┘
+│   ├── dags/
+│   │   └── pipeline_dag.py
+│   ├── __init__.py
+│   ├── Dockerfile
+│   ├── bronze.py                     # Sprint 2
+│   ├── silver.py                     # Sprint 3
+│   ├── gold.py                       # Sprint 4
+│   ├── quality.py                    # Sprint 3
+│   ├── analytics.py                  # Sprint 5
+│   ├── network.py                    # Sprint 5
+│   ├── features.py                   # Sprint 5
 │   ├── utils.py
 │   ├── config.py
-│   └── pipeline.py               # Entrypoint principal
-├── analytics/                    # Módulos analíticos por domínio
+│   └── pipeline.py                   # Entrypoint principal
+├── analytics/                        # Módulos analíticos (scaffold, Sprint 5)
 │   ├── suppliers/
+│   │   └── __init__.py
 │   ├── parliamentarians/
+│   │   └── __init__.py
 │   ├── anomalies/
+│   │   └── __init__.py
 │   └── network/
-├── dashboard/                    # Streamlit
+│       └── __init__.py
+├── dashboard/                        # Streamlit (scaffold, Sprint 7)
 │   ├── pages/
-│   │   ├── 01_visao_geral.py
-│   │   ├── 02_parlamentar.py
-│   │   ├── 03_partido.py
-│   │   ├── 04_estado.py
-│   │   ├── 05_fornecedor.py
-│   │   ├── 06_rede.py
-│   │   ├── 07_anomalias.py
-│   │   ├── 08_ml.py
-│   │   ├── 09_qualidade.py
-│   │   └── 10_metadados.py
+│   │   ├── .gitkeep
+│   │   ├── 01_visao_geral.py        # ┐
+│   │   ├── 02_parlamentar.py        # │
+│   │   ├── 03_partido.py            # │
+│   │   ├── 04_estado.py             # │ Sprint 7
+│   │   ├── 05_fornecedor.py         # │
+│   │   ├── 06_rede.py               # │
+│   │   ├── 07_anomalias.py          # │
+│   │   ├── 08_ml.py                 # │
+│   │   ├── 09_qualidade.py          # │
+│   │   └── 10_metadados.py          # ┘
+│   ├── __init__.py
+│   ├── Dockerfile
 │   └── app.py
-├── config/                       # Configuração externa
+├── config/                           # Configuração externa (zero hardcode)
 │   ├── sources.yaml
 │   ├── pipeline.yaml
 │   ├── analytics.yaml
 │   └── dashboard.yaml
-├── data/
-│   ├── bronze/                   # Parquet raw
-│   ├── silver/                   # DuckDB trusted
-│   └── gold/                     # DuckDB warehouse
-├── feature_store/                # Features para ML
+├── data/                             # Dados persistidos (Docker volumes)
+│   ├── bronze/                       # Parquet raw
+│   │   └── .gitkeep
+│   ├── silver/                       # DuckDB trusted
+│   │   └── .gitkeep
+│   └── gold/                         # DuckDB warehouse
+│       └── .gitkeep
+├── feature_store/                    # Features para ML
 │   └── registry.yaml
-├── tests/
+├── tests/                            # Testes (scaffold, Sprint 8)
 │   ├── unit/
+│   │   └── __init__.py
 │   ├── integration/
+│   │   └── __init__.py
 │   ├── pipeline/
-│   └── api/
+│   │   └── __init__.py
+│   ├── api/
+│   │   └── __init__.py
+│   └── __init__.py
 ├── docs/
 │   ├── architecture/
+│   │   ├── ai_architecture.md
+│   │   ├── arch_deploy.md
+│   │   ├── arch_medalhao.md
+│   │   ├── arch_pipeline.md
+│   │   └── ddd.md
 │   ├── data/
+│   │   ├── data_dictionary.md
+│   │   ├── ml_feature.md
+│   │   ├── risk_level.md
+│   │   └── semantic_layer.md
 │   ├── engineering/
+│   │   ├── documentation.md
+│   │   ├── external_config.md
+│   │   ├── tests.md
+│   │   └── versionamento.md
 │   ├── governance/
-│   ├── architecture.md
-│   ├── api_guide.md
-│   └── deploy_guide.md
-├── infra/                        # Provisionamento de infraestrutura
-│   └── cloud-init.yml            # Cloud-init Oracle Cloud (Docker + UFW + SSH hardening)
-├── PROJECT_CONTEXT.md            # Este arquivo
-├── ADR.md                        # Architecture Decision Records
-├── BACKLOG.md                    # Backlog vivo
+│   │   ├── sprint_rules.md
+│   │   └── system_prompt.md
+│   └── guia_provisionamento_oci.md
+├── infra/                            # Provisionamento de infraestrutura
+│   └── cloud-config.yaml             # Cloud-init Oracle Cloud (Docker + UFW + SSH)
+├── nginx/                            # Reverse proxy
+│   ├── default.conf
+│   └── Dockerfile
+├── scripts/                          # Scripts auxiliares
+│   ├── deploy.ps1
+│   └── deploy.sh
+├── notes/                            # Anotações pessoais (não versionar)
+│   ├── anotações_projeto.md
+│   └── teste.ipynb
+├── logs/                             # Logs de execução (ignorados pelo git)
+├── .agents/
+├── .dockerignore
+├── .env.example                      # Template de variáveis de ambiente
+├── .gitignore
+├── ADR.md                            # Architecture Decision Records
+├── BACKLOG.md                        # Backlog vivo
+├── LICENSE
+├── PROJECT_CONTEXT.md                # Este arquivo
+├── README.md
 ├── docker-compose.yml
-├── .env.example
-└── README.md
+├── opencode.json
+└── pyproject.toml                    # Dependências e configuração do projeto
 ```
  
 ---
@@ -491,8 +560,8 @@ GET  /agent/context
  
 | Sprint | Nome | Output Principal | Status |
 |---|---|---|---|
-| **0A** | Descoberta | Visão, personas, casos de uso, escopo | 🔄 Em andamento |
-| **0B** | Arquitetura | Stack, diretórios, diagramas, convenções | ⏳ Pendente |
+| **0A** | Descoberta | Visão, personas, casos de uso, escopo | ✅ Concluída |
+| **0B** | Arquitetura | Stack, diretórios, diagramas, convenções | ✅ Concluída |
 | **1** | Modelagem | Schema completo + contratos de dados | ⏳ Pendente |
 | **2** | Bronze + Extração | Pipeline de ingestão funcionando | ⏳ Pendente |
 | **3** | Silver + Qualidade | Dados limpos + relatório Pandera | ⏳ Pendente |
@@ -581,4 +650,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.4 — Sprint 0A (visão, personas, casos de uso, RF, RNF, critérios de sucesso e escopo aprovados)*
+*Versão atual: 1.0 — Sprint 0B concluída (stack, diagramas, diretórios, ADRs 001-009, schemas reais das 3 fontes documentados e validados)*
