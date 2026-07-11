@@ -1,4 +1,23 @@
 services:
+  # ── Reverse Proxy ───────────────────────────────────────────
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_started
+      dashboard:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  # ── Object Storage ──────────────────────────────────────────
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
@@ -10,6 +29,128 @@ services:
       - minio_data:/data
     security_opt:
       - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  # ── API ─────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file: ${API_ENV_FILE:-.env}
+    environment:
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      minio:
+        condition: service_started
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  # ── Dashboard ───────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    env_file: ${DASHBOARD_ENV_FILE:-.env}
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  # ── Pipeline (Airflow) ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+    profiles:
+      - pipeline
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: pipeline/Dockerfile
+    entrypoint: >
+      bash -c "
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
+      airflow webserver
+      "
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-d6Vefz3G9YVoM3HYyVTo8tMvNcHm7pYnX0qWzJ4s6Wk=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__WEBSERVER__RBAC=True
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./pipeline:/opt/airflow/dags
+      - ./config:/opt/airflow/config
+      - ./data:/opt/airflow/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+    profiles:
+      - pipeline
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: pipeline/Dockerfile
+    entrypoint: >
+      bash -c "
+      airflow db upgrade &&
+      airflow scheduler
+      "
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-d6Vefz3G9YVoM3HYyVTo8tMvNcHm7pYnX0qWzJ4s6Wk=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=300
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./pipeline:/opt/airflow/dags
+      - ./config:/opt/airflow/config
+      - ./data:/opt/airflow/data
+    depends_on:
+      - postgres
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+    profiles:
+      - pipeline
+
+networks:
+  observatorio-net:
+    driver: bridge
 
 volumes:
   minio_data:
+  postgres_data:
