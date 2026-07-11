@@ -85,6 +85,7 @@ Get-Content "$env:USERPROFILE\.ssh\observatorio_parlamentar_oci.pub" | Set-Clipb
 
 ---
 
+
 ## 4. Criar VCN + Subnet + Instância de Computação
 
 ### 4.1 Shape e imagem
