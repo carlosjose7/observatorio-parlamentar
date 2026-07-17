@@ -28,17 +28,108 @@ referência versionada em Git.
  
 ---
  
-## 2. Catálogo de Tabelas (a ser expandido na Sprint 1)
- 
+## 2. Catálogo de Tabelas — Gold Layer (Sprint 1)
+
+> Substitui a versão resumida da Sprint 0A/0B. Cobre o modelo
+> dimensional completo de PROJECT_CONTEXT.md §7, incluindo as
+> dimensões institucionais introduzidas em ADR-010 e o schema
+> revisado de `dim_fornecedor` (ADR-011).
+
+### 2.1 dim_orgao
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_orgao` | BIGINT | 0% | PK surrogate |
+| `poder` | VARCHAR | 0% | `Legislativo` \| `Executivo` \| `Judiciário` |
+| `instituicao` | VARCHAR | 0% | Nome completo (ex: `Senado Federal`) |
+| `sigla` | VARCHAR | 0% | Ex: `CD`, `SF` |
+| `ug_siafi` | VARCHAR | nullable | Aplica-se quando o próprio órgão tem UG direta (ex: Senado = `020001`) |
+| `gestao` | VARCHAR | nullable | Aplica-se apenas junto com `ug_siafi` preenchido |
+
+**Registros iniciais conhecidos (v1):**
+
+| id_orgao | poder | instituicao | sigla | ug_siafi | gestao |
+|---|---|---|---|---|---|
+| 1 | Legislativo | Câmara dos Deputados | CD | — | — |
+| 2 | Legislativo | Senado Federal | SF | 020001 | 00001 |
+
+> UG/Gestão da Câmara ainda não identificados (pendência aberta,
+> não bloqueia Sprint 1 — grão de `dim_orgao` não depende disso).
+
+### 2.2 dim_unidade_gestora (ADR-010 — schema criado, tabela inativa na v1)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_unidade_gestora` | BIGINT | 0% | PK surrogate |
+| `codigo` | VARCHAR | 0% | Código da UG na fonte de origem |
+| `gestao` | VARCHAR | nullable | **Aplica-se apenas quando `fonte_origem = 'SIAFI'`** — não preencher para outras fontes |
+| `nome` | VARCHAR | 0% | Ex: `CAMPUS DUQUE DE CAXIAS` |
+| `id_orgao` | BIGINT (FK) | 0% | Referencia `dim_orgao` |
+| `fonte_origem` | VARCHAR | 0% | `SIAFI` \| `CGU` \| `Tesouro Nacional` \| outro |
+
+**Chave natural:** (`fonte_origem`, `codigo`) — nunca `codigo` isolado.
+
+> Tabela sem registros na v1 (ADR-010, item 6). `fact_despesa.id_unidade_gestora`
+> permanece `NULL` até existir RF que justifique este nível de granularidade.
+
+### 2.3 dim_fornecedor (schema revisado — ADR-011)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_fornecedor` | BIGINT | 0% | PK surrogate |
+| `cnpj_cpf_valor` | VARCHAR | nullable | CNPJ em claro (14 dígitos) OU hash HMAC-SHA256 do CPF (11 dígitos) OU `NULL` se origem vazia |
+| `tipo_documento` | VARCHAR | nullable | `CNPJ` \| `CPF` \| `INVALIDO` \| `NULL` (espelha `cnpj_cpf_valor`) |
+| `nome_fornecedor` | VARCHAR | variável por fonte | Ver §3 para nulos por origem |
+| `id_municipio` | BIGINT (FK) | **100% nulo na v1** | Referencia `dim_municipio`. Não populado — nenhuma fonte fornece endereço do fornecedor |
+
+> **Regra de qualidade (ADR-011):** `tipo_documento = 'INVALIDO'`
+> sinaliza comprimento ≠ 11 e ≠ 14 após sanitização — não descartado,
+> registrado no Data Quality Report (Sprint 3). Substitui a antiga
+> chave natural `cnpj_cpf_hash` (nome descontinuado — sugeria hash
+> universal, o que não é mais verdade após ADR-011).
+
+> **Nota (Revisão Sprint 1) — `id_municipio`:** campo nullable, **não
+> populado na v1**. Nenhuma das três fontes (Câmara, Senado, CGU)
+> fornece endereço/município do fornecedor diretamente. Enriquecimento
+> via CNAE/Receita Federal está fora do escopo do MVP
+> (`PROJECT_CONTEXT.md §1.5`). O campo existe desde já apenas para
+> evitar migração de schema quando esse enriquecimento for
+> implementado — mesmo padrão de "schema estável, dado ausente" já
+> aplicado a `id_unidade_gestora` (ADR-010).
+
 | Tabela | Camada | Origem | Frequência | Chave Primária | Owner |
 |---|---|---|---|---|---|
 | `bronze_camara_despesas` | Bronze | API Câmara dos Deputados | Diária | — (raw) | Engenheiro de Dados |
 | `bronze_senado_despesas` | Bronze | API Senado Federal | Diária | — (raw) | Engenheiro de Dados |
+| `bronze_cgu_emenda` | Bronze | API CGU (emendas) | Diária | — (raw) | Engenheiro de Dados |
+| `bronze_cgu_cartao` | Bronze | API CGU (cartões CPGF) | Diária | — (raw) | Engenheiro de Dados |
 | `dim_parlamentar` | Gold | Silver consolidado | Diária | `id_parlamentar` + `surrogate_key` | Engenheiro de Dados |
-| `dim_fornecedor` | Gold | Receita Federal (CNPJ) + Silver | Mensal | `cnpj_cpf_hash` | Engenheiro de Dados |
+| `dim_fornecedor` | Gold | Silver consolidado | Diária | `cnpj_cpf_valor` + `tipo_documento` | Engenheiro de Dados |
+| `dim_orgao` | Gold | Estático/curado | Sob demanda | `sigla` | Engenheiro de Dados |
+| `dim_unidade_gestora` | Gold | CGU/SIAFI | — (inativa v1) | (`fonte_origem`, `codigo`) | Engenheiro de Dados |
 | `fact_despesa` | Gold | Silver consolidado | Diária | `id_despesa` | Engenheiro de Dados |
+| `fact_emenda` | Gold | Silver consolidado | Diária | `id_emenda` | Engenheiro de Dados |
+| `fact_cartao_cpgf` | Gold | Silver consolidado | Diária | `id_transacao` | Engenheiro de Dados |
+| `pipeline_runs` | Gold (controle) | Airflow | A cada execução | `run_id` | Engenheiro de Dados |
 | `risk_scores` | Gold | Analytics (Sprint 5) | Diária (pós-batch) | `id_parlamentar` + `data_sk` | Cientista de Dados |
- 
+
+> **Regra de qualidade (ADR-011):** `tipo_documento = 'INVALIDO'`
+> sinaliza comprimento ≠ 11 e ≠ 14 após sanitização — não descartado,
+> registrado no Data Quality Report (Sprint 3). Substitui a antiga
+> chave natural `cnpj_cpf_hash` (nome descontinuado — sugeria hash
+> universal, o que não é mais verdade após ADR-011).
+
+### 2.4 fact_despesa (FKs institucionais — ADR-010)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_orgao` | BIGINT (FK) | **0% — NOT NULL** | Sempre resolvido, inclusive Câmara/Senado |
+| `id_unidade_gestora` | BIGINT (FK) | **100% na v1** | `NULL` até `dim_unidade_gestora` ser ativada (ver §2.2) |
+
+*(demais campos de `fact_despesa` — `valor_liquido`, `valor_glosa`, FKs de `dim_parlamentar`/`dim_fornecedor`/`dim_data` — inalterados em relação a PROJECT_CONTEXT.md §7)*
+
+---
+
 > Tabela incompleta por design — será populada integralmente durante
 > a Sprint 1, quando o modelo dimensional completo (PROJECT_CONTEXT.md
 > §7) for implementado. Esta versão cobre apenas as entidades já
@@ -59,7 +150,7 @@ referência versionada em Git.
 | `ano` | int | 0% | |
 | `mes` | int | 0% | |
 | `cnpjCpfFornecedor` | string | 3.55%¹ | CNPJ (94.9%) ou CPF (5.1%); sem formatação |
-| `codDocumento` | string | 0% | |
+| `codDocumento` | **VARCHAR** | 0% | Formato GUID em passagens aéreas (ex: `a1b2c3d4-...`) — nunca tratar como numérico, até quando o valor observado é numumerico |
 | `codLote` | int | 0% | |
 | `codTipoDocumento` | int | 0% | **Sempre 0** — campo obsoleto |
 | `dataDocumento` | string | 0% | Formato ISO: `2024-07-03T00:00:00` |
@@ -77,6 +168,20 @@ referência versionada em Git.
 ¹ Na amostra de 50 deputados (2024): 3.55% vazio. Em exploração anterior com ~45.794 registros (ano completo), atingiu 13-14%. A diferença é efeito de tamanho de amostra — o percentual real deve ser verificado após ingestão completa.
 
 ² Mesma ressalva: 2.6% nesta amostra vs. 4.2% na amostra inicial de 500 registros.
+> **Nota de tipagem (Sprint 1):** `codDocumento` foi inicialmente
+> presumido como inteiro em exploração informal. Validação em
+> registros de passagem aérea confirmou formato GUID
+> (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`). Campo deve ser tipado
+> como `VARCHAR` em todas as camadas — tratamento como numérico
+> causaria truncamento silencioso de zeros à esquerda e falha de
+> parsing em registros GUID.
+
+> **Nota de parsing (Sprint 1):** `dataDocumento` chega como string
+> ISO 8601 (`2024-07-03T00:00:00`). Requer parsing explícito para
+> `DATE`/`TIMESTAMP` na camada Silver — nunca comparar ou ordenar
+> como string. Mesmo padrão de tratamento definido para `DATA`
+> (Senado, DD/MM/AAAA) e datas da CGU (DD/MM/AAAA) em §3.2/§3.3,
+> todas convergindo para `DATE` nativo na Silver.
 
 ### 3.2 Senado Federal (CSV CEAPS)
 
@@ -205,18 +310,27 @@ alterados (ver PROJECT_CONTEXT.md §10).
  
 ---
  
-## 5. Pendências desta versão
+## 5. Pendências desta versão (atualizado — Sprint 1)
+
+- ~~Código SIAFI do Senado~~ — **Resolvido.** UG 020001, Gestão 00001.
+- Código SIAFI da Câmara — ainda não identificado. Não bloqueia
+  fechamento da Sprint 1 (grão de `dim_orgao` não depende disso).
+- Preencher `dim_unidade_gestora` — bloqueado até RF futuro (ADR-010).
+- Contratos de interface Pydantic por camada — pendente (próximo
+  artefato da Sprint 1).
+- Estratégia formal de watermark/versionamento consolidada —
+  pendente (próximo artefato da Sprint 1).
  
-- Preencher colunas completas (tipo de dado, nullability, exemplo de
-  valor) para cada tabela na Sprint 1.
-- Adicionar seção de linhagem (Bronze → Silver → Gold) por tabela,
-  quando os pipelines de transformação existirem (Sprints 2–4).
-- Adicionar regras de qualidade Pandera por tabela, assim que
-  `pipeline/quality.py` for implementado (Sprint 3).
-- Vincular cada tabela às features da Feature Store (`ml_feature`)
-  que dela derivam, quando aplicável (ver `docs/data/ml_feature.md`).
  
 ---
- 
+> **Nota (Revisão Sprint 1):** `id_municipio` é campo nullable,
+> **não populado na v1**. Nenhuma das três fontes (Câmara, Senado,
+> CGU) fornece endereço/município do fornecedor diretamente.
+> Enriquecimento via CNAE/Receita Federal está fora do escopo do
+> MVP (`PROJECT_CONTEXT.md §1.5`). O campo existe desde já apenas
+> para evitar migração de schema quando esse enriquecimento for
+> implementado — mesmo padrão de "schema estável, dado ausente" já
+> aplicado a `id_unidade_gestora` (ADR-010).
+
 *Documento inicial criado na Sprint 0A, em resposta a lacuna
 identificada entre ADR-002 e os artefatos existentes do projeto.*
