@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 0B (ADRs 001-008 registrados; stack, diagramas, diretórios e configuração consolidados)
+> Última atualização: Sprint 1 (ADRs 010-012 registrados; dimensão institucional, constelação de fatos e watermark/versionamento consolidados)
  
 ---
  
@@ -731,4 +731,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.0 — Sprint 0B concluída (stack, diagramas, diretórios, ADRs 001-009, schemas reais das 3 fontes documentados e validados)*
+*Versão atual: 1.1 — Sprint 1 em andamento (modelo dimensional completo com constelação de fatos, ADRs 001-012, contratos de interface, ER e estratégia de versionamento)*

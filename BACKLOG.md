@@ -75,7 +75,7 @@
 
 ☑ Decimal confirmado para campos monetários em Silver/Gold (precisão sobre performance)
 ☐ Código SIAFI da Câmara dos Deputados — ainda não identificado (não bloqueia grão de `dim_orgao`)
-☐ Revisão técnica cruzada de todos os artefatos da Sprint 1 contra `sprint_rules` e `PROJECT_CONTEXT.md` (papel Revisor Técnico)
+☑ Revisão técnica cruzada de todos os artefatos da Sprint 1 — 3 achados de sincronia de documentação corrigidos (catálogo `data_dictionary.md` reposicionado, nota obsoleta removida, cabeçalho/rodapé `PROJECT_CONTEXT.md` atualizado)
 ☐ Atualizar `PROJECT_CONTEXT.md §6` (estrutura de diretórios) para refletir os arquivos novos criados nesta sprint (`pipeline/contracts.py`, `pipeline/camara/schemas.py` etc.) — ainda dentro da estrutura existente, mas os nomes de arquivo específicos não estavam listados
 ☐ `CHANGELOG.md` — ainda não criado como artefato formal (mencionado em `sprint_rules` como acompanhante de toda sprint)
 

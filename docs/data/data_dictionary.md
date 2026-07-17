@@ -35,6 +35,22 @@ referência versionada em Git.
 > dimensões institucionais introduzidas em ADR-010 e o schema
 > revisado de `dim_fornecedor` (ADR-011).
 
+| Tabela | Camada | Origem | Frequência | Chave Primária | Owner |
+|---|---|---|---|---|---|
+| `bronze_camara_despesas` | Bronze | API Câmara dos Deputados | Diária | — (raw) | Engenheiro de Dados |
+| `bronze_senado_despesas` | Bronze | API Senado Federal | Diária | — (raw) | Engenheiro de Dados |
+| `bronze_cgu_emenda` | Bronze | API CGU (emendas) | Diária | — (raw) | Engenheiro de Dados |
+| `bronze_cgu_cartao` | Bronze | API CGU (cartões CPGF) | Diária | — (raw) | Engenheiro de Dados |
+| `dim_parlamentar` | Gold | Silver consolidado | Diária | `id_parlamentar` + `surrogate_key` | Engenheiro de Dados |
+| `dim_fornecedor` | Gold | Silver consolidado | Diária | `cnpj_cpf_valor` + `tipo_documento` | Engenheiro de Dados |
+| `dim_orgao` | Gold | Estático/curado | Sob demanda | `sigla` | Engenheiro de Dados |
+| `dim_unidade_gestora` | Gold | CGU/SIAFI | — (inativa v1) | (`fonte_origem`, `codigo`) | Engenheiro de Dados |
+| `fact_despesa` | Gold | Silver consolidado | Diária | `id_despesa` | Engenheiro de Dados |
+| `fact_emenda` | Gold | Silver consolidado | Diária | `id_emenda` | Engenheiro de Dados |
+| `fact_cartao_cpgf` | Gold | Silver consolidado | Diária | `id_transacao` | Engenheiro de Dados |
+| `pipeline_runs` | Gold (controle) | Airflow | A cada execução | `run_id` | Engenheiro de Dados |
+| `risk_scores` | Gold | Analytics (Sprint 5) | Diária (pós-batch) | `id_parlamentar` + `data_sk` | Cientista de Dados |
+
 ### 2.1 dim_orgao
 
 | Campo | Tipo | Nulos | Descrição |
@@ -97,28 +113,6 @@ referência versionada em Git.
 > implementado — mesmo padrão de "schema estável, dado ausente" já
 > aplicado a `id_unidade_gestora` (ADR-010).
 
-| Tabela | Camada | Origem | Frequência | Chave Primária | Owner |
-|---|---|---|---|---|---|
-| `bronze_camara_despesas` | Bronze | API Câmara dos Deputados | Diária | — (raw) | Engenheiro de Dados |
-| `bronze_senado_despesas` | Bronze | API Senado Federal | Diária | — (raw) | Engenheiro de Dados |
-| `bronze_cgu_emenda` | Bronze | API CGU (emendas) | Diária | — (raw) | Engenheiro de Dados |
-| `bronze_cgu_cartao` | Bronze | API CGU (cartões CPGF) | Diária | — (raw) | Engenheiro de Dados |
-| `dim_parlamentar` | Gold | Silver consolidado | Diária | `id_parlamentar` + `surrogate_key` | Engenheiro de Dados |
-| `dim_fornecedor` | Gold | Silver consolidado | Diária | `cnpj_cpf_valor` + `tipo_documento` | Engenheiro de Dados |
-| `dim_orgao` | Gold | Estático/curado | Sob demanda | `sigla` | Engenheiro de Dados |
-| `dim_unidade_gestora` | Gold | CGU/SIAFI | — (inativa v1) | (`fonte_origem`, `codigo`) | Engenheiro de Dados |
-| `fact_despesa` | Gold | Silver consolidado | Diária | `id_despesa` | Engenheiro de Dados |
-| `fact_emenda` | Gold | Silver consolidado | Diária | `id_emenda` | Engenheiro de Dados |
-| `fact_cartao_cpgf` | Gold | Silver consolidado | Diária | `id_transacao` | Engenheiro de Dados |
-| `pipeline_runs` | Gold (controle) | Airflow | A cada execução | `run_id` | Engenheiro de Dados |
-| `risk_scores` | Gold | Analytics (Sprint 5) | Diária (pós-batch) | `id_parlamentar` + `data_sk` | Cientista de Dados |
-
-> **Regra de qualidade (ADR-011):** `tipo_documento = 'INVALIDO'`
-> sinaliza comprimento ≠ 11 e ≠ 14 após sanitização — não descartado,
-> registrado no Data Quality Report (Sprint 3). Substitui a antiga
-> chave natural `cnpj_cpf_hash` (nome descontinuado — sugeria hash
-> universal, o que não é mais verdade após ADR-011).
-
 ### 2.4 fact_despesa (FKs institucionais — ADR-010)
 
 | Campo | Tipo | Nulos | Descrição |
@@ -127,13 +121,6 @@ referência versionada em Git.
 | `id_unidade_gestora` | BIGINT (FK) | **100% na v1** | `NULL` até `dim_unidade_gestora` ser ativada (ver §2.2) |
 
 *(demais campos de `fact_despesa` — `valor_liquido`, `valor_glosa`, FKs de `dim_parlamentar`/`dim_fornecedor`/`dim_data` — inalterados em relação a PROJECT_CONTEXT.md §7)*
-
----
-
-> Tabela incompleta por design — será populada integralmente durante
-> a Sprint 1, quando o modelo dimensional completo (PROJECT_CONTEXT.md
-> §7) for implementado. Esta versão cobre apenas as entidades já
-> nomeadas nas decisões arquiteturais existentes.
 
 ---
 
