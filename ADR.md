@@ -343,3 +343,311 @@ Consequências:
   extrator — `tenacity` com `wait_exponential` + throttling.
 - Reproductibilidade: qualquer execução anterior pode ser reproduzida
   a partir de `run_id` e `pipeline_version`.
+
+---
+
+ADR-010
+Título: Dimensão institucional — dim_orgao e dim_unidade_gestora (SIAFI-ready)
+
+Status:
+Aceito
+
+Contexto:
+O modelo dimensional original (PROJECT_CONTEXT.md §7) não previa
+nenhuma entidade formal para os órgãos federais de origem dos dados.
+A vinculação institucional (Câmara, Senado, órgãos do Executivo)
+ficava implícita no nome da fonte de ingestão (`camara`, `senado`,
+`cgu`), sem representação como dado consultável.
+
+Durante a Sprint 1, dois fatores tornaram essa lacuna explícita:
+- O código institucional SIAFI do Senado Federal foi identificado
+  (UG 020001, Gestão 00001), confirmando que essa informação é
+  pública, estável e documentável.
+- A API da CGU expõe nativamente `unidadeGestora.codigo` e
+  `unidadeGestora.nome` em múltiplos endpoints (cartões, despesas),
+  além de um endpoint de referência `/orgaos-siafi` — evidenciando
+  que o projeto já lida com dado institucional estruturado sem ter
+  onde armazená-lo de forma reutilizável.
+
+A evolução do projeto para além de dashboard — em direção a uma
+plataforma de engenharia de dados capaz de integrar futuramente com
+SIAFI, Tesouro Nacional e execução orçamentária — reforça a
+necessidade de uma dimensão institucional própria, em vez de
+metadado espalhado em `config/sources.yaml` ou hardcoded no código.
+
+Decisão:
+1. Criar duas dimensões com responsabilidades distintas:
+
+dim_orgao
+id_orgao (PK, surrogate)
+poder            -- Legislativo, Executivo, Judiciário
+instituicao
+sigla
+ug_siafi         -- nullable, aplica-se quando o próprio órgão tem UG direta
+gestao           -- nullable, idem
+dim_unidade_gestora
+id_unidade_gestora (PK, surrogate)
+codigo
+gestao           -- nullable, aplica-se apenas quando fonte_origem = 'SIAFI'
+nome
+id_orgao (FK)
+fonte_origem     -- SIAFI | CGU | Tesouro Nacional | outro
+-- chave natural: (fonte_origem, codigo)
+
+2. `dim_orgao` representa exclusivamente entidades institucionais
+   (Câmara, Senado, Ministérios etc.). `dim_unidade_gestora`
+   representa exclusivamente entidades administrativas/orçamentárias,
+   ligada a `dim_orgao` por FK. Nenhuma dimensão acumula os dois
+   conceitos.
+
+3. `dim_unidade_gestora` é genérica desde a concepção — não acoplada
+   exclusivamente ao SIAFI. O campo `fonte_origem` permite que UGs de
+   outros sistemas (CGU, Tesouro Nacional, ou sistema futuro) sejam
+   representadas na mesma tabela. A chave natural é composta
+   (`fonte_origem`, `codigo`), não apenas `codigo`, para evitar
+   colisão entre identificadores de sistemas diferentes.
+
+4. O campo `gestao` é específico do modelo SIAFI (par UG+Gestão) e
+   deve ser tratado como nullable, aplicável apenas quando
+   `fonte_origem = 'SIAFI'`. Deve ser documentado explicitamente
+   como tal no `data_dictionary.md`, para não se tornar um campo
+   ambíguo (mesmo risco já observado em `numRessarcimento` na
+   Câmara e `codTipoDocumento` sempre 0).
+
+5. `fact_despesa` é criada desde a v1 com duas FKs institucionais:
+   - `id_orgao` (**NOT NULL**) — sempre resolvido, inclusive para
+     Câmara e Senado.
+   - `id_unidade_gestora` (**NULLABLE**) — permanece `NULL` para
+     todos os registros até que exista requisito funcional para
+     análises em nível de Unidade Gestora.
+
+6. Na v1 do MVP:
+   - `dim_orgao` é populada normalmente (mínimo: Câmara dos
+     Deputados e Senado Federal, com UG/Gestão SIAFI quando
+     aplicável).
+   - `dim_unidade_gestora` existe apenas na modelagem — schema
+     criado, tabela vazia.
+   - `id_unidade_gestora` permanece `NULL` para todos os registros
+     de `fact_despesa`.
+
+Consequências:
+- O grão de `fact_despesa` não muda — continua "uma despesa". O
+  benefício da decisão não é preservar o grão (que já era estável),
+  e sim evitar evolução estrutural do schema: quando houver
+  integração com SIAFI, Tesouro Nacional ou análises por Unidade
+  Gestora, basta popular `dim_unidade_gestora` e fazer backfill da
+  FK correspondente — sem alterar o esquema da tabela fato ou
+  reprocessar Bronze/Silver.
+- `dim_orgao` fica pequena por design (dezenas de linhas) — grão
+  "órgão institucional", não "unidade gestora". Órgãos do Executivo
+  entram em nível agregado, não por campus/unidade.
+- Câmara e Senado não têm UG/Gestão SIAFI documentada da mesma forma
+  que órgãos do Executivo em todos os casos — `ug_siafi`/`gestao`
+  em `dim_orgao` devem ser tratados como nullable.
+- `data_dictionary.md` deve documentar explicitamente que `gestao`
+  em `dim_unidade_gestora` só se aplica quando `fonte_origem =
+  'SIAFI'`, para evitar interpretação incorreta em integrações
+  futuras com outras fontes.
+- O modelo ER (PROJECT_CONTEXT.md §7) e o dicionário de dados devem
+  ser atualizados para incluir as duas dimensões, mesmo com
+  `dim_unidade_gestora` inativa, garantindo que a arquitetura já
+  reflita a decisão desde a Sprint 1.
+- Nenhuma mudança de comportamento em ADRs anteriores — decisão
+  aditiva ao modelo dimensional existente (§7).
+- `dim_orgao.ug_siafi`/`gestao` é uma denormalização de conveniência
+  para órgãos com UG própria direta (ex: Senado). Não é mutuamente
+  exclusivo com `dim_unidade_gestora`: quando esta for ativada, o
+  mesmo órgão poderá também ter uma linha correspondente lá. As duas
+  representações coexistem por design — uma não substitui a outra.  
+
+---
+
+ADR-011
+Título: Refinamento da pseudonimização de CPF/CNPJ — tratamento de string vazia e distinção por comprimento
+
+Status:
+Aceito — refina ADR-004 (decisão original permanece válida; este ADR
+cobre dois casos não tratados na redação anterior)
+
+Contexto:
+ADR-004 definiu HMAC-SHA256 para pseudonimização de CPF, mas não
+especificou:
+1. Como distinguir CNPJ de CPF dentro do campo `cnpjCpfFornecedor`
+   (Câmara) / `CNPJ_CPF` (Senado) / `estabelecimento.cnpjFormatado`
+   ou `portador.cpfFormatado` (CGU) — campo que mistura os dois
+   tipos de documento na mesma coluna, conforme já documentado em
+   `data_dictionary.md` §3.1 e §3.3.
+2. Como tratar valores vazios (`""`) — a Câmara apresenta taxa de
+   nulos de 3.55% a 13.7% (variação por tamanho de amostra, ver
+   `data_dictionary.md` nota¹) neste campo especificamente.
+
+Aplicar HMAC-SHA256 literalmente sobre uma string vazia (`""`) produz
+um hash determinístico único — o mesmo hash para *todos* os
+registros sem fornecedor identificado. Isso criaria, sem intenção,
+uma identidade de fornecedor fantasma que agregaria indevidamente
+todos os registros nulos em `dim_fornecedor`, contaminando métricas
+de concentração de fornecedores (`HHI`, §8) e a própria
+`supplier_concentration` (§7) com um "fornecedor" que não existe.
+
+Além disso, CNPJ é dado de pessoa jurídica — não é dado pessoal
+sensível sob a LGPD — enquanto CPF é dado pessoal e exige a proteção
+já definida em ADR-004. Tratar os dois indistintamente com o mesmo
+hash é proteção desnecessária sobre CNPJ (reduz utilidade analítica
+sem ganho de compliance) e, pior, mascara a ausência de distinção
+formal entre os dois tipos de documento no dado extraído.
+
+Decisão:
+1. **String vazia (`""`) ou nula nunca é hasheada.** Permanece como
+   `NULL` em todas as camadas (Bronze inclusive, mantendo a regra de
+   ADR-004 de nunca persistir dado em texto claro — mas `NULL` não é
+   "dado em texto claro", é ausência de dado). Nenhuma identidade de
+   fornecedor fantasma é criada.
+
+2. **Distinção CNPJ vs. CPF por comprimento, após sanitização.**
+   Sequência obrigatória no momento da extração/Silver:
+   a. Remover toda formatação (pontos, barra, hífen) — necessário
+      para Senado e CGU, que chegam formatados (`data_dictionary.md`
+      §3.2, §3.3); Câmara já chega sem formatação.
+   b. Contar dígitos restantes:
+      - **14 dígitos → CNPJ.** Mantido em texto claro. Não é dado
+        pessoal sensível; manter em claro preserva utilidade
+        analítica plena (busca direta por CNPJ, CU-01).
+      - **11 dígitos → CPF.** Pseudonimizado via HMAC-SHA256 com
+        chave secreta, conforme ADR-004 original.
+      - **Qualquer outro comprimento (≠ 11, ≠ 14, e não vazio) →
+        anomalia de qualidade de dado.** Não é hasheado nem
+        descartado silenciosamente — registrado no Data Quality
+        Report (Sprint 3, `pipeline/quality.py`) e sinalizado para
+        revisão manual. Zero tratamento implícito de dado malformado.
+
+3. **`dim_fornecedor` precisa de um campo de tipo de documento
+   explícito**, não apenas a chave hasheada/clara:
+
+dim_fornecedor
+cnpj_cpf_valor       -- CNPJ em claro OU hash HMAC do CPF OU NULL
+tipo_documento        -- 'CNPJ' | 'CPF' | 'INVALIDO' | NULL
+
+Isso evita que um consumidor da Gold precise re-inferir o tipo de
+   documento pelo formato do valor armazenado (14 dígitos claros vs.
+   64 caracteres hex de um hash SHA-256 é diferenciável, mas não deve
+   ser responsabilidade do consumidor deduzir isso implicitamente).
+
+Consequências:
+- A chave natural de `dim_fornecedor`, hoje definida em
+  PROJECT_CONTEXT.md §7 como `cnpj_cpf_hash` (nome que sugeria hash
+  universal), precisa ser renomeada/redocumentada como
+  `cnpj_cpf_valor` + `tipo_documento`, refletindo que nem todo valor
+  ali é hash.
+- `data_dictionary.md` deve documentar a regra de sanitização e
+  branching por comprimento como regra de qualidade formal, não
+  apenas nota de rodapé.
+- `pipeline/quality.py` (Sprint 3) deve incluir uma regra Pandera
+  explícita para comprimento de documento (11, 14, ou NULL —
+  qualquer outro valor é falha de schema, não apenas nulo).
+- Nenhuma mudança na chave HMAC nem no plano de rotação definidos em
+  ADR-004 — este ADR não reabre a decisão de algoritmo, apenas
+  formaliza os casos de borda que a redação original não cobria.
+- Reforça RF-06 e o RNF de Segurança/LGPD (§1.3): nenhum CPF em
+  claro, e agora também nenhuma identidade de fornecedor fantasma
+  criada a partir de dado ausente.
+
+---
+---
+
+ADR-012
+Título: Separação de fatos por domínio de negócio — fact_emenda e fact_cartao_cpgf (modelo de constelação)
+
+Status:
+Aceito
+
+Contexto:
+A Sprint 1 identificou que dados da CGU (emendas parlamentares,
+cartões CPGF) possuem grão distinto de `fact_despesa` (despesa
+parlamentar individual, alimentada por Câmara e Senado):
+
+- Emenda parlamentar tem grão "uma emenda" — não "uma despesa".
+- Transação de cartão CPGF tem grão "uma transação de cartão
+  corporativo", cujo portador pertence tipicamente ao Poder
+  Executivo, não necessariamente a um parlamentar.
+
+Forçar esses dois domínios para dentro de `fact_despesa` exigiria
+colunas opcionais e regras condicionais numerosas (ex: campos de
+emenda que não existem para despesa comum, portador de cartão sem
+`id_parlamentar` correspondente), degradando a clareza semântica da
+tabela e dificultando sua evolução — o mesmo tipo de problema que
+ADR-010 já havia evitado para a dimensão institucional.
+
+Decisão:
+1. Cada domínio de negócio da CGU recebe sua própria tabela fato,
+   com grão único e explícito:
+   - `fact_despesa` — grão: uma despesa parlamentar (Câmara/Senado).
+     Inalterada por este ADR.
+   - `fact_emenda` — grão: uma emenda parlamentar.
+   - `fact_cartao_cpgf` — grão: uma transação de cartão corporativo.
+
+2. Todas as fatos compartilham as dimensões corporativas já
+   definidas na arquitetura: `dim_data`, `dim_orgao`,
+   `dim_unidade_gestora`, `dim_fornecedor`. Isso caracteriza um
+   modelo de **constelação de fatos** (fact constellation / galaxy
+   schema) — múltiplas fatos, dimensões compartilhadas.
+
+3. `dim_parlamentar` é reutilizada quando aplicável ao grão do fato:
+   - `fact_emenda.id_parlamentar` — **NOT NULL**. Faz parte da
+     identidade do evento — toda emenda tem autor identificável
+     (`nomeAutor` na fonte).
+   - `fact_cartao_cpgf` **não referencia `dim_parlamentar`** na
+     versão inicial da arquitetura. O portador de um cartão CPGF
+     pertence estruturalmente ao domínio do Poder Executivo — o
+     fato de um portador poder, em casos excepcionais, ser também
+     um parlamentar é uma coincidência de dados, não uma relação
+     estrutural do grão. Uma FK opcional que reflita apenas essa
+     exceção violaria o princípio de que toda FK deve representar
+     uma relação natural do domínio modelado, não uma correlação
+     externa. Caso um requisito funcional futuro exija cruzar
+     transações de CPGF com parlamentares, essa associação deve ser
+     implementada por meio de uma tabela de relacionamento (bridge)
+     ou camada analítica derivada — nunca por uma FK direta em
+     `fact_cartao_cpgf` — preservando o grão original da tabela
+     fato.
+
+4. Princípio formal adotado para o projeto, aplicável a qualquer
+   fato futura:
+
+   > Cada tabela fato representa um único evento de negócio e um
+   > único grão analítico. Fontes distintas podem originar fatos
+   > distintas, enquanto as dimensões corporativas são
+   > compartilhadas entre todos os fatos.
+
+Consequências:
+- Pipeline Bronze/Silver permanece organizado por domínio de origem
+  (`pipeline/camara/`, `pipeline/senado/`, `pipeline/transparencia/`)
+  — nenhuma mudança na DDD já estabelecida.
+- Gold ganha duas tabelas fato novas; nenhuma mudança em
+  `fact_despesa` existente.
+- `dim_orgao` e `dim_unidade_gestora` (ADR-010) passam a ser
+  efetivamente reutilizadas entre múltiplos domínios — validação
+  prática de que a decisão de generalizar essas dimensões
+  (`fonte_origem` em vez de acoplamento único ao SIAFI) foi
+  acertada.
+- RF-12 (reprodutibilidade via `run_id`/`pipeline_version`/
+  `execution_timestamp`/`source_version`) se aplica a todas as
+  novas fatos, sem exceção — detalhado no próximo artefato da
+  sprint (estratégia de watermark/versionamento).
+- Consultas analíticas que combinem domínios (ex: parlamentar com
+  despesa CEAP alta E autor de emendas concentradas) usam as
+  dimensões compartilhadas como ponto de junção — nenhuma fato
+  referencia outra fato diretamente.
+- Novas bases da CGU (ex: contratos, viagens) podem originar novas
+  fatos seguindo o mesmo princípio, sem remodelar as existentes.
+- PROJECT_CONTEXT.md §7 (Modelo Dimensional) e o modelo ER
+  (`docs/architecture/arch_er.md`) devem ser atualizados para
+  incluir as duas novas fatos e suas dimensões compartilhadas.
+- `fact_cartao_cpgf` permanece com FK apenas para as dimensões que
+  pertencem estruturalmente ao seu grão (`dim_orgao`,
+  `dim_unidade_gestora`, `dim_fornecedor`, `dim_data`). Qualquer
+  cruzamento futuro com `dim_parlamentar` é responsabilidade de uma
+  bridge table dedicada (ex: `bridge_cartao_parlamentar`), não da
+  fato — mantendo a fato "pura" e evitando FK opcional baseada em
+  coincidência de dados em vez de relação de domínio.
+
+---
