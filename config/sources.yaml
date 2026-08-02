@@ -1,2 +1,90 @@
-# Source-specific URLs, rate limits, credentials, and watermarks belong here.
-sources: {}
+# config/sources.yaml
+# Configuração das fontes de dados externas.
+# Nunca hardcode URLs, rate limits ou nomes de campos de watermark no código —
+# tudo deve ser lido daqui via pipeline/config.py (ADR-008).
+# extra="forbid" no Settings correspondente: campos aqui não mapeados falham no startup.
+
+sources:
+  camara:
+    nome: "Câmara dos Deputados"
+    base_url: "https://dadosabertos.camara.leg.br/api/v2"
+    formato: "json"
+    encoding: "utf-8"
+    paginacao:
+      parametro_pagina: "pagina"
+      parametro_itens: "itens"
+      itens_por_pagina: 100
+    rate_limit:
+      requisicoes_por_minuto: 100  # não documentado oficialmente; PROJECT_CONTEXT.md §3
+    endpoints:
+      deputados:
+        path: "/deputados"
+      despesas_por_deputado:
+        path: "/deputados/{id_deputado}/despesas"
+    watermark:
+      despesas_por_deputado:
+        campo: "dataDocumento"          # campo da resposta
+        parametro_filtro: "dataInicio"  # query param de filtro (API aceita dataInicio/dataFim)
+        formato_data: "%Y-%m-%dT%H:%M:%S"  # ISO 8601, ex: 2024-07-03T00:00:00
+        estrategia: "incremental"
+    siafi:
+      ug_siafi: null  # pendência conhecida — ver BACKLOG.md, não bloqueia Sprint 2
+
+  senado:
+    nome: "Senado Federal"
+    base_url: "https://www.senado.leg.br/transparencia/LAI/verba"
+    padrao_arquivo: "despesa_ceaps_{ano}.csv"
+    formato: "csv"
+    encoding: "ISO-8859-1"
+    separador: ";"
+    quote_char: "\""
+    separador_decimal: ","
+    formato_data: "%d/%m/%Y"
+    campo_deduplicacao: "COD_DOCUMENTO"
+    watermark:
+      despesa_ceaps:
+        # Sem watermark incremental — a fonte publica CSV anual completo (ADR-009)
+        estrategia: "arquivo_anual"
+        formato_data: "%d/%m/%Y"
+    siafi:
+      unidade_gestora: "020001"
+      gestao: "00001"
+    execucao:
+      frequencia: "sazonal"  # após publicação do CSV do ano anterior
+
+  transparencia:
+    nome: "Portal da Transparência (CGU)"
+    base_url: "https://api.portaldatransparencia.gov.br/api-de-dados"
+    auth:
+      header: "chave-api-dados"
+      env_var: "CGU_API_KEY"  # segredo real fica em .env, nunca aqui
+    formato: "json"
+    paginacao:
+      parametro_pagina: "pagina"
+    rate_limit:
+      requisicoes_por_minuto_diurno: 400   # 06:00–24:00
+      requisicoes_por_minuto_noturno: 700  # 00:00–06:00
+      janela_noturna_inicio: "00:00"
+      janela_noturna_fim: "06:00"
+    endpoints:
+      emendas:
+        path: "/emendas"
+      cartoes:
+        path: "/cartoes"
+        parametros_fixos:  # query params obrigatórios (não é segredo)
+          tipoCartao: "1"
+      orgaos_siafi:
+        path: "/orgaos-siafi"
+    watermark:
+      emendas:
+        campo: "ano"
+        parametro_filtro: "ano"
+        estrategia: "particao_anual"  # endpoint não expõe filtro de data granular
+      cartoes:
+        campo: "mesExtrato"
+        parametro_filtro: "mesExtratoInicio"
+        parametro_filtro_fim: "mesExtratoFim"  # endpoint exige período (até 12 meses) — inicio=fim=mês no incremental
+        formato_data: "%m/%Y"
+        estrategia: "incremental"
+    separador_decimal: ","
+    formato_data: "%d/%m/%Y"
