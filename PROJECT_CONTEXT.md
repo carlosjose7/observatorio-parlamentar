@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 0B (ADRs 001-008 registrados; stack, diagramas, diretórios e configuração consolidados)
+> Última atualização: Sprint 1 (ADRs 010-012 registrados; dimensão institucional, constelação de fatos e watermark/versionamento consolidados)
  
 ---
  
@@ -381,44 +381,121 @@ observatorio-parlamentar/
 ---
  
 ## 7. Modelo Dimensional — Gold Layer
- 
+
+> **Modelo de constelação de fatos (fact constellation / galaxy
+> schema)** — ADR-012. Três domínios de negócio distintos
+> (`fact_despesa`, `fact_emenda`, `fact_cartao_cpgf`) compartilham
+> dimensões corporativas, cada um preservando grão analítico
+> próprio. Ver `docs/architecture/arch_er.md` para o diagrama
+> completo.
+
 ### Dimensões
- 
+
 | Tabela | Descrição | Chave Natural |
 |---|---|---|
 | `dim_parlamentar` | Deputados e senadores (SCD Type 2) | `id_parlamentar` |
-| `dim_fornecedor` | Empresas e pessoas físicas fornecedoras | `cnpj_cpf_hash` |
+| `dim_fornecedor` | Empresas e pessoas físicas fornecedoras | `cnpj_cpf_valor` + `tipo_documento` (ADR-011) |
+| `dim_orgao` | Órgãos institucionais — Câmara, Senado, Ministérios (ADR-010) | `sigla` |
+| `dim_unidade_gestora` | Unidades gestoras/orçamentárias — SIAFI, CGU, Tesouro (ADR-010) | (`fonte_origem`, `codigo`) |
 | `dim_partido` | Partidos políticos com ideologia | `sigla` |
 | `dim_estado` | UFs com dados geográficos IBGE | `uf` |
 | `dim_municipio` | Municípios com código IBGE | `cod_ibge` |
 | `dim_categoria_despesa` | Tipos de despesa CEAP | `cod_tipo` |
 | `dim_data` | Calendário completo com flags | `data_sk` (YYYYMMDD) |
- 
+
+### Dimensão Institucional — `dim_orgao` e `dim_unidade_gestora` (ADR-010)
+
+`dim_orgao` representa exclusivamente entidades institucionais
+(Câmara, Senado, Ministérios etc.). `dim_unidade_gestora` representa
+exclusivamente entidades administrativas/orçamentárias, ligada a
+`dim_orgao` por FK. Nenhuma dimensão acumula os dois conceitos.
+
+`dim_unidade_gestora` é genérica desde a concepção — o campo
+`fonte_origem` (`SIAFI` | `CGU` | `Tesouro Nacional` | `outro`)
+evita acoplamento a um único sistema de origem. Chave natural
+composta (`fonte_origem`, `codigo`), nunca `codigo` isolado.
+
+**Estado na v1:** `dim_orgao` populada normalmente (mínimo: Câmara
+dos Deputados e Senado Federal, com UG/Gestão SIAFI quando
+disponível — Senado: UG `020001`, Gestão `00001`). `dim_unidade_gestora`
+existe apenas como schema — tabela vazia até existir requisito
+funcional que justifique análise nesse nível de granularidade.
+
+### Dimensão `dim_fornecedor` — schema revisado (ADR-011)
+
+| Campo | Descrição |
+|---|---|
+| `cnpj_cpf_valor` | CNPJ em claro (14 dígitos) OU hash HMAC-SHA256 do CPF (11 dígitos) OU `NULL` se origem vazia |
+| `tipo_documento` | `CNPJ` \| `CPF` \| `INVALIDO` \| `NULL` |
+
+String vazia/nula nunca é hasheada — permanece `NULL`, evitando
+identidade de fornecedor fantasma. Substitui a antiga chave natural
+`cnpj_cpf_hash` (nome descontinuado — sugeria hash universal, o que
+deixou de ser verdade após ADR-011).
+
 ### Colunas de Auditoria SCD Type 2 (`dim_parlamentar`)
- 
+
 Toda dimensão SCD2 deve conter explicitamente:
- 
+
 | Coluna | Tipo | Descrição |
 |---|---|---|
 | `effective_date` | DATE | Data de início de vigência do registro |
 | `end_date` | DATE (nullable) | Data de fim de vigência; NULL se registro vigente |
 | `is_current` | BOOLEAN | Flag do registro vigente atual |
 | `surrogate_key` | BIGINT | Chave técnica interna, gerada por versão do registro |
- 
+
 Sem essas colunas explícitas, o histórico de mudanças (ex: troca de
 partido de um parlamentar) não é rastreável de forma confiável.
- 
-### Fatos
- 
-| Tabela | Grão | Métricas Principais |
-|---|---|---|
-| `fact_despesa` | 1 linha por despesa | `valor_liquido`, `valor_glosa` |
-| `fact_presenca` | 1 linha por parlamentar/sessão | `resultado`, `is_ausencia_injustificada` |
-| `fact_votacao` | 1 linha por parlamentar/votação | `voto`, `seguiu_partido` |
-| `fact_gastos_mensais` | Agregado mensal por parlamentar | `total_gasto`, `num_fornecedores` |
- 
+
+### Fatos (ADR-012 — modelo de constelação)
+
+> Cada tabela fato representa um único evento de negócio e um único
+> grão analítico. Fontes distintas originam fatos distintas; as
+> dimensões corporativas (`dim_data`, `dim_orgao`,
+> `dim_unidade_gestora`) são compartilhadas entre todas elas.
+
+| Tabela | Grão | Métricas Principais | Fontes |
+|---|---|---|---|
+| `fact_despesa` | 1 linha por despesa parlamentar | `valor_liquido`, `valor_glosa` | Câmara, Senado |
+| `fact_emenda` | 1 linha por emenda parlamentar | `valor_empenhado`, `valor_liquidado`, `valor_pago` | CGU |
+| `fact_cartao_cpgf` | 1 linha por transação de cartão corporativo | `valor_transacao` | CGU |
+| `fact_presenca` | 1 linha por parlamentar/sessão | `resultado`, `is_ausencia_injustificada` | Câmara |
+| `fact_votacao` | 1 linha por parlamentar/votação | `voto`, `seguiu_partido` | Câmara |
+| `fact_gastos_mensais` | Agregado mensal por parlamentar | `total_gasto`, `num_fornecedores` | derivado |
+
+**FKs institucionais e regras de nullability (ADR-010, ADR-012):**
+
+| Tabela | `id_orgao` | `id_unidade_gestora` | `id_parlamentar` | `id_fornecedor` |
+|---|---|---|---|---|
+| `fact_despesa` | NOT NULL | nullable — inativo v1, fonte não fornece | NOT NULL | NOT NULL |
+| `fact_emenda` | NOT NULL | nullable | **NOT NULL** — identidade do evento | — (não aplicável ao grão) |
+| `fact_cartao_cpgf` | NOT NULL | **NOT NULL** — CGU sempre fornece `unidadeGestora.codigo` | **não referenciada** — ver nota | nullable — via CNPJ do estabelecimento |
+
+> **Nota — `fact_cartao_cpgf` e `dim_parlamentar` (ADR-012):**
+> `fact_cartao_cpgf` não referencia `dim_parlamentar` na versão
+> inicial da arquitetura. O portador de um cartão CPGF pertence
+> estruturalmente ao Poder Executivo — um portador eventualmente
+> identificável como parlamentar é coincidência de dados, não
+> relação de domínio, e não justifica FK opcional. Caso um
+> requisito futuro exija esse cruzamento, a associação deve ser
+> implementada via tabela bridge (ex: `bridge_cartao_parlamentar`),
+> preservando o grão original da fato.
+
+> **Nota — nullable não é regra universal:** a nullability de
+> `id_unidade_gestora` depende exclusivamente da disponibilidade da
+> informação na fonte, não de um princípio arquitetural único. Em
+> `fact_despesa` é nullable porque Câmara/Senado ainda não fornecem
+> essa informação; em `fact_cartao_cpgf` é NOT NULL porque a CGU já
+> entrega `unidadeGestora.codigo` nativamente.
+
+### Metadados de Reprodutibilidade (RF-12)
+
+Toda fato carrega `run_id`, `pipeline_version`, `execution_timestamp`
+e `source_version`. Estratégia completa de watermark por fonte e
+reprodutibilidade documentada em `docs/engineering/versionamento.md`.
+
 ### Tabelas Analíticas (Gold)
- 
+
 | Tabela | Propósito |
 |---|---|
 | `supplier_concentration` | Índice HHI por fornecedor/parlamentar |
@@ -428,7 +505,7 @@ partido de um parlamentar) não é rastreável de forma confiável.
 | `network_edges` | Arestas do grafo parlamentar-fornecedor |
 | `network_nodes` | Nós com métricas de centralidade |
 | `risk_scores` | Score composto de risco por parlamentar |
- 
+
 ---
  
 ## 8. Camada Semântica — Métricas Padronizadas
@@ -601,7 +678,11 @@ GET  /agent/context
  
 - **PEP8** obrigatório
 - **Type Hints** em todas as funções
-- **Docstrings** no padrão Google Style
+- **Docstrings e comentários em português brasileiro** — variáveis,
+  funções, classes e nomes de arquivos permanecem em inglês
+  (decisão Sprint 1, refina a convenção original "código sempre em
+  inglês"). Estrutura de docstring segue padrão Google Style,
+  apenas traduzida.
 - **Logging estruturado** em todos os módulos (`structlog`)
 - **Configuração externa** via `config/*.yaml` e `.env` — zero hardcode
 - **Retry automático** com `tenacity` (exponential backoff)
@@ -650,4 +731,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.0 — Sprint 0B concluída (stack, diagramas, diretórios, ADRs 001-009, schemas reais das 3 fontes documentados e validados)*
+*Versão atual: 1.1 — Sprint 1 em andamento (modelo dimensional completo com constelação de fatos, ADRs 001-012, contratos de interface, ER e estratégia de versionamento)*
