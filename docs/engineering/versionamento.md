@@ -11,7 +11,7 @@
 ## 1. Metadados obrigatórios por carga (RF-12)
 
 Todo registro persistido em qualquer camada (Bronze, Silver, Gold)
-carrega os quatro campos definidos em `pipeline/schemas/common.py::LoadMetadata`:
+carrega os quatro campos definidos em `pipeline/contracts.py::LoadMetadata`:
 
 | Campo | Tipo | Gerado por | Descrição |
 |---|---|---|---|
