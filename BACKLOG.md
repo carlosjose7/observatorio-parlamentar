@@ -81,5 +81,29 @@
 
 ---
 
+## Sprint 2 — Pipeline Bronze
+
+☑ Implementar extração e persistência em Bronze das três fontes (`pipeline/camara`, `pipeline/senado`, `pipeline/transparencia`) — Parquet + MinIO local, retry tenacity (ADR-009)
+☑ Deduplicação por chave natural na escrita (read-merge-write, keep-first-seen) e `pipeline_runs` não-particionado por run_id
+☑ Watermark em store isolável; persistido **após** escrita bem-sucedida (versionamento.md §2.1)
+☑ Carga histórica na primeira execução (watermark vazio) com `carga_historica` por fonte em `config/sources.yaml`
+☑ Modo de validação (`validacao:` em `config/pipeline.yaml`) — janela truncada + watermark em namespace isolado (Opção B)
+☑ Smoke tests 15/15 passando (backfill multi-ano, cartões cruza-anos, isolamento de watermark)
+
+### Observações de implementação
+
+☑ **Senado — carga histórica (resolvida).** Durante a implementação notou-se que a extração
+   era "só o ano corrente", sem parâmetro de backfill isolado na fonte (ADR-009). Isso já não
+   se aplica: a Sprint 2 provê backfill/backfil histórico via `carga_historica.ano_inicio` do
+   Senado, que varre os anos até o corrente na primeira carga. Nota deprecada.
+
+☐ **CGU Emendas — rollover de ano após o backfill (a conferir).** O campo de watermark de
+   emendas guarda o último ano processado. Com a janela virando lista de anos truncada, o
+   problema lexicográfico do `max()` já não se aplica (ano é só número), mas vale confirmar o
+   comportamento pós-backfill: ao virar o ano seguinte, o incremental deve avançar para o ano
+   novo (e não reprocessar indefinidamente o ano do watermark).
+
+---
+
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
 *Versão atual: 0.1 — criado retroativamente na Sprint 0A para registrar o histórico de itens já concluídos.*
