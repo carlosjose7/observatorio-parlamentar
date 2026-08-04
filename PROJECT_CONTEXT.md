@@ -671,6 +671,15 @@ GET  /agent/context
 | Constantes | `UPPER_SNAKE_CASE` | `MAX_RETRY_ATTEMPTS` |
 | Arquivos Python | `snake_case.py` | `extract.py` |
 | Branches Git | `sprint/{numero}-{descricao}` | `sprint/2-bronze-extract` |
+
+**Ciclo de vida de branches:**
+
+- **Permanentes:** `main` (estável/produção) e `develop` (integração).
+- **Temporárias:** branches de sprint (`sprint/{numero}-{descricao}`) são
+  criadas no início de cada sprint para isolar o trabalho em andamento e são
+  **deletadas após o merge em `develop`** com aprovação (ciclo da sprint,
+  `sprint_rules.md`). Não acumular branches fechadas — o histórico permanece
+  no `git log`. Exceções só com justificativa registrada em ADR.
  
 ---
  
