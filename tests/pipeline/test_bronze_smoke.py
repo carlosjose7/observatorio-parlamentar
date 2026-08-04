@@ -16,9 +16,9 @@ import pandas as pd
 import pytest
 
 from pipeline.bronze import run_pipeline
-from pipeline.config import RetryDefaultSettings
+from pipeline.config import RetryDefaultSettings, get_pipeline, get_sources
 from pipeline.storage import LocalParquetStorage
-from pipeline.watermark import JsonFileStore, WatermarkState
+from pipeline.watermark import JsonFileStore, NamespaceWatermarkStore, WatermarkState
 
 RETRY_TESTS = RetryDefaultSettings(
     max_tentativas=1,
@@ -98,6 +98,7 @@ def _cliente_mock(
     senado_respostas: list[str] | None = None,
     emenda_respostas: list[list[dict]] | None = None,
     cartoes_requisicoes: list | None = None,
+    cartao_dinamico: bool = False,
 ) -> httpx.Client:
     """Cliente httpx com transporte mockado (nenhuma requisição de rede)."""
     senado_seq = list(senado_respostas or [])
@@ -132,7 +133,10 @@ def _cliente_mock(
             pagina = int(params.get("pagina", 1))
             if cartoes_requisicoes is not None:
                 cartoes_requisicoes.append(dict(params))
-            return httpx.Response(200, json=[CARTAO] if pagina == 1 else [])
+            cartao = CARTAO
+            if cartao_dinamico:
+                cartao = {**CARTAO, "mesExtrato": params.get("mesExtratoInicio", CARTAO["mesExtrato"])}
+            return httpx.Response(200, json=[cartao] if pagina == 1 else [])
         return httpx.Response(404, json={"erro": "rota não encontrada"})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
@@ -144,6 +148,39 @@ def ambiente(tmp_path):
         "storage": LocalParquetStorage(tmp_path / "bronze"),
         "store": JsonFileStore(tmp_path / "watermarks"),
     }
+
+
+def _fontes_com_janelas(ano: int = 2026, mes: str = "07/2026"):
+    """Cópia de `sources.yaml` com janelas históricas recentes.
+
+    `get_sources()` é cacheado e usado pelo módulo bronze via import; a cópia
+    profunda + monkeypatch evita vazamento de estado entre testes.
+    """
+    fontes = get_sources().model_copy(deep=True)
+    fontes.senado.carga_historica.ano_inicio = ano
+    fontes.transparencia.carga_historica["emendas"].ano_inicio = ano
+    fontes.transparencia.carga_historica["cartoes"].mes_inicio = mes
+    return fontes
+
+
+@pytest.fixture(autouse=True)
+def _janelas_recentes(monkeypatch):
+    """Mantém os testes existentes no período corrente (1 período por fonte)."""
+    import pipeline.bronze as bronze
+
+    monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas())
+
+
+def _pipeline_com_validacao(limite_periodos: int | None = 1):
+    """Cópia de `pipeline.yaml` com o modo validação habilitado.
+
+    Usa `pipeline.config.get_pipeline` (não-patchado) para evitar recursão
+    quando `pipeline.bronze.get_pipeline` já foi substituído.
+    """
+    cfg = get_pipeline().model_copy(deep=True)
+    cfg.validacao.habilitado = True
+    cfg.validacao.limite_periodos = limite_periodos
+    return cfg
 
 
 def _ler_parquet(ambiente, *partes):
@@ -302,3 +339,82 @@ def test_config_deduplicacao_carregada():
     assert fontes.senado.deduplicacao.escopo == "ano"
     assert fontes.transparencia.deduplicacao["emendas"].campo == "codigo_emenda"
     assert fontes.transparencia.deduplicacao["cartoes"].campo == "id"
+
+
+def test_config_carga_historica_carregada():
+    fontes = get_sources()
+    assert fontes.camara.carga_historica.data_inicio == "2015-01-01"
+    assert fontes.senado.carga_historica.ano_inicio == 2015
+    assert fontes.transparencia.carga_historica["emendas"].ano_inicio == 2020
+    assert fontes.transparencia.carga_historica["cartoes"].mes_inicio == "01/2013"
+
+
+def test_backfill_senado_multi_ano(ambiente, monkeypatch):
+    import pipeline.bronze as bronze
+
+    monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(ano=2025))
+    csv_2025 = CSV_SENADO.replace("2026;", "2025;").replace(
+        "ULTIMA ATUALIZACAO: 2026-07-01", "ULTIMA ATUALIZACAO: 2025-12-01"
+    )
+    client = _cliente_mock(senado_respostas=[csv_2025, CSV_SENADO])
+
+    run = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+    )
+
+    assert run.status == "success"
+    assert run.watermark_senado == "2026"  # maior ano processado
+    mes2025 = _ler_parquet(ambiente, "senado", "ano=2025", "mes=1")
+    mes2026 = _ler_parquet(ambiente, "senado", "ano=2026", "mes=1")
+    assert mes2025 is not None and mes2025.iloc[0]["ano"] == 2025
+    assert mes2026 is not None and mes2026.iloc[0]["ano"] == 2026
+
+
+def test_backfill_cartoes_multi_mes(ambiente, monkeypatch):
+    import pipeline.bronze as bronze
+
+    monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(mes="07/2026"))
+    client = _cliente_mock(cartao_dinamico=True)
+
+    run = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+    )
+
+    assert run.status == "success"
+    assert run.watermark_cgu_cartao == "08/2026"  # maior mês processado (hoje é 08/2026)
+    mes7 = _ler_parquet(ambiente, "transparencia_cartoes", "ano=2026", "mes=7")
+    mes8 = _ler_parquet(ambiente, "transparencia_cartoes", "ano=2026", "mes=8")
+    assert mes7 is not None and len(mes7) == 1
+    assert mes8 is not None and len(mes8) == 1
+
+
+def test_validacao_limita_janela_e_isola_watermark(ambiente, monkeypatch):
+    import pipeline.bronze as bronze
+
+    monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(ano=2025))
+    monkeypatch.setattr(bronze, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=1))
+    csv_2025 = CSV_SENADO.replace("2026;", "2025;")
+    client = _cliente_mock(senado_respostas=[csv_2025])
+
+    run = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+    )
+
+    assert run.status == "success"
+    # Só o primeiro período da janela (2025→2026 truncado para 2025)
+    assert _ler_parquet(ambiente, "senado", "ano=2025", "mes=1") is not None
+    assert _ler_parquet(ambiente, "senado", "ano=2026", "mes=1") is None
+    assert run.watermark_senado == "2025"
+
+    # Watermark gravado em namespace isolado — store real intacto
+    assert ambiente["store"].get("watermark_senado").last_watermark is None
+    assert ambiente["store"].get("validacao:watermark_senado").last_watermark == "2025"
+
+
+def test_namespace_watermark_store_round_trip(tmp_path):
+    base = JsonFileStore(tmp_path / "wm")
+    isolado = NamespaceWatermarkStore(base, namespace="validacao")
+
+    isolado.set("watermark_senado", WatermarkState(last_watermark="2025"))
+    assert isolado.get("watermark_senado").last_watermark == "2025"
+    assert base.get("watermark_senado").last_watermark is None  # store real intacto

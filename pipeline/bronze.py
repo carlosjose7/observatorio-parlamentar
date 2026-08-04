@@ -3,7 +3,10 @@
 Para cada fonte: lê o watermark do store, extrai (extractor puro por fonte),
 grava Parquet com merge/deduplicação por chave natural (read-merge-write,
 versionamento.md §2.2/§2.3) e persiste o novo watermark **após** a escrita
-bem-sucedida (§2.1). Ao final, grava a linha de controle `pipeline_runs`.
+bem-sucedida (§2.1). Na primeira carga (watermark vazio) aplica a janela
+histórica de `carga_historica` (config/sources.yaml); no modo validação
+(`validacao:` em config/pipeline.yaml) a janela é truncada e o watermark é
+gravado em namespace isolado (Opção B). Ao final, grava `pipeline_runs`.
 
 Entrada usada pelas tasks do Airflow DAG (hoje placeholder): a task instancia
 `AirflowVariableStore` e chama `run_pipeline`. Localmente (dev/testes) usa-se
@@ -33,7 +36,12 @@ from pipeline.senado import extract as senado_extract
 from pipeline.storage import Storage, criar_storage
 from pipeline.transparencia import extract as transparencia_extract
 from pipeline.utils import records_to_dataframe
-from pipeline.watermark import JsonFileStore, WatermarkState, WatermarkStore
+from pipeline.watermark import (
+    JsonFileStore,
+    NamespaceWatermarkStore,
+    WatermarkState,
+    WatermarkStore,
+)
 
 logger = structlog.get_logger()
 
@@ -96,6 +104,56 @@ def _agrupar_por_particao(fonte: str, registros: list, escopo: str):
         yield rel, recs
 
 
+def _anos_historico(ano_inicio: int, run_meta: LoadMetadata) -> list[int]:
+    """Anos de `ano_inicio` até o ano da execução, inclusive."""
+    return list(range(ano_inicio, run_meta.execution_timestamp.year + 1))
+
+
+def _meses_historico(mes_inicio: str, run_meta: LoadMetadata) -> list[str]:
+    """Meses `MM/AAAA` de `mes_inicio` até o mês da execução, inclusive."""
+    try:
+        mes_i, ano_i = mes_inicio.split("/")
+        inicio = (int(ano_i), int(mes_i))
+    except ValueError as exc:
+        raise ValueError(
+            f"mes_inicio inválido: {mes_inicio!r} (esperado MM/AAAA)"
+        ) from exc
+    fim = (run_meta.execution_timestamp.year, run_meta.execution_timestamp.month)
+    meses: list[str] = []
+    ano, mes = inicio
+    while (ano, mes) <= fim:
+        meses.append(f"{mes:02d}/{ano}")
+        mes += 1
+        if mes > 12:
+            mes, ano = 1, ano + 1
+    return meses
+
+
+def _truncar_validacao(periodos: list) -> list:
+    """Trunca a janela histórica para `limite_periodos` no modo validação."""
+    validacao = get_pipeline().validacao
+    if validacao.habilitado and validacao.limite_periodos is not None:
+        return periodos[: validacao.limite_periodos]
+    return periodos
+
+
+def _agregar_resultados(resultados: list[ExtractResult]) -> ExtractResult:
+    """Combina extrações de múltiplos períodos (backfill) em um só resultado.
+
+    O novo watermark é o maior período processado; registros são concatenados
+    (a deduplicação por chave natural acontece na escrita, storage.py).
+    """
+    if not resultados:
+        return ExtractResult()
+    records = [registro for res in resultados for registro in res.records]
+    topo = max(resultados, key=lambda res: res.new_watermark or "")
+    return ExtractResult(
+        records=records,
+        new_watermark=topo.new_watermark,
+        source_version=topo.source_version,
+    )
+
+
 def _extrair(
     fonte: str,
     client: httpx.Client,
@@ -103,19 +161,53 @@ def _extrair(
     run_meta: LoadMetadata,
     retry_settings: RetryDefaultSettings | None,
 ) -> ExtractResult:
+    """Extrai uma fonte, aplicando a janela de carga histórica no primeiro run.
+
+    Primeira carga (watermark vazio): Câmara filtra desde `data_inicio`;
+    Senado, emendas e cartões varrem os períodos de `carga_historica` até o
+    período corrente (ano ou mês), truncados para `limite_periodos` no modo
+    validação. Execuções seguintes seguem o fluxo incremental de cada fonte.
+    """
     fontes = get_sources()
     if fonte == "camara":
+        filtro = estado.last_watermark
+        ch = fontes.camara.carga_historica
+        if filtro is None and ch and ch.data_inicio:
+            filtro = ch.data_inicio
         return camara_extract.extract_despesas(
-            fontes.camara, client, estado.last_watermark, run_meta, retry_settings
+            fontes.camara, client, filtro, run_meta, retry_settings
         )
+
     if fonte == "senado":
-        return senado_extract.extract_ceaps(fontes.senado, client, run_meta, retry_settings)
+        cfg = fontes.senado
+        ch = cfg.carga_historica
+        if estado.last_watermark is None and ch and ch.ano_inicio is not None:
+            anos = _truncar_validacao(_anos_historico(ch.ano_inicio, run_meta))
+            return _agregar_resultados(
+                [senado_extract.extract_ceaps(cfg, client, run_meta, retry_settings, ano=a) for a in anos]
+            )
+        return senado_extract.extract_ceaps(cfg, client, run_meta, retry_settings)
+
+    cfg = fontes.transparencia
     if fonte == "transparencia_emendas":
+        ch = (cfg.carga_historica or {}).get("emendas")
+        if estado.last_watermark is None and ch and ch.ano_inicio is not None:
+            anos = _truncar_validacao(_anos_historico(ch.ano_inicio, run_meta))
+            return _agregar_resultados(
+                [transparencia_extract.extract_emendas(cfg, client, a, run_meta, retry_settings) for a in anos]
+            )
         return transparencia_extract.extract_emendas(
-            fontes.transparencia, client, estado.last_watermark, run_meta, retry_settings
+            cfg, client, int(estado.last_watermark) if estado.last_watermark else None, run_meta, retry_settings
+        )
+
+    ch = (cfg.carga_historica or {}).get("cartoes")
+    if estado.last_watermark is None and ch and ch.mes_inicio:
+        meses = _truncar_validacao(_meses_historico(ch.mes_inicio, run_meta))
+        return _agregar_resultados(
+            [transparencia_extract.extract_cartoes(cfg, client, m, run_meta, retry_settings) for m in meses]
         )
     return transparencia_extract.extract_cartoes(
-        fontes.transparencia, client, estado.last_watermark, run_meta, retry_settings
+        cfg, client, estado.last_watermark, run_meta, retry_settings
     )
 
 
@@ -172,6 +264,14 @@ def run_pipeline(
         storage = criar_storage()
     if store is None:
         store = JsonFileStore()
+
+    if get_pipeline().validacao.habilitado:
+        logger.warning(
+            "modo_validacao_ativado",
+            limite_periodos=get_pipeline().validacao.limite_periodos,
+            namespace="validacao",
+        )
+        store = NamespaceWatermarkStore(store, namespace="validacao")
 
     watermarks: dict[str, str | None] = {}
     fontes_com_erro: list[str] = []

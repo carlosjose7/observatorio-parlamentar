@@ -72,6 +72,30 @@ class JsonFileStore:
         caminho.write_text(state.model_dump_json(indent=2), encoding="utf-8")
 
 
+class NamespaceWatermarkStore:
+    """Wrapper que isola o estado de watermark sob um namespace.
+
+    Usado no modo de validação (Opção B): as chaves são prefixadas, então a
+    carga de validação nunca lê nem contamina o watermark de produção. Ex:
+    `watermark_senado` → `validacao:watermark_senado` (JsonFileStore grava em
+    `validacao_watermark_senado.json`; AirflowVariableStore usa a chave
+    prefixada como nome da Variable).
+    """
+
+    def __init__(self, base: WatermarkStore, namespace: str):
+        self._base = base
+        self._namespace = namespace
+
+    def _chave(self, key: str) -> str:
+        return f"{self._namespace}:{key}"
+
+    def get(self, key: str) -> WatermarkState:
+        return self._base.get(self._chave(key))
+
+    def set(self, key: str, state: WatermarkState) -> None:
+        self._base.set(self._chave(key), state)
+
+
 class AirflowVariableStore:
     """Armazena watermark em Airflow Variable — produção.
 
