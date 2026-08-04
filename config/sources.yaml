@@ -27,6 +27,9 @@ sources:
         parametro_filtro: "dataInicio"  # query param de filtro (API aceita dataInicio/dataFim)
         formato_data: "%Y-%m-%dT%H:%M:%S"  # ISO 8601, ex: 2024-07-03T00:00:00
         estrategia: "incremental"
+    deduplicacao:
+      campo: "cod_documento"            # GUID global (modelo Bronze, snake_case)
+      escopo: "ano_mes"
     siafi:
       ug_siafi: null  # pendência conhecida — ver BACKLOG.md, não bloqueia Sprint 2
 
@@ -40,7 +43,9 @@ sources:
     quote_char: "\""
     separador_decimal: ","
     formato_data: "%d/%m/%Y"
-    campo_deduplicacao: "COD_DOCUMENTO"
+    deduplicacao:
+      campo: "cod_documento"            # chave natural por ano — COD_DOCUMENTO
+      escopo: "ano"
     watermark:
       despesa_ceaps:
         # Sem watermark incremental — a fonte publica CSV anual completo (ADR-009)
@@ -86,5 +91,12 @@ sources:
         parametro_filtro_fim: "mesExtratoFim"  # endpoint exige período (até 12 meses) — inicio=fim=mês no incremental
         formato_data: "%m/%Y"
         estrategia: "incremental"
+    deduplicacao:
+      emendas:
+        campo: "codigo_emenda"          # chave natural por ano
+        escopo: "ano"
+      cartoes:
+        campo: "id"                     # chave nativa da CGU, única por mês
+        escopo: "ano_mes"
     separador_decimal: ","
     formato_data: "%d/%m/%Y"

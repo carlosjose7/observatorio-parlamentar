@@ -92,6 +92,20 @@ class SiafiCamaraSettings(_StrictModel):
     ug_siafi: str | None = None
 
 
+class DeduplicacaoSettings(_StrictModel):
+    """Deduplicação por chave natural na carga em Bronze (versionamento.md §2.2/§2.3).
+
+    `campo` é o nome do campo do modelo Bronze (snake_case) usado como chave
+    natural; `escopo` define o alcance de leitura da deduplicação:
+    `ano_mes` (padrão) lê apenas a partição `fonte/ano=A/mes=M`;
+    `ano` lê o ano inteiro (`fonte/ano=A/**`) para chaves únicas por ano
+    (Senado CEAPS por COD_DOCUMENTO, emendas CGU por codigoEmenda).
+    """
+
+    campo: str
+    escopo: str = "ano_mes"
+
+
 class CamaraSettings(_StrictModel):
     """Fonte: API Câmara dos Deputados (dadosabertos.camara.leg.br)."""
 
@@ -103,6 +117,7 @@ class CamaraSettings(_StrictModel):
     rate_limit: RateLimitCamaraSettings
     endpoints: dict[str, EndpointSettings]
     watermark: dict[str, WatermarkSettings]
+    deduplicacao: DeduplicacaoSettings
     siafi: SiafiCamaraSettings = Field(default_factory=SiafiCamaraSettings)
 
 
@@ -131,7 +146,7 @@ class SenadoSettings(_StrictModel):
     quote_char: str = '"'
     separador_decimal: str = ","
     formato_data: str = "%d/%m/%Y"
-    campo_deduplicacao: str
+    deduplicacao: DeduplicacaoSettings
     watermark: dict[str, WatermarkSettings]
     siafi: SiafiSenadoSettings
     execucao: ExecucaoSenadoSettings = Field(default_factory=ExecucaoSenadoSettings)
@@ -164,6 +179,7 @@ class TransparenciaSettings(_StrictModel):
     rate_limit: RateLimitTransparenciaSettings
     endpoints: dict[str, EndpointSettings]
     watermark: dict[str, WatermarkSettings]
+    deduplicacao: dict[str, DeduplicacaoSettings]
     separador_decimal: str = ","
     formato_data: str = "%d/%m/%Y"
 
