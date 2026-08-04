@@ -388,6 +388,24 @@ def test_backfill_cartoes_multi_mes(ambiente, monkeypatch):
     assert mes8 is not None and len(mes8) == 1
 
 
+def test_backfill_cartoes_cruza_anos_watermark_cronologico(ambiente, monkeypatch):
+    # Regressão: janela real de produção cruza anos (11/2025 → 08/2026).
+    # Um max() lexicográfico escolheria "12/2025" como watermark, travando o
+    # incremental em dezembro — o correto é o último período cronológico.
+    import pipeline.bronze as bronze
+
+    monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(mes="11/2025"))
+    client = _cliente_mock(cartao_dinamico=True)
+
+    run = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+    )
+
+    assert run.status == "success"
+    assert run.watermark_cgu_cartao == "08/2026"  # não "12/2025"
+    assert ambiente["store"].get("watermark_cgu_cartao").last_watermark == "08/2026"
+
+
 def test_validacao_limita_janela_e_isola_watermark(ambiente, monkeypatch):
     import pipeline.bronze as bronze
 
