@@ -47,3 +47,10 @@ pipeline:
   logging:
     nivel_env_var: "LOG_LEVEL"
     formato: "json"
+
+  # Modo de validação da carga inicial — NUNCA ativo em produção.
+  # Quando habilitado: janela histórica truncada para limite_periodos e
+  # watermark em namespace isolado (ver pipeline/config.py ValidacaoSettings).
+  validacao:
+    habilitado: false
+    limite_periodos: 2

@@ -50,23 +50,25 @@ def _construir_cartao(
 def extract_emendas(
     cfg: TransparenciaSettings,
     client: httpx.Client,
-    ultimo_ano: str | None,
+    ano: int | None,
     run_meta: LoadMetadata,
     retry_settings: RetryDefaultSettings | None = None,
 ) -> ExtractResult:
-    """Extrai as emendas do ano corrente (varredura completa das páginas).
+    """Extrai as emendas de um ano (varredura completa das páginas).
 
     Args:
         cfg: Configuração da fonte (`config/sources.yaml` → transparencia).
         client: Cliente HTTP compartilhado (injetável para testes).
-        ultimo_ano: Último ano processado, ou None para o ano corrente.
+        ano: Ano a extrair (carga histórica). None usa o ano da execução;
+            no modo incremental o orquestrador passa o último ano processado
+            (o dataset anual é republicado e a deduplicação absorve as novidades).
         run_meta: Metadados de carga (RF-12).
         retry_settings: Política de retry (tenacity) — override para testes.
 
     Returns:
         ExtractResult com os registros e o ano como novo watermark.
     """
-    ano = int(ultimo_ano) if ultimo_ano else run_meta.execution_timestamp.year
+    ano = int(ano) if ano else run_meta.execution_timestamp.year
     watermark_cfg = cfg.watermark["emendas"]
     endpoint = cfg.endpoints["emendas"]
     url = cfg.base_url + endpoint.path
@@ -98,7 +100,7 @@ def extract_emendas(
 def extract_cartoes(
     cfg: TransparenciaSettings,
     client: httpx.Client,
-    ultimo_mes: str | None,
+    mes: str | None,
     run_meta: LoadMetadata,
     retry_settings: RetryDefaultSettings | None = None,
 ) -> ExtractResult:
@@ -107,15 +109,16 @@ def extract_cartoes(
     Args:
         cfg: Configuração da fonte (`config/sources.yaml` → transparencia).
         client: Cliente HTTP compartilhado (injetável para testes).
-        ultimo_mes: Último `mesExtrato` (MM/AAAA) consolidado, ou None para
-            o mês corrente da execução.
+        mes: `mesExtrato` (MM/AAAA) a extrair (carga histórica), ou None
+            para o mês corrente da execução; no modo incremental o
+            orquestrador passa o último mês consolidado.
         run_meta: Metadados de carga (RF-12).
         retry_settings: Política de retry (tenacity) — override para testes.
 
     Returns:
         ExtractResult com os registros e o `mesExtrato` como novo watermark.
     """
-    mes = ultimo_mes or run_meta.execution_timestamp.strftime("%m/%Y")
+    mes = mes or run_meta.execution_timestamp.strftime("%m/%Y")
     watermark_cfg = cfg.watermark["cartoes"]
     endpoint = cfg.endpoints["cartoes"]
     url = cfg.base_url + endpoint.path

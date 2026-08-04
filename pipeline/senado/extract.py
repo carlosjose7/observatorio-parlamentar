@@ -83,6 +83,7 @@ def extract_ceaps(
     client: httpx.Client,
     run_meta: LoadMetadata,
     retry_settings: RetryDefaultSettings | None = None,
+    ano: int | None = None,
 ) -> ExtractResult:
     """Baixa e parseia o CSV anual de despesas CEAPS.
 
@@ -92,11 +93,13 @@ def extract_ceaps(
         run_meta: Metadados de carga (RF-12); `source_version` é o nome do
             arquivo CSV (versionamento.md §3).
         retry_settings: Política de retry (tenacity) — override para testes.
+        ano: Ano do CSV a baixar (carga histórica). None usa o ano da
+            execução.
 
     Returns:
         ExtractResult com os registros e o ano do CSV como novo watermark.
     """
-    ano = run_meta.execution_timestamp.year
+    ano = ano or run_meta.execution_timestamp.year
     url = _url_csv(cfg, ano)
     logger.info("baixando_csv_senado", url=url, ano=ano)
     texto = request_text(client, url, cfg.encoding, retry_settings)

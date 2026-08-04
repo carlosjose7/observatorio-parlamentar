@@ -106,6 +106,18 @@ class DeduplicacaoSettings(_StrictModel):
     escopo: str = "ano_mes"
 
 
+class CargaHistoricaSettings(_StrictModel):
+    """Início da janela histórica para a primeira carga (watermark vazio).
+
+    Usado apenas quando não há watermark consolidado. Após a primeira carga,
+    a extração é incremental/por período corrente.
+    """
+
+    data_inicio: str | None = None  # camara — ex: "2015-01-01" (filtro dataInicio)
+    ano_inicio: int | None = None  # senado e emendas — ex: 2015
+    mes_inicio: str | None = None  # cartoes — ex: "01/2013" (MM/AAAA)
+
+
 class CamaraSettings(_StrictModel):
     """Fonte: API Câmara dos Deputados (dadosabertos.camara.leg.br)."""
 
@@ -118,6 +130,7 @@ class CamaraSettings(_StrictModel):
     endpoints: dict[str, EndpointSettings]
     watermark: dict[str, WatermarkSettings]
     deduplicacao: DeduplicacaoSettings
+    carga_historica: CargaHistoricaSettings | None = None
     siafi: SiafiCamaraSettings = Field(default_factory=SiafiCamaraSettings)
 
 
@@ -147,6 +160,7 @@ class SenadoSettings(_StrictModel):
     separador_decimal: str = ","
     formato_data: str = "%d/%m/%Y"
     deduplicacao: DeduplicacaoSettings
+    carga_historica: CargaHistoricaSettings | None = None
     watermark: dict[str, WatermarkSettings]
     siafi: SiafiSenadoSettings
     execucao: ExecucaoSenadoSettings = Field(default_factory=ExecucaoSenadoSettings)
@@ -180,6 +194,7 @@ class TransparenciaSettings(_StrictModel):
     endpoints: dict[str, EndpointSettings]
     watermark: dict[str, WatermarkSettings]
     deduplicacao: dict[str, DeduplicacaoSettings]
+    carga_historica: dict[str, CargaHistoricaSettings] | None = None
     separador_decimal: str = ","
     formato_data: str = "%d/%m/%Y"
 
@@ -264,6 +279,19 @@ class LoggingSettings(_StrictModel):
     formato: str = "json"
 
 
+class ValidacaoSettings(_StrictModel):
+    """Modo de validação da carga inicial (nunca ativo em produção).
+
+    Quando `habilitado`, a janela histórica inicial é truncada para
+    `limite_periodos` períodos (anos ou meses) e o estado de watermark é
+    gravado em namespace isolado — valida as cargas com poucos dados sem
+    contaminar o store real. O modo é sinalizado em log.
+    """
+
+    habilitado: bool = False
+    limite_periodos: int | None = Field(default=None, ge=1)
+
+
 class PipelineSettings(_StrictModel):
     """Configuração de runtime do pipeline."""
 
@@ -274,6 +302,7 @@ class PipelineSettings(_StrictModel):
     versionamento: VersionamentoSettings = Field(default_factory=VersionamentoSettings)
     retry_default: RetryDefaultSettings = Field(default_factory=RetryDefaultSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    validacao: ValidacaoSettings = Field(default_factory=ValidacaoSettings)
 
 
 # ── .env (segredos e variáveis de ambiente) ──────────────────────
