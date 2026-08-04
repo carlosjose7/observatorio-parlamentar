@@ -140,13 +140,17 @@ def _truncar_validacao(periodos: list) -> list:
 def _agregar_resultados(resultados: list[ExtractResult]) -> ExtractResult:
     """Combina extrações de múltiplos períodos (backfill) em um só resultado.
 
-    O novo watermark é o maior período processado; registros são concatenados
-    (a deduplicação por chave natural acontece na escrita, storage.py).
+    O novo watermark é o **último** período da lista de entrada — que é
+    cronológica por construção (`_anos_historico`/`_meses_historico`), não
+    lexicográfica. Comparar strings com `max()` quebraria para `MM/AAAA`
+    (ex: "12/2025" > "08/2026"), deixando o incremental preso em dezembro.
+    Registros são concatenados (a deduplicação por chave natural acontece na
+    escrita, storage.py).
     """
     if not resultados:
         return ExtractResult()
     records = [registro for res in resultados for registro in res.records]
-    topo = max(resultados, key=lambda res: res.new_watermark or "")
+    topo = resultados[-1]
     return ExtractResult(
         records=records,
         new_watermark=topo.new_watermark,
