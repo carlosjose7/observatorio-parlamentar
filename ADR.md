@@ -651,3 +651,155 @@ Consequências:
   coincidência de dados em vez de relação de domínio.
 
 ---
+
+ADR-013
+Título: Fronteira de validação entre Pydantic e Pandera (Bronze/Silver)
+
+Status:
+Aceito
+
+Contexto:
+`pipeline/contracts.py` e os `schemas.py` por fonte (Pydantic) já
+validam estrutura e tipo por registro individual desde a Sprint 1,
+na extração. `sprint_rules` exige adicionalmente Pandera na Sprint 3
+("validações com Pandera"), sem que a fronteira entre as duas
+camadas estivesse definida — risco de sobreposição de
+responsabilidade ou de uma delas se tornar redundante.
+
+Decisão:
+Manter as duas camadas com responsabilidades complementares, não
+substitutas:
+1. Pydantic (já implementado) continua validando registro individual
+   no momento da extração — tipo, presença de campo obrigatório,
+   parsing inicial.
+2. Pandera valida o DataFrame agregado no momento da carga Silver —
+   schema por tabela (`silver_despesa`, `silver_parlamentar`, etc.),
+   cobrindo regras que operam sobre a coluna/lote inteiro e que
+   Pydantic não expressa bem: `valor_liquido >= 0`, unicidade
+   pós-normalização da chave de negócio, datas em intervalo
+   plausível (ex: não anterior a 2015, não futura).
+3. Registros que falham no gate Pandera vão para quarentena
+   (partição/log separado) — não são descartados silenciosamente,
+   nem derrubam a execução do pipeline.
+
+Consequências:
+- Nenhuma reversão da decisão da Sprint 1 (`pipeline/contracts.py`
+  permanece como está).
+- Exige definir, por tabela Silver, o schema Pandera correspondente
+  antes da implementação de `pipeline/quality.py`.
+- Quarentena de registros inválidos precisa de local de persistência
+  definido (ex: `data/silver/_quarantine/`) — detalhar na
+  implementação.
+- Falhas de parsing (ver ADR-016) são responsabilidade deste gate
+  detectar e reportar, não do parser lançar exceção.
+
+---
+
+ADR-014
+Título: Deduplicação independente por camada (defesa em profundidade)
+
+Status:
+Aceito
+
+Contexto:
+A Bronze já deduplica na escrita (read-merge-write, keep-first-seen)
+pela chave natural bruta de cada fonte (Sprint 2). Levantou-se a
+dúvida se a Silver poderia herdar essa garantia sem dedup próprio.
+Dois fatores pesaram contra essa suposição: (1) a chave natural bruta
+usada na Bronze não é necessariamente a mesma chave de negócio após
+normalização (ex: CNPJ/CPF formatado vs. limpo); (2) o projeto já
+identificou um bug real de suposição indevida sobre garantia de
+camada anterior — o watermark de cartões usando `max()` lexicográfico
+sobre `MM/AAAA` (Sprint 2).
+
+Decisão:
+A Silver implementa deduplicação própria e independente, pela chave
+de negócio do grão dimensional definido *após* a normalização
+(datas parseadas, CNPJ/CPF limpo) — não reaproveita nem assume a
+deduplicação da Bronze. Cada camada do medalhão é responsável por
+garantir sua própria integridade de grão.
+
+Consequências:
+- Cobre overlap entre partições Bronze de execuções diferentes, que
+  a dedup da Bronze (por execução/chave bruta) não necessariamente
+  cobre.
+- Exige definir explicitamente a chave de negócio de dedup por
+  tabela Silver na implementação (ex: `silver_despesa`:
+  fonte + numDocumento normalizado + data).
+- Custo adicional de lógica e testes por camada, aceito como
+  trade-off de robustez (padrão consolidado em arquitetura
+  medalhão).
+
+---
+
+ADR-015
+Título: Persistência estruturada do Data Quality Report
+
+Status:
+Aceito
+
+Contexto:
+`sprint_rules` exige "Data Quality Report" como entregável da
+Sprint 3, sem formato definido. `PROJECT_CONTEXT.md §11` já lista o
+endpoint `GET /qualidade/relatorio` (Sprint 6) e o scaffold do
+dashboard já reserva `dashboard/pages/09_qualidade.py` (Sprint 7) —
+ambos consumidores futuros do relatório.
+
+Decisão:
+O Data Quality Report é persistido de forma estruturada em tabela
+DuckDB (`data_quality_report`), particionada por `run_id`, contendo
+por tabela/execução: contagem de registros válidos/quarentena,
+regras Pandera violadas, percentual de nulos por campo crítico e
+timestamp de execução. Geração de HTML fica reservada para a Sprint
+de documentação automática (RF-07), que poderá consumir esta mesma
+tabela — não implementada nesta sprint.
+
+Consequências:
+- `GET /qualidade/relatorio` (Sprint 6) e
+  `dashboard/pages/09_qualidade.py` (Sprint 7) consomem a tabela
+  diretamente, sem necessidade de reprocessamento ou parsing de
+  HTML.
+- Nenhum artefato HTML é gerado na Sprint 3 — não bloqueia o
+  fechamento da sprint, mas deve constar como escopo futuro
+  explícito em `BACKLOG.md` (RF-07).
+- Schema da tabela `data_quality_report` deve ser adicionado a
+  `docs/data/data_dictionary.md` na implementação.
+
+---
+
+ADR-016
+Título: Módulo dedicado de normalização multi-fonte
+
+Status:
+Aceito
+
+Contexto:
+As três fontes de dados divergentes de data e valor monetário
+(já documentado em `data_dictionary.md §3`): Câmara usa ISO 8601 e
+float nativo; Senado e CGU usam DD/MM/AAAA e string pt-BR (vírgula
+decimal, CGU com separador de milhar). Sem um módulo dedicado, a
+lógica de parsing seria duplicada nos três `transform.py`
+(`camara/`, `senado/`, `transparencia/`).
+
+Decisão:
+Criar `pipeline/normalize.py` com funções puras e testáveis
+isoladamente (`parse_date_multi_format`, `parse_decimal_ptbr`,
+`clean_document_number`, entre outras conforme necessidade),
+importadas pelos três `transform.py`. Valores não-parseáveis
+resultam em `NULL`/`NaT` + log estruturado — nunca lançam exceção
+que interrompa o pipeline; a detecção e o reporte de falhas de
+parsing são responsabilidade do gate Pandera (ADR-013), não do
+parser.
+
+Consequências:
+- Elimina duplicação de lógica de parsing entre as três fontes.
+- `pipeline/utils.py` permanece coeso como infraestrutura (retry,
+  logging), sem lógica de domínio.
+- `pipeline/normalize.py` é dependência direta dos três
+  `transform.py` — cobertura de testes unitários isolada é
+  pré-requisito antes da integração (Sprint 8 formaliza, mas testes
+  básicos devem acompanhar a implementação da Sprint 3).
+- Qualquer novo formato de fonte futura (ex: assembleias estaduais)
+  reaproveita este módulo, evitando nova duplicação.
+
+---

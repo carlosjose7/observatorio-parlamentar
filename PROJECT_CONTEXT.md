@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 2 (Pipeline Bronze implementado — extração, persistência Parquet, watermark, `pipeline_runs`, config ADR-008)
+> Última atualização: Sprint 3 (Silver + Qualidade — normalização multi-fonte, Pandera, Data Quality Report; ADRs 013-016)
  
 ---
  
@@ -255,7 +255,7 @@ observatorio-parlamentar/
 │   ├── Dockerfile
 │   ├── dependencies.py               # Sprint 6
 │   └── main.py
-├── pipeline/                         # ETL (Sprint 2 parcial — Bronze implementado; Silver/Gold, 3-4)
+├── pipeline/                         # ETL (Sprint 3 parcial — Bronze concluído; Silver em andamento; Gold, 4)
 │   ├── camara/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
@@ -282,6 +282,7 @@ observatorio-parlamentar/
 │   ├── runs.py                       # Sprint 2
 │   ├── utils.py
 │   ├── config.py
+│   ├── normalize.py                  # Sprint 3
 │   ├── silver.py                     # Sprint 3
 │   ├── gold.py                       # Sprint 4
 │   ├── quality.py                    # Sprint 3
@@ -747,4 +748,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.1 — Sprint 1 em andamento (modelo dimensional completo com constelação de fatos, ADRs 001-012, contratos de interface, ER e estratégia de versionamento)*
+*Versão atual: 1.2 — Sprint 3 em andamento (normalização multi-fonte, validação Pandera e Data Quality Report; ADRs 001-016)*

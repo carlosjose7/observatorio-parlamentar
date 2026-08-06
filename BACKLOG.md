@@ -105,5 +105,25 @@
 
 ---
 
+## Sprint 3 — Pipeline Silver e Qualidade
+
+☐ ADR-013 — Fronteira de validação Pydantic vs. Pandera (registro individual vs. DataFrame agregado; quarentena de inválidos)
+☐ ADR-014 — Deduplicação independente por camada (Silver deduplica pela chave de negócio pós-normalização, não assume a Bronze)
+☐ ADR-015 — Data Quality Report persistido em tabela estruturada (`data_quality_report` particionada por `run_id`)
+☐ ADR-016 — Módulo dedicado de normalização multi-fonte (`pipeline/normalize.py`)
+☐ Pipeline Silver — normalização, deduplicação e gate Pandera por tabela (`silver_despesa`, `silver_parlamentar`, etc.)
+☐ Quarentena de registros inválidos (`data/silver/_quarantine/`) — não descartar nem derrubar a execução
+☐ `data_quality_report` — schema adicionado ao `data_dictionary.md` e preenchimento a cada execução
+☐ Helper de parse (encerra em NULL/NaT + log estruturado, nunca exceção) coberto por testes unitários isolados
+☐ Fechar Sprint 3 — 15/15 testes existentes + novos testes de normalize e Pandera passando
+
+### Escopo futuro explícito (não nesta sprint)
+
+☐ **RF-07 — HTML do Data Quality Report.** a geração de relatório HTML fica reservada para a
+   Sprint de documentação automática (RF-07), consumindo a tabela `data_quality_report` —
+   não implementada na Sprint 3 (ADR-015).
+
+---
+
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
 *Versão atual: 0.1 — criado retroativamente na Sprint 0A para registrar o histórico de itens já concluídos.*
