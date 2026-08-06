@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 1 (ADRs 010-012 registrados; dimensão institucional, constelação de fatos e watermark/versionamento consolidados)
+> Última atualização: Sprint 2 (Pipeline Bronze implementado — extração, persistência Parquet, watermark, `pipeline_runs`, config ADR-008)
  
 ---
  
@@ -255,32 +255,39 @@ observatorio-parlamentar/
 │   ├── Dockerfile
 │   ├── dependencies.py               # Sprint 6
 │   └── main.py
-├── pipeline/                         # ETL (scaffold, Sprint 2-4)
+├── pipeline/                         # ETL (Sprint 2 parcial — Bronze implementado; Silver/Gold, 3-4)
 │   ├── camara/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # ┐ Sprint 2
+│   │   ├── schemas.py                # │
 │   │   └── transform.py              # ┘
 │   ├── senado/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # ┐ Sprint 2
+│   │   ├── schemas.py                # │
 │   │   └── transform.py              # ┘
 │   ├── transparencia/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # ┐ Sprint 2
+│   │   ├── schemas.py                # │
 │   │   └── transform.py              # ┘
 │   ├── dags/
 │   │   └── pipeline_dag.py
 │   ├── __init__.py
 │   ├── Dockerfile
+│   ├── contracts.py                  # Sprint 2
 │   ├── bronze.py                     # Sprint 2
+│   ├── watermark.py                  # Sprint 2
+│   ├── storage.py                    # Sprint 2
+│   ├── runs.py                       # Sprint 2
+│   ├── utils.py
+│   ├── config.py
 │   ├── silver.py                     # Sprint 3
 │   ├── gold.py                       # Sprint 4
 │   ├── quality.py                    # Sprint 3
 │   ├── analytics.py                  # Sprint 5
 │   ├── network.py                    # Sprint 5
 │   ├── features.py                   # Sprint 5
-│   ├── utils.py
-│   ├── config.py
 │   └── pipeline.py                   # Entrypoint principal
 ├── analytics/                        # Módulos analíticos (scaffold, Sprint 5)
 │   ├── suppliers/

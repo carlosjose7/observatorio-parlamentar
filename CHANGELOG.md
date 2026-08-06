@@ -79,8 +79,9 @@ Histórico das alterações, organizado por sprint (ver
   `pyproject.toml`, Dockerfiles com grupos opcionais.
 - Diagramas de alto nível: `docs/architecture/arch_medalhao.md`,
   `arch_deploy.md`, `arch_pipeline.md`.
-- ADR-006 (Estrutura de documentos e diretórios), ADR-007 (Containers
-  e deploy), ADR-008 (Configuração externa), ADR-009 (Batch/Lambda).
+- ADR-005 (Organização da documentação), ADR-006 (Stack e
+  dependências), ADR-007 (Containers e deploy), ADR-008 (Configuração
+  externa), ADR-009 (Batch/Lambda).
 - `PROJECT_CONTEXT.md` v1.0 — stack, diagramas, diretórios e ADRs
   001-009.
 - `docs/data/data_dictionary.md` — schemas reais da Câmara e Senado.
