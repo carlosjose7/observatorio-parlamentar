@@ -258,24 +258,24 @@ observatorio-parlamentar/
 ├── pipeline/                         # ETL (Sprint 2 parcial — Bronze implementado; Silver/Gold, 3-4)
 │   ├── camara/
 │   │   ├── __init__.py
-│   │   ├── extract.py                # ┐ Sprint 2
-│   │   ├── schemas.py                # │
-│   │   └── transform.py              # ┘
+│   │   ├── extract.py                # Sprint 2
+│   │   ├── schemas.py                # Sprint 1
+│   │   └── transform.py              # Sprint 3
 │   ├── senado/
 │   │   ├── __init__.py
-│   │   ├── extract.py                # ┐ Sprint 2
-│   │   ├── schemas.py                # │
-│   │   └── transform.py              # ┘
+│   │   ├── extract.py                # Sprint 2
+│   │   ├── schemas.py                # Sprint 1
+│   │   └── transform.py              # Sprint 3
 │   ├── transparencia/
 │   │   ├── __init__.py
-│   │   ├── extract.py                # ┐ Sprint 2
-│   │   ├── schemas.py                # │
-│   │   └── transform.py              # ┘
+│   │   ├── extract.py                # Sprint 2
+│   │   ├── schemas.py                # Sprint 1
+│   │   └── transform.py              # Sprint 3
 │   ├── dags/
 │   │   └── pipeline_dag.py
 │   ├── __init__.py
 │   ├── Dockerfile
-│   ├── contracts.py                  # Sprint 2
+│   ├── contracts.py                  # Sprint 1
 │   ├── bronze.py                     # Sprint 2
 │   ├── watermark.py                  # Sprint 2
 │   ├── storage.py                    # Sprint 2

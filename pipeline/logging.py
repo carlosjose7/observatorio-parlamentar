@@ -22,11 +22,11 @@ from pipeline.config import get_env, get_pipeline
 def configure_logging() -> None:
     """Configura o structlog a partir de `config/pipeline.yaml`.
 
-    Define o nível de log a partir de `ConfigSettings.log_level` (carregado do
-    `.env` / ambiente) e o formato conforme a config (`lembranca`: default
-    `json`). Deve ser chamado antes de emitir logs em execução real. Em
-    testes/dev não é obrigatório (structlog opera com defaults), mas garante o
-    formato declarado quando o pipeline roda de verdade.
+    Define o nível de log a partir de `EnvSettings.log_level` (carregado do
+    `.env` / ambiente) e o formato conforme a config (default `json`). Deve ser
+    chamado antes de emitir logs em execução real. Em testes/dev não é
+    obrigatório (structlog opera com defaults), mas garante o formato
+    declarado quando o pipeline roda de verdade.
     """
     cfg = get_pipeline().logging
     env = get_env()
