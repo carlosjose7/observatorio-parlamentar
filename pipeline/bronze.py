@@ -31,6 +31,7 @@ from pipeline.config import (
     get_sources,
 )
 from pipeline.contracts import ExtractResult, LoadMetadata
+from pipeline.logging import configure_logging
 from pipeline.runs import PipelineRun, write_pipeline_run
 from pipeline.senado import extract as senado_extract
 from pipeline.storage import Storage, criar_storage
@@ -262,6 +263,7 @@ def run_pipeline(
         PipelineRun com status consolidado e watermarks por fonte.
     """
     run_meta = _novo_run_meta()
+    configure_logging()
     if client is None:
         client = httpx.Client(timeout=httpx.Timeout(get_pipeline().http.request_timeout_seconds))
     if storage is None:
