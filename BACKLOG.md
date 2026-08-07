@@ -111,17 +111,39 @@
 ☐ ADR-014 — Deduplicação independente por camada (Silver deduplica pela chave de negócio pós-normalização, não assume a Bronze)
 ☐ ADR-015 — Data Quality Report persistido em tabela estruturada (`data_quality_report` particionada por `run_id`)
 ☐ ADR-016 — Módulo dedicado de normalização multi-fonte (`pipeline/normalize.py`)
+☐ ADR-017 — Política de resolução de autor de emenda (individual vs. colegiado); execução diferida para a Sprint 4 (dependência de camada); chave de dedup composta `(ano, codigo_emenda)`
 ☐ Pipeline Silver — normalização, deduplicação e gate Pandera por tabela (`silver_despesa`, `silver_parlamentar`, etc.)
 ☐ Quarentena de registros inválidos (`data/silver/_quarantine/`) — não descartar nem derrubar a execução
 ☐ `data_quality_report` — schema adicionado ao `data_dictionary.md` e preenchimento a cada execução
 ☐ Helper de parse (encerra em NULL/NaT + log estruturado, nunca exceção) coberto por testes unitários isolados
 ☐ Fechar Sprint 3 — 15/15 testes existentes + novos testes de normalize e Pandera passando
 
+### Onda 2 — `silver_emenda` e `silver_cartao` (expansão de escopo da Sprint 3)
+
+☐ `silver_cartao` — reutiliza `normalize`/`quality`; schema Pandera próprio com `unidade_gestora_codigo`/`unidade_gestora_nome` **NOT NULL** (reflete `fact_cartao_cpgf`, ADR-012); UK do fato não fixada no schema (o `id` nativo da CGU não chega à Silver)
+☐ `silver_emenda` — reutiliza `normalize`/`quality`; chave de dedup composta **`(ano, codigo_emenda)`** (ADR-017); `nome_autor` normalizado e `tipo_emenda` fielmente tipado, **sem** tentativa de `id_parlamentar` (deferido ao Gold)
+☐ **Persistência das linhas removidas pela dedup da Silver** — o `deduplicar_silver` retorna `removidas`, mas nada as grava; somente o agregado vai ao log. Persistir em tabela própria (padrão `quarantine_` reusado) + contabilizar no `data_quality_report` (extensão ADR-015). Distinguir "removido por duplicação real" de "removido por chave mascarada `S/I`" (ADR-017)
+☐ Tratar `codigo_emenda = "S/I"` como anomalia de qualidade (regra de unicidade/validade de gate Pandera em `silver_emenda`) — observado na amostragem da API (ADR-017)
+
 ### Escopo futuro explícito (não nesta sprint)
 
 ☐ **RF-07 — HTML do Data Quality Report.** a geração de relatório HTML fica reservada para a
    Sprint de documentação automática (RF-07), consumindo a tabela `data_quality_report` —
    não implementada na Sprint 3 (ADR-015).
+
+---
+
+## Sprint 4 — Camada Gold (pré-requisitos herdados da Sprint 3)
+
+> **Pré-requisito documental:** a promoção de `fact_emenda` não pode ocorrer
+> sem implementar a política de resolução de autor definida no **ADR-017**
+> (matching por nome contra `dim_parlamentar` SCD2, vigente no ano da emenda;
+> quarentena com motivos `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`).
+> A mecânica do mecanismo de qualidade/dtype de relatório dessas categorias
+> será desenhada no planejamento arquitetural da Sprint 4 (não antecipada no ADR).
+
+☐ Resolução autor → `id_parlamentar` em Gold (ADR-017) — `tipo_emenda` como discriminador primário de colegiado; matching por nome vigente ao ano da emenda; quarentena por motivo
+☐ Desenhar o mecanismo de qualidade/quarentena do Gold para as categorias `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo` (definido no planejamento da Sprint 4, não antecipado)
 
 ---
 

@@ -803,3 +803,123 @@ Consequências:
   reaproveita este módulo, evitando nova duplicação.
 
 ---
+
+ADR-017
+Título: Política de resolução de autor de emenda (individual vs.
+colegiado) — execução diferida para a Sprint 4 por dependência de camada
+
+Status:
+Aceito
+
+Contexto:
+`fact_emenda` (ADR-012, gold.py:153) exige `id_parlamentar NOT NULL`.
+O endpoint `GET /emendas` da CGU só retorna o autor como texto livre
+(`autor`/`nomeAutor`, sempre duplicados) — sem ID, partido ou UF do
+autor (confirmado via captura real da API, GET /emendas?ano=2024).
+
+A captura real também confirmou que a própria fonte já classifica
+estruturalmente o tipo de emenda: o registro de autor
+"BANCADA DO MATO GROSSO" veio com `"tipoEmenda": "Emenda de Bancada"`
+— campo já contratado em `CguBronzeEmenda.tipo_emenda` e propagado a
+`FactEmenda.tipo_emenda`. Detecção por prefixo textual ("BANCADA",
+"COMISSÃO") foi descartada como discriminador primário por ser
+heurística degradável (falsos negativos como "RELATOR" ou nomes
+livres de comissão) quando a fonte já entrega essa informação de
+forma estruturada. O prefixo serve, no máximo, como checagem de
+consistência (log de divergência), não como decisão.
+
+Uma primeira proposta deste ADR previa a resolução de autor
+(matching nome → `dim_parlamentar`) já na Silver (Sprint 3). Revisão
+técnica identificou que isso violaria a camada: `dim_parlamentar` é
+SCD Type 2 e é artefato do Gold (Sprint 4, ainda não populado nesta
+sprint). Resolver contra um "snapshot próprio" da Silver duplicaria
+a fonte de verdade sobre identidade de parlamentar, criando risco de
+drift entre a cópia simplificada e a dimensão SCD2 real.
+
+Uma amostragem da API (6 anos, 2 páginas por ano, ≈ 180 registros)
+confirmou: (1) o `codigo_emenda` embute o ano e não apresentou colisão
+real entre anos nos códigos legítimos; (2) existe a anomalia
+`codigo_emenda = "S/I"` (código "sem informação"), todas concentradas
+em 2020 e sempre em emendas colegiadas ou de relator com
+autor="Sem informação" — um marcador de dado ausente, não um código
+real, e não uma chave válida de deduplicação.
+
+Decisão:
+1. A Sprint 3 entrega `silver_emenda` sem tentativa de resolução de
+   autor: `nome_autor` normalizado (uppercase, sem acento) e
+   `tipo_emenda` fielmente tipado, seguindo o mesmo padrão das
+   demais tabelas Silver (normalize → dedup + gate Pandera →
+   persistência). Nenhuma coluna `id_parlamentar` é preenchida ou
+   tentada nesta camada.
+2. **Chave de negócio da deduplicação de `silver_emenda` é composta
+   `(ano, codigo_emenda)`** — não `codigo_emenda` sozinho. A
+   configuração já trata `codigo_emenda` como chave natural "por ano"
+   (config/sources.yaml:47); a chave composta mantém a propriedade
+   por-ano à prova de futuras colisões globais e torna explícita a
+   anomalia `S/I` (que colide dentro de um mesmo ano, expondo a
+   linha como duplicata na dedup em vez de gravar 3 códigos iguais).
+3. A resolução de autor → `id_parlamentar` é política definida por
+   este ADR, mas **executada na Sprint 4 (Gold)**, quando
+   `dim_parlamentar` SCD2 estiver materializada:
+   a. `tipo_emenda` é o discriminador primário de autoria colegiada
+(valores como "Emenda de Bancada", "Emenda de Comissão" —
+       lista a confirmar contra os valores reais do enum da fonte).
+      Emendas colegiadas → quarentena com motivo `autor_colegiado`,
+      sem tentativa de matching individual.
+   b. Para tipo individual, matching exato normalizado do `nome_autor`
+      contra `dim_parlamentar.nome`, restrito à linha **vigente no ano
+      da emenda** (não `is_current` do momento da execução) —
+      respeita o versionamento SCD2.
+   c. Nenhum match ou mais de um match (homônimos) → quarentena com
+      motivo `autor_nao_resolvido` ou `autor_ambiguo`, respectivamente.
+      Nunca grava `id_parlamentar` por critério arbitrário.
+   d. Matching fuzzy/similaridade permanece descartado nesta decisão
+      pelo risco conhecido de falso positivo silencioso.
+4. `fact_emenda` no Gold recebe apenas emendas com autor individual
+   já resolvido sem ambiguidade. Emendas colegiadas ou não resolvidas
+   ficam fora do modelo dimensional atual — não descartadas, apenas
+   não promovidas — até haver modelagem própria (ex: a dimensão de
+   autor agregado) motivada por requisito funcional explícito (nenhum
+   CU-01 a CU-08 atual depende de emendas colegiadas).
+5. O mecanismo de relatório/quarentena para as categorias
+   (`autor_colegiado`, `autor_nao_resolvido`, `autor_ambiguo`) é
+   escopo explícito da Sprint 4, não do `data_quality_report` da
+   Silver (ADR-015) — a mecânica concreta (extensão de schema, tabela
+   própria, etc.) será desenhada no planejamento arquitetural da
+   Sprint 4, não especificada por antecipação aqui. A classificação
+   primária por `tipo_emenda` já é produzida e persistida em
+   `silver_emenda` (Sprint 3) — ela é o insumo direto deste
+   mecanismo, não uma classificação a redescrever no Gold.
+
+Consequências:
+- `silver_emenda` (Sprint 3) segue o mesmo padrão de implementação
+  das demais tabelas Silver, sem componente especial — reduz o
+  escopo da Onda 2 em relação à proposta original deste ADR.
+- A garantia `id_parlamentar NOT NULL` de `fact_emenda` só é
+  satisfeita no momento da promoção a Gold, não antes — a Silver
+  intencionalmente não tenta satisfazê-la.
+- `fact_emenda` no Gold recebe apenas emendas com autor individual
+  resolvido, mas `tipo_emenda` permanece populado e tipado nessas
+  linhas — discrimina formas de emenda individual (ex.: Transferência
+  com Finalidade Definida vs. Relator) e segue sendo útil dentro do
+  subconjunto promovido; não é removido ou esvaziado pelo deferimento
+  da resolução de autor.
+- Cria dependência explícita e documentada: a Sprint 4 não pode
+  promover `fact_emenda` sem antes implementar a política de
+  resolução aqui definida — registrada em `BACKLOG.md` como
+  pré-requisito de Sprint 4, não item solto.
+- `codigo_emenda = "S/I"` é documentado como anomalia de qualidade
+  reconhecida (na amostragem de ≈180 registros, ~3 ocorrências, todas
+  em 2020, sempre em emendas colegiadas ou de relator com
+  autor="Sem informação") e candidata a regra de gate Pandera de
+  unicidade/validade na implementação de `silver_emenda`.
+- As linhas removidas pela dedup da Silver (incluindo os casos `S/I`)
+  passam a ser persistidas e contabilizadas no Data Quality Report
+  (extensão de ADR-015) — ver `BACKLOG.md` Onda 2 — para que o caso
+  "dado ausente mascarado" seja distinguível de duplicação real no
+  futuro.
+- Reabre a possibilidade de matching fuzzy como melhoria futura
+  condicional à taxa obtida de `autor_nao_resolvido` no mecanismo de
+  qualidade da Sprint 4 — não implementado agora.
+
+---
