@@ -57,11 +57,23 @@ def _nao_futura():
     return pa.Check(_check, name="nao_futura")
 
 
-def _chave_negocio_unica(df: pd.DataFrame) -> pd.Series:
-    """True para linhas sem duplicata na chave de negócio (fonte, cod_documento)."""
-    return (~df.duplicated(subset=["fonte", "cod_documento"], keep=False)).reindex(
-        df.index
-    )
+def _chave_negocio_unica_check(chaves: list[str]) -> pa.Check:
+    """Build Pandera check: sem duplicata na chave de negócio (ADR-014).
+
+    A chave é parametrizável por tabela — despesa usa
+    (`fonte`, `cod_documento`); outras tabelas informam a própria chave.
+
+    Args:
+        chaves: Colunas que compõem a chave de negócio da tabela.
+
+    Returns:
+        `pa.Check` nivel de DataFrame.
+    """
+
+    def _check(df: pd.DataFrame) -> pd.Series:
+        return (~df.duplicated(subset=chaves, keep=False)).reindex(df.index)
+
+    return pa.Check(_check, name="chave_negocio_unica")
 
 
 # ── Schemas Pandera por tabela Silver (ADR-013) ──────────────────
@@ -95,7 +107,49 @@ def schema_silver_despesa() -> pa.DataFrameSchema:
                 checks=pa.Check.isin(["CNPJ", "CPF", "INVALIDO", None]),
             ),
         },
-        checks=[pa.Check(_chave_negocio_unica, name="chave_negocio_unica")],
+        checks=[_chave_negocio_unica_check(["fonte", "cod_documento"])],
+    )
+
+
+def schema_silver_cartao() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_cartao` (CGU cartões CPGF, ADR-013).
+
+    Regras de lote: datas plausíveis (não antes de 2015, não futuras) e
+    valores não negativos. Reflete NOT NULLs do `fact_cartao_cpgf`
+    (ADR-010/ADR-012): `unidade_gestora_codigo` é obrigatória — a fonte
+    CGU sempre fornece `unidadeGestora` — e portanto NÃO é tratada como
+    nullable, ao contrário de despesa/emenda que têm UG inativa na v1.
+
+    Obs: a unicidade da chave de negócio não é fixada aqui — o `id`
+    nativo da CGU não é propagado até a Silver e a chave de fato difere
+    da despesa; a deduplicação e o fallback de unicidade são passados
+    pela camada ao `avaliar_qualidade` via `chaves_negocio`.
+    """
+    return pa.DataFrameSchema(
+        columns={
+            "data_transacao": pa.Column(
+                "datetime64[ns]",
+                nullable=False,
+                checks=[
+                    _nao_anterior_a(2015),
+                    _nao_futura(),
+                ],
+            ),
+            "valor_transacao": pa.Column(
+                "float64", nullable=False, checks=pa.Check.ge(0)
+            ),
+            "estabelecimento_cnpj_valor": pa.Column(str, nullable=True),
+            "estabelecimento_tipo_documento": pa.Column(
+                str,
+                nullable=True,
+                checks=pa.Check.isin(["CNPJ", "CPF", "INVALIDO", None]),
+            ),
+            "estabelecimento_nome": pa.Column(str, nullable=False),
+            "portador_nome": pa.Column(str, nullable=False),
+            "portador_cpf_mascarado": pa.Column(str, nullable=False),
+            "unidade_gestora_codigo": pa.Column(str, nullable=False),
+            "unidade_gestora_nome": pa.Column(str, nullable=False),
+        },
     )
 
 
@@ -145,6 +199,7 @@ def avaliar_qualidade(
     run_id: str,
     tabela: str,
     campos_criticos: list[str] | None = None,
+    chaves_negocio: list[str] | None = None,
 ) -> tuple[pd.DataFrame, LinhaQualidadeReport]:
     """Valida um DataFrame Silver contra o schema Pandera.
 
@@ -159,10 +214,15 @@ def avaliar_qualidade(
         run_id: Identificador da execução.
         tabela: Nome da tabela Silver.
         campos_criticos: Campos usados para o percentual de nulos.
+        chaves_negocio: Colunas da chave de negócio (ADR-014) para o
+            fallback de unicidade pós-gate. Padrão
+            `["fonte", "cod_documento"]` (compatível com `silver_despesa`);
+            tabelas com chave própria informam a dela (ex: emendas).
 
     Returns:
         (linhas_válidas, linha_do_relatório).
     """
+    chaves_negocio = chaves_negocio or ["fonte", "cod_documento"]
     if df.empty:
         linha = LinhaQualidadeReport(
             run_id=run_id,
@@ -198,7 +258,9 @@ def avaliar_qualidade(
             regras_violadas = sorted(
                 {str(c) for c in falhas["column"].dropna().tolist() if str(c) != "<NA>"}
             )
-    elif df_validos.duplicated(subset=["fonte", "cod_documento"], keep=False).any():
+    elif all(c in df_validos.columns for c in chaves_negocio) and df_validos.duplicated(
+        subset=chaves_negocio, keep=False
+    ).any():
         regras_violadas = ["chave_negocio_unica"]
 
     linha = LinhaQualidadeReport(

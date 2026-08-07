@@ -32,6 +32,7 @@ from pipeline.config import get_env
 from pipeline.quality import (
     LinhaQualidadeReport,
     avaliar_qualidade,
+    schema_silver_cartao,
     schema_silver_despesa,
 )
 
@@ -186,12 +187,14 @@ def persistir_qualidade_report(linha: LinhaQualidadeReport) -> None:
 def _schema_para(tabela: str):
     """Retorna o schema Pandera da tabela Silver (ADR-013).
 
-    Hoje apenas `silver_despesa` tem schema declarado; demais tabelas
-    (cartão, emenda, parlamentar etc.) serão adicionadas à medida que os
+    Schemas declarados: `silver_despesa` e `silver_cartao`; demais tabelas
+    (emenda, parlamentar etc.) serão adicionadas à medida que os
     transform.py por fonte forem integrados.
     """
     if tabela == "silver_despesa":
         return schema_silver_despesa()
+    if tabela == "silver_cartao":
+        return schema_silver_cartao()
     raise ValueError(f"Schema Pandera não registrado para a tabela Silver: {tabela}")
 
 
@@ -224,7 +227,12 @@ def carregar_tabela_silver(
     df_dedup, removidas = deduplicar_silver(df, chaves_dedup, run_id, tabela)
 
     df_validos, linha = avaliar_qualidade(
-        df_dedup, schema, run_id=run_id, tabela=tabela, campos_criticos=campos_criticos
+        df_dedup,
+        schema,
+        run_id=run_id,
+        tabela=tabela,
+        campos_criticos=campos_criticos,
+        chaves_negocio=chaves_dedup,
     )
     linha.execution_timestamp = datetime.now(timezone.utc)
 
