@@ -5,7 +5,11 @@ observatorio_gold:
       type: duckdb
       path: "{{ env_var('DUCKDB_DATABASE_PATH', 'data/silver/observatorio.duckdb') }}"
       threads: 4
+      plugins:
+        - module: hmac_udf
     prod:
       type: duckdb
       path: "{{ env_var('DUCKDB_DATABASE_PATH') }}"
       threads: 4
+      plugins:
+        - module: hmac_udf

@@ -13,6 +13,7 @@ Pandera (ADR-013) via `pipeline/quality.py`, não do parser.
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -126,3 +127,26 @@ def clean_document_number(valor: str | None) -> str | None:
     if not digitos:
         return None
     return digitos
+
+
+def normalizar_nome_proprio(valor: str | None) -> str | None:
+    """Normaliza um nome próprio para maiúsculas e sem acentos.
+
+    Aplicado a `nome_autor` na CGU (schema_silver_emenda, quality.py):
+    o uppercase + remoção de diacríticos padroniza a grafia do autor para a
+    futura comparação com `dim_parlamentar` no Gold (ADR-017). Valor vazio
+    ou nulo retorna `None`.
+
+    Args:
+        valor: Nome bruto (ex: "João da Silva").
+
+    Returns:
+        Nome em maiúsculas sem acentos, ou `None` se vazio.
+    """
+    if not valor or not valor.strip():
+        return None
+    maiusculos = valor.strip().upper()
+    decomposto = unicodedata.normalize("NFD", maiusculos)
+    return "".join(
+        char for char in decomposto if not unicodedata.combining(char)
+    )
