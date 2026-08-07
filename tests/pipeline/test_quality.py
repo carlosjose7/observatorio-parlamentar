@@ -16,6 +16,7 @@ from pipeline.quality import (
     percentual_nulos,
     schema_silver_cartao,
     schema_silver_despesa,
+    schema_silver_emenda,
 )
 
 
@@ -177,6 +178,71 @@ class TestSchemaSilverCartao:
         assert "chave_negocio_unica" in linha.regras_violadas
 
 
+class TestSchemaSilverEmenda:
+    def _df_emenda(self, **override):
+        dados = {
+            "ano": [2024],
+            "codigo_emenda": ["202440340007"],
+            "tipo_emenda": ["Emenda Individual - Transferências com Finalidade Definida"],
+            "nome_autor": ["LUISA CANZIANI"],
+            "funcao": ["Saúde"],
+            "subfuncao": ["Assistência hospitalar e ambulatorial"],
+            "localidade_do_gasto": ["LONDRINA - PR"],
+            "valor_empenhado": [10000.0],
+            "valor_liquidado": [10000.0],
+            "valor_pago": [10000.0],
+        }
+        dados.update(override or {})
+        return pd.DataFrame(dados)
+
+    def test_valido_passa_sem_quarentena(self):
+        df = self._df_emenda()
+        validos, linha = avaliar_qualidade(
+            df, schema_silver_emenda(), "run1", "silver_emenda"
+        )
+        assert len(validos) == 1
+        assert linha.registros_quarentena == 0
+
+    def test_chave_negocio_composta_detecta_duplicata(self):
+        base = self._df_emenda()
+        df = pd.concat([base, base], ignore_index=True)
+        df["ano"] = [2024, 2024]
+        df["codigo_emenda"] = ["E1", "E1"]
+        validos, linha = avaliar_qualidade(
+            df, schema_silver_emenda(), "run1", "silver_emenda"
+        )
+        assert "chave_negocio_unica" in linha.regras_violadas
+
+    def test_mesmo_codigo_em_anos_distinto_nao_duplicata(self):
+        # A chave e (ano, codigo_emenda); mesmo codigo em anos
+        # diferentes nao e duplicata (ADR-017).
+        base = self._df_emenda()
+        df = pd.concat([base, base], ignore_index=True)
+        df["ano"] = [2023, 2024]
+        df["codigo_emenda"] = ["E1", "E1"]
+        validos, linha = avaliar_qualidade(
+            df, schema_silver_emenda(), "run1", "silver_emenda"
+        )
+        assert len(validos) == 2
+        assert linha.registros_quarentena == 0
+
+    def test_codigo_si_em_quarentena(self):
+        df = self._df_emenda(codigo_emenda=["S/I"])
+        validos, linha = avaliar_qualidade(
+            df, schema_silver_emenda(), "run1", "silver_emenda"
+        )
+        assert len(validos) == 0
+        assert "codigo_nao_si" in linha.regras_violadas
+
+    def test_valor_negativo_em_quarentena(self):
+        df = self._df_emenda(valor_empenhado=[-5.0])
+        validos, linha = avaliar_qualidade(
+            df, schema_silver_emenda(), "run1", "silver_emenda"
+        )
+        assert len(validos) == 0
+        assert linha.registros_quarentena == 1
+
+
 class TestPercentualNulos:
     def test_sem_nulos(self):
         df = pd.DataFrame({"valor_liquido": [100.0, 50.0]})
@@ -192,3 +258,100 @@ class TestPercentualNulos:
 
     def test_df_vazio(self):
         assert percentual_nulos(pd.DataFrame(), ["x"]) == 0.0
+
+
+class TestPersistenciaDedupSilver:
+    """Carga Silver integrada: linhas removidas persistidas + report (ADR-014/015).
+
+    Usa DuckDB em arquivo temporário — verifica que `deduplicar_silver`
+    `removidas` sao gravadas em `dedup_removidas_{tabela}` e que o
+    `data_quality_report` contabiliza `registros_deduplicados`.
+    """
+
+    def _carregar(self, tmp_path, df, tabela, chaves):
+        import duckdb
+
+        db_path = tmp_path / "silver_test.duckdb"
+        monkeypatch_env = f"DUCKDB_DATABASE_PATH={db_path}"
+
+        # get_env() e cacheado (lru_cache) — limpa para usar o path temporario
+        import pipeline.config as config
+        import pipeline.silver as silver
+
+        config.load_env_settings.cache_clear()
+
+        import os
+
+        old = os.environ.get("DUCKDB_DATABASE_PATH")
+        os.environ["DUCKDB_DATABASE_PATH"] = str(db_path)
+        try:
+            return silver.carregar_tabela_silver(
+                df, tabela, "run-test", chaves_dedup=chaves
+            )
+        finally:
+            if old is None:
+                os.environ.pop("DUCKDB_DATABASE_PATH", None)
+            else:
+                os.environ["DUCKDB_DATABASE_PATH"] = old
+            config.load_env_settings.cache_clear()
+
+    def _query(self, tmp_path, sql):
+        import duckdb
+
+        db_path = tmp_path / "silver_test.duckdb"
+        con = duckdb.connect(str(db_path))
+        try:
+            return con.execute(sql).fetchall()
+        finally:
+            con.close()
+
+    def test_removidas_persistidas_e_report(self, tmp_path):
+        df = pd.DataFrame(
+            {
+                "fonte": ["camara", "camara"],
+                "cod_documento": ["AAA", "AAA"],
+                "data_documento": pd.to_datetime(["2024-07-03", "2024-07-03"]),
+                "valor_liquido": [100.0, 100.0],
+                "valor_glosa": [0.0, 0.0],
+                "tipo_documento": ["CNPJ", "CNPJ"],
+            }
+        )
+        resultado = self._carregar(tmp_path, df, "silver_despesa", ["fonte", "cod_documento"])
+
+        assert len(resultado.deduplicadas) == 1
+        assert len(resultado.aceitos) == 1
+
+        removidas = self._query(tmp_path, "SELECT cod_documento FROM dedup_removidas_silver_despesa")
+        assert removidas == [("AAA",)]
+
+        report = self._query(
+            tmp_path,
+            "SELECT registros_deduplicados, registros_validos FROM data_quality_report",
+        )
+        assert report == [(1, 1)]
+
+    def test_sem_duplicatas_nao_cria_tabela(self, tmp_path):
+        df = pd.DataFrame(
+            {
+                "fonte": ["camara"],
+                "cod_documento": ["AAA"],
+                "data_documento": pd.to_datetime(["2024-07-03"]),
+                "valor_liquido": [100.0],
+                "valor_glosa": [0.0],
+                "tipo_documento": ["CNPJ"],
+            }
+        )
+        self._carregar(tmp_path, df, "silver_despesa", ["fonte", "cod_documento"])
+
+        import duckdb
+
+        db_path = tmp_path / "silver_test.duckdb"
+        con = duckdb.connect(str(db_path))
+        try:
+            tabelas = con.execute(
+                "SELECT table_name FROM information_schema.tables"
+            ).fetchall()
+            nomes = [t[0] for t in tabelas]
+            assert "dedup_removidas_silver_despesa" not in nomes
+        finally:
+            con.close()

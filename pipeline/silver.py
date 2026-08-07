@@ -34,6 +34,7 @@ from pipeline.quality import (
     avaliar_qualidade,
     schema_silver_cartao,
     schema_silver_despesa,
+    schema_silver_emenda,
 )
 
 logger = structlog.get_logger()
@@ -149,6 +150,27 @@ def escrever_quarentena_duckdb(df: pd.DataFrame, tabela: str) -> str | None:
     return str(DIRETORIO_QUARENTENA / f"{tabela}.parquet")
 
 
+def escrever_dedup_removidas_duckdb(df: pd.DataFrame, tabela: str) -> None:
+    """Grava as linhas removidas pela dedup independente em DuckDB.
+
+    A dedup (ADR-014) calcula `removidas` mas nada persistia — apenas o
+    agregado ia ao log. Persistir em `dedup_removidas_{tabela}` (padrão
+    `quarantine_` reusado) permite distinguir, auditando, remoção por
+    duplicação real de remoção por chave mascarada (ex: `codigo_emenda =
+    "S/I"`, ADR-017) e reprocessar manualmente sem reextração da fonte.
+    """
+    if df.empty:
+        return
+    nome = "dedup_removidas_" + tabela
+    con = _conectar_duckdb()
+    try:
+        _criar_tabela_se_necessario(con, nome, df)
+        con.register("tmp_dedup", df)
+        con.execute(f"INSERT INTO {nome} SELECT * FROM tmp_dedup")
+    finally:
+        con.close()
+
+
 def persistir_qualidade_report(linha: LinhaQualidadeReport) -> None:
     """Persiste uma linha do Data Quality Report em `data_quality_report`."""
     con = _conectar_duckdb()
@@ -161,6 +183,7 @@ def persistir_qualidade_report(linha: LinhaQualidadeReport) -> None:
                     "total_registros": linha.total_registros,
                     "registros_validos": linha.registros_validos,
                     "registros_quarentena": linha.registros_quarentena,
+                    "registros_deduplicados": linha.registros_deduplicados,
                     "regras_violadas": json.dumps(linha.regras_violadas),
                     "percentual_nulos_criticos": linha.percentual_nulos_criticos,
                     "execution_timestamp": linha.execution_timestamp.isoformat()
@@ -187,14 +210,16 @@ def persistir_qualidade_report(linha: LinhaQualidadeReport) -> None:
 def _schema_para(tabela: str):
     """Retorna o schema Pandera da tabela Silver (ADR-013).
 
-    Schemas declarados: `silver_despesa` e `silver_cartao`; demais tabelas
-    (emenda, parlamentar etc.) serão adicionadas à medida que os
-    transform.py por fonte forem integrados.
+    Schemas declarados: `silver_despesa`, `silver_cartao` e
+    `silver_emenda`; demais tabelas (parlamentar etc.) serão adicionadas
+    à medida que os transform.py por fonte forem integrados.
     """
     if tabela == "silver_despesa":
         return schema_silver_despesa()
     if tabela == "silver_cartao":
         return schema_silver_cartao()
+    if tabela == "silver_emenda":
+        return schema_silver_emenda()
     raise ValueError(f"Schema Pandera não registrado para a tabela Silver: {tabela}")
 
 
@@ -234,6 +259,7 @@ def carregar_tabela_silver(
         campos_criticos=campos_criticos,
         chaves_negocio=chaves_dedup,
     )
+    linha.registros_deduplicados = len(removidas)
     linha.execution_timestamp = datetime.now(timezone.utc)
 
     # O gate recebe todo o DataFrame deduplicado; as linhas em quarentena
@@ -242,6 +268,7 @@ def carregar_tabela_silver(
 
     escrever_validos_duckdb(df_validos, tabela)
     escrever_quarentena_duckdb(quarentena, tabela)
+    escrever_dedup_removidas_duckdb(removidas, tabela)
     persistir_qualidade_report(linha)
 
     return ResultadoCargaSilver(
