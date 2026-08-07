@@ -107,23 +107,28 @@
 
 ## Sprint 3 — Pipeline Silver e Qualidade
 
-☐ ADR-013 — Fronteira de validação Pydantic vs. Pandera (registro individual vs. DataFrame agregado; quarentena de inválidos)
-☐ ADR-014 — Deduplicação independente por camada (Silver deduplica pela chave de negócio pós-normalização, não assume a Bronze)
-☐ ADR-015 — Data Quality Report persistido em tabela estruturada (`data_quality_report` particionada por `run_id`)
-☐ ADR-016 — Módulo dedicado de normalização multi-fonte (`pipeline/normalize.py`)
-☐ ADR-017 — Política de resolução de autor de emenda (individual vs. colegiado); execução diferida para a Sprint 4 (dependência de camada); chave de dedup composta `(ano, codigo_emenda)`
-☐ Pipeline Silver — normalização, deduplicação e gate Pandera por tabela (`silver_despesa`, `silver_parlamentar`, etc.)
-☐ Quarentena de registros inválidos (`data/silver/_quarantine/`) — não descartar nem derrubar a execução
-☐ `data_quality_report` — schema adicionado ao `data_dictionary.md` e preenchimento a cada execução
-☐ Helper de parse (encerra em NULL/NaT + log estruturado, nunca exceção) coberto por testes unitários isolados
-☐ Fechar Sprint 3 — 15/15 testes existentes + novos testes de normalize e Pandera passando
+☑ ADR-013 — Fronteira de validação Pydantic vs. Pandera (registro individual vs. DataFrame agregado; quarentena de inválidos)
+☑ ADR-014 — Deduplicação independente por camada (Silver deduplica pela chave de negócio pós-normalização, não assume a Bronze)
+☑ ADR-015 — Data Quality Report persistido em tabela estruturada (`data_quality_report` particionada por `run_id`)
+☑ ADR-016 — Módulo dedicado de normalização multi-fonte (`pipeline/normalize.py`)
+☑ ADR-017 — Política de resolução de autor de emenda (individual vs. colegiado); execução diferida para a Sprint 4 (dependência de camada); chave de dedup composta `(ano, codigo_emenda)`
+☑ Pipeline Silver — normalização, deduplicação e gate Pandera por tabela (`silver_despesa`, `silver_cartao`, `silver_emenda`)
+☑ Quarentena de registros inválidos (`quarantine_*`) — não descartar nem derrubar a execução
+☑ `data_quality_report` — persistido a cada execução, agora com `registros_deduplicados`
+☑ Helper de parse (`pipeline/normalize.py`) — encerra em NULL/NaT + log estruturado, nunca exceção; coberto por testes unitários isolados
+☑ Fechar Sprint 3 — 55 testes passando; cobertura `pytest-cov` da subárvore `pipeline` em **82%** (RNF ≥80% satisfeito)
 
 ### Onda 2 — `silver_emenda` e `silver_cartao` (expansão de escopo da Sprint 3)
 
-☐ `silver_cartao` — reutiliza `normalize`/`quality`; schema Pandera próprio com `unidade_gestora_codigo`/`unidade_gestora_nome` **NOT NULL** (reflete `fact_cartao_cpgf`, ADR-012); UK do fato não fixada no schema (o `id` nativo da CGU não chega à Silver)
-☐ `silver_emenda` — reutiliza `normalize`/`quality`; chave de dedup composta **`(ano, codigo_emenda)`** (ADR-017); `nome_autor` normalizado e `tipo_emenda` fielmente tipado, **sem** tentativa de `id_parlamentar` (deferido ao Gold)
-☐ **Persistência das linhas removidas pela dedup da Silver** — o `deduplicar_silver` retorna `removidas`, mas nada as grava; somente o agregado vai ao log. Persistir em tabela própria (padrão `quarantine_` reusado) + contabilizar no `data_quality_report` (extensão ADR-015). Distinguir "removido por duplicação real" de "removido por chave mascarada `S/I`" (ADR-017)
-☐ Tratar `codigo_emenda = "S/I"` como anomalia de qualidade (regra de unicidade/validade de gate Pandera em `silver_emenda`) — observado na amostragem da API (ADR-017)
+☑ `silver_cartao` — reutiliza `normalize`/`quality`; schema Pandera próprio com `unidade_gestora_codigo`/`unidade_gestora_nome` **NOT NULL** (reflete `fact_cartao_cpgf`, ADR-012); UK do fato não fixada no schema (o `id` nativo da CGU não chega à Silver)
+☑ `silver_emenda` — reutiliza `normalize`/`quality`; chave de dedup composta **`(ano, codigo_emenda)`** (ADR-017); `nome_autor` normalizado e `tipo_emenda` fielmente tipado, **sem** tentativa de `id_parlamentar` (deferido ao Gold)
+☑ **Persistência das linhas removidas pela dedup da Silver** — `escrever_dedup_removidas_duckdb` grava em `dedup_removidas_{tabela}` (padrão `quarantine_` reusado) e `data_quality_report` contabiliza `registros_deduplicados` (extensão ADR-015). Distingue "removido por duplicação real" de "removido por chave mascarada `S/I`" (ADR-017)
+☑ Tratar `codigo_emenda = "S/I"` como anomalia de qualidade — `_codigo_emenda_nao_si` no gate de `silver_emenda` (observado na amostragem da API, ADR-017)
+
+### Dívida consciente registrada (Sprint 8 — Testes/cobertura)
+
+☐ **Cobertura `pipeline/silver.py` em 77%** — abaixo da média do módulo (`quality.py` 96%, `normalize.py` 97%) e do limiar global de 80%. O global de 82% já satisfaz a RNF, mas a base de orquestração (`carregar_tabela_silver`, duckdb persistence) merece elevação na Sprint 8.
+☐ **Ruff não configurado** — segue como dívida técnica de lint; coberto na Sprint 8 junto com a elevação de cobertura.
 
 ### Escopo futuro explícito (não nesta sprint)
 
