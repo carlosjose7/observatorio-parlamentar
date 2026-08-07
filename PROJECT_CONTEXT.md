@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 3 (Silver + Qualidade — normalização multi-fonte, Pandera, Data Quality Report; ADRs 013-016)
+> Última atualização: Sprint 3 (Silver + Qualidade — normalização multi-fonte, Pandera, Data Quality Report; ADRs 013-017)
  
 ---
  
@@ -255,7 +255,7 @@ observatorio-parlamentar/
 │   ├── Dockerfile
 │   ├── dependencies.py               # Sprint 6
 │   └── main.py
-├── pipeline/                         # ETL (Sprint 3 parcial — Bronze concluído; Silver em andamento; Gold, 4)
+├── pipeline/                         # ETL (Sprint 3 concluído — Bronze e Silver; Gold, 4)
 │   ├── camara/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
@@ -748,4 +748,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.2 — Sprint 3 em andamento (normalização multi-fonte, validação Pandera e Data Quality Report; ADRs 001-016)*
+*Versão atual: 1.3 — Sprint 3 concluída (normalização multi-fonte, validação Pandera, Data Quality Report e schemas silver_cartao/silver_emenda; ADRs 001-017)*
