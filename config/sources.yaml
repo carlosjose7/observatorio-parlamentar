@@ -47,6 +47,15 @@ sources:
     quote_char: "\""
     separador_decimal: ","
     formato_data: "%d/%m/%Y"
+    # API de Dados Abertos do Senado (legislativo) — Onda 2, dados mestres de
+    # senadores (dim_parlamentar, ADR-020). Endpoint distinto do CSV CEAPS.
+    api_dados:
+      base_url: "https://legis.senado.leg.br/dadosabertos"
+      formato: "json"
+      encoding: "utf-8"
+      endpoints:
+        senadores:
+          path: "/senador/lista/atual.json"
     deduplicacao:
       campo: "cod_documento"            # chave natural por ano — COD_DOCUMENTO
       escopo: "ano"

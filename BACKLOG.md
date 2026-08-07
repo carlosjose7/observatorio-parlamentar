@@ -173,11 +173,23 @@
 
 ### Onda 2 — `dim_parlamentar` SCD2 + mecanismo ADR-017
 
-☐ Fonte de parlamentares na Silver (Câmara/Senado) — necessária para materializar `dim_parlamentar` (ADR-020).
-☐ `dim_parlamentar` SCD Type 2 (snapshot merge/upsert, ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`.
-☐ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado; matching por nome vigente ao ano; quarentena por motivo.
-☐ Desenhar o mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`.
-☐ **`dim_unidade_gestora` permanece schema-only nesta sprint** — o seed `dim_orgao` (Trilha A) carrega Câmara/Senado com UG SIAFI onde disponível, mas a tabela `dim_unidade_gestora` (ADR-010) não é materializada nem populada agora (sem requisito funcional que justifique o grão; registro explícito para não parecer "coberto" por proximidade com `dim_orgao`).
+> **Pré-requisito de cobertura (decisão do usuário):** os dados mestres
+> Bronze→Silver precisam cobrir **Câmara e Senado**, e o SCD2 no Gold só
+> inicia após essa cobertura. Sem as duas Casas, `fact_emenda` mascara
+> emendas de senador como `autor_nao_resolvido` (ADR-017) e `dim_parlamentar`
+> nasceria parcial. A implementação foi fatiada por Casa.
+
+- ☑ **Câmara — dados mestres Bronze→Silver** (`e3a5275`): extração de deputados
+  (lista paginada + detalhe com `ultimoStatus`), snapshot `parlamento/camara/`,
+  colunas de Silver centralizadas em `pipeline/silver.py` (ADR-023).
+- ☑ **Senado — dados mestres Bronze→Silver**: `extract_senadores` via
+  `GET /senador/lista/atual.json` (lista já traz partido/UF/legislatura; sem
+  request por id), snapshot `parlamento/senado/`, fonte='senado', task
+  `senado_parlamentares` no DAG.
+- ☐ `dim_parlamentar` SCD Type 2 (snapshot merge/upsert, ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`.
+- ☐ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado; matching por nome vigente ao ano; quarentena por motivo.
+- ☐ Desenhar o mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`/`autor_fora_cobertura`.
+- ☐ **`dim_unidade_gestora` permanece schema-only nesta sprint** — o seed `dim_orgao` (Trilha A) carrega Câmara/Senado com UG SIAFI onde disponível, mas a tabela `dim_unidade_gestora` (ADR-010) não é materializada nem populada agora (sem requisito funcional que justifique o grão; registro explícito para não parecer "coberto" por proximidade com `dim_orgao`).
 
 ### Onda 3 — Fatos
 

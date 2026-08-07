@@ -42,6 +42,24 @@ logger = structlog.get_logger()
 
 DIRETORIO_QUARENTENA = Path("_quarantine")
 
+# Contrato canônico de `silver_parlamentar` — tabela alimentada por ambas as
+# Casas (Câmara e Senado, Onda 2 / ADR-020). Fica aqui (Silver compartilhado)
+# para que os `transform.py` por fonte mapeiem o mesmo grão de colunas.
+COLUNAS_SILVER_PARLAMENTAR = [
+    "fonte",
+    "id_parlamentar",
+    "nome",
+    "sigla_partido",
+    "sigla_uf",
+    "id_legislatura",
+    "situacao",
+    "data",
+    "run_id",
+    "pipeline_version",
+    "execution_timestamp",
+    "source_version",
+]
+
 
 # ── Deduplicação independente (ADR-014) ──────────────────────────
 

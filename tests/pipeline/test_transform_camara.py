@@ -182,7 +182,7 @@ class TestCarregarParlamentarCamara:
         root = tmp_path / "bronze"
         root.mkdir(parents=True, exist_ok=True)
         storage = LocalParquetStorage(root)
-        storage.write_file(Path("parlamento"), df_bronze, "run-1.parquet")
+        storage.write_file(Path("parlamento/camara"), df_bronze, "run-1.parquet")
 
         db_path = tmp_path / "silver.duckdb"
         config.load_env_settings.cache_clear()

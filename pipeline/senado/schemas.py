@@ -1,6 +1,12 @@
-"""Contratos Bronze e Silver para despesas do Senado Federal (CEAPS).
+"""Contratos Bronze e Silver para dados do Senado Federal (CEAPS + Onda 2).
 
-Fonte: despesa_ceaps_{ano}.csv (ISO-8859-1, separador ';').
+- Despesas: despesa_ceaps_{ano}.csv (ISO-8859-1, separador ';').
+- Dados mestre de senadores (Onda 2, dim_parlamentar / ADR-020): API de
+  Dados Abertos do Senado (legis.senado.leg.br/dadosabertos); o endpoint
+  `/senador/lista/atual.json` já retorna, no aninhamento
+  `ListaParlamentarEmExercicio.Parlamentares.Parlamentar[]`, os atributos
+  rastreados pelo SCD2 — partido, UF e legislatura — sem request por id.
+
 Ver data_dictionary.md §3.2 para a exploração empírica dos campos.
 """
 
@@ -62,3 +68,42 @@ class SenadoSilverDespesa(BaseModel):
     cod_documento: int = Field(..., description="Chave de deduplicação — única por despesa")
 
     metadata: LoadMetadata
+
+
+class SenadoBronzeParlamentar(BaseModel):
+    """Registro bruto do snapshot de um senador (dados mestres, Onda 2).
+
+    Fonte: GET /senador/lista/atual.json (legis.senado.leg.br/dadosabertos).
+    O endpoint já entrega, no aninhamento `Parlamentar[]`, os atributos de
+    vigência rastreados para SCD2 (ADR-020): partido, UF e legislatura —
+    sem request por id (diferente do detalhe da Câmara). Bronze preserva o
+    formato achatado; `data_status` = data de execução (as-of do snapshot).
+
+    Attributes:
+        id_senador: Código parlamentar da API (identidade na fonte).
+        nome_parlamentar: Nome de urna/parlamentar (preferido na resolução).
+        nome_completo: Nome completo — fallback quando `nome_parlamentar`
+            está vazio.
+        sigla_partido: Partido vigente no snapshot (`SiglaPartidoParlamentar`).
+        sigla_uf: UF do mandato vigente.
+        id_legislatura: Legislatura do mandato (primeira do mandato; 0
+            quando a fonte não informa — cai no gate da Silver).
+        situacao: Descrição de participação no mandato (ex: Titular).
+        data_status: Data de vigência do snapshot (ISO, data de execução).
+    """
+
+    id_senador: int
+    nome_parlamentar: str
+    nome_completo: str | None
+    sigla_partido: str | None
+    sigla_uf: str | None
+    id_legislatura: int
+    situacao: str | None
+    data_status: str = Field(
+        ..., description="Data de vigência do snapshot (ISO, data de execução)"
+    )
+
+    metadata: LoadMetadata
+
+    class Config:
+        populate_by_name = True

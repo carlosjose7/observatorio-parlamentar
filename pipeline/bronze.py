@@ -57,8 +57,14 @@ CHAVE_WATERMARK = {
 
 # Dados mestres de parlamentares (Onda 2 — dim_parlamentar, ADR-020). Não faz
 # parte de FONTES (não é fato financeiro, nem entra no PipelineRun/pipeline_runs
-# nesta sprint — pendência de controle registrada em BACKLOG.md/6.5).
+# nesta sprint — pendência de controle registrada em BACKLOG.md/6.5). Particiona-se por
+# Casa (um dia de execução por arquivo), espelhando os dois feeds distintos da
+# dimensão: Câmara (detalhe por deputado) e Senado (lista em exercício).
 DIRETORIO_PARLAMENTO = Path("parlamento")
+SNAPSHOTS_PARLAMENTO = {
+    "camara": DIRETORIO_PARLAMENTO / "camara",
+    "senado": DIRETORIO_PARLAMENTO / "senado",
+}
 
 
 def _novo_run_meta() -> LoadMetadata:
@@ -256,30 +262,43 @@ def _extrair_e_persistir_parlamentares(
     run_meta: LoadMetadata,
     retry_settings: RetryDefaultSettings | None,
 ) -> tuple[str | None, str | None]:
-    """Extrai o snapshot de deputados da Câmara e persiste em `parlamento/`.
+    """Extrai os snapshots de dados mestres (Câmara + Senado) e persiste.
 
-    Um arquivo por data de execução (`write_file`, semmerge) — o acúmulo de
-    snapshots é deliberado (fonte do versionamento SCD2 de `dim_parlamentar`,
-    ADR-020). Falhas são isoladas: loga e segue (não faz parte de FONTES).
+    Um arquivo por data de execução em `parlamento/<fonte>/` (`write_file`,
+    sem merge) — o acúmulo de snapshots é deliberado (fonte do versionamento
+    SCD2 de `dim_parlamentar`, ADR-020). Cobrir Câmara E Senado nesta etapa
+    impede que o SCD2/Gold materialize dimensão parcial e que o ADR-017
+    mascare emendas de senador como `autor_nao_resolvido` (BACKLOG.md Onda 2).
+    Cada Casa é extraída e persistida em isolamento (falhas não derrubam a
+    execução — não fazem parte de FONTES).
     """
-    try:
-        resultado = camara_extract.extract_deputados(
-            get_sources().camara, client, run_meta, retry_settings
-        )
-    except Exception as exc:  # noqa: BLE001 — falha isolada não derruba a execução
-        logger.error("falha_extracao_parlamentares", erro=str(exc))
-        return None, str(exc)
+    for fonte, diretorio in SNAPSHOTS_PARLAMENTO.items():
+        try:
+            if fonte == "camara":
+                resultado = camara_extract.extract_deputados(
+                    get_sources().camara, client, run_meta, retry_settings
+                )
+            else:
+                resultado = senado_extract.extract_senadores(
+                    get_sources().senado, client, run_meta, retry_settings
+                )
+        except Exception as exc:  # noqa: BLE001 — falha isolada não derruba a execução
+            logger.error("falha_extracao_parlamentares", fonte=fonte, erro=str(exc))
+            continue
 
-    if resultado.records:
-        df = records_to_dataframe(resultado.records)
-        nome = f"{run_meta.execution_timestamp.date()}.parquet"
-        storage.write_file(DIRETORIO_PARLAMENTO, df, nome)
-    logger.info(
-        "parlamentares_snapshot_salvo",
-        registros=len(resultado.records),
-        arquivo=run_meta.execution_timestamp.date().isoformat(),
-    )
-    return resultado.new_watermark, None
+        if resultado.records:
+            df = records_to_dataframe(resultado.records)
+            nome = f"{run_meta.execution_timestamp.date()}.parquet"
+            storage.write_file(diretorio, df, nome)
+            logger.info(
+                "parlamentares_snapshot_salvo",
+                fonte=fonte,
+                registros=len(resultado.records),
+                arquivo=run_meta.execution_timestamp.date().isoformat(),
+            )
+        else:
+            logger.warning("parlamentares_snapshot_vazio", fonte=fonte)
+    return None, None
 
 
 def run_pipeline(
@@ -325,8 +344,9 @@ def run_pipeline(
         else:
             watermarks[fonte] = novo
 
-    # Onda 2: snapshot de dados mestres de deputados (dim_parlamentar SCD2).
-    # Não integra PipelineRun/pipeline_runs nesta sprint — apenas loga.
+    # Onda 2: snapshot de dados mestres de parlamentares (Câmara + Senado,
+    # dim_parlamentar SCD2). Não integra PipelineRun/pipeline_runs nesta
+    # sprint — apenas loga.
     _extrair_e_persistir_parlamentares(client, storage, run_meta, retry_settings)
 
     status = "success"

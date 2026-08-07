@@ -11,6 +11,9 @@ from pipeline.camara.transform import (
 )
 from pipeline.logging import configure_logging
 from pipeline.senado.transform import carregar_silver_despesa as silver_senado
+from pipeline.senado.transform import (
+    carregar_silver_parlamentar as silver_parlamentar_senado,
+)
 from pipeline.storage import criar_storage
 from pipeline.transparencia.transform import (
     carregar_silver_cartao,
@@ -56,6 +59,9 @@ def _executar_silver(**context):
             storage=storage, run_id=run_id
         ),
         "senado": silver_senado(storage=storage, run_id=run_id),
+        "senado_parlamentares": silver_parlamentar_senado(
+            storage=storage, run_id=run_id
+        ),
         "transparencia_cartoes": carregar_silver_cartao(
             storage=storage, run_id=run_id
         ),

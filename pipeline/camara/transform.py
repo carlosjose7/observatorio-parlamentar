@@ -31,7 +31,11 @@ import structlog
 
 from pipeline.contracts import resolve_tipo_documento
 from pipeline.normalize import parse_date_multi_format
-from pipeline.silver import ResultadoCargaSilver, carregar_tabela_silver
+from pipeline.silver import (
+    COLUNAS_SILVER_PARLAMENTAR,
+    ResultadoCargaSilver,
+    carregar_tabela_silver,
+)
 from pipeline.storage import Storage
 
 logger = structlog.get_logger()
@@ -54,24 +58,9 @@ COLUNAS_SILVER = [
     "source_version",
 ]
 
-COLUNAS_SILVER_PARLAMENTAR = [
-    "fonte",
-    "id_parlamentar",
-    "nome",
-    "sigla_partido",
-    "sigla_uf",
-    "id_legislatura",
-    "situacao",
-    "data",
-    "run_id",
-    "pipeline_version",
-    "execution_timestamp",
-    "source_version",
-]
-
 DIRETORIO_BRONZE = Path("camara")
 
-DIRETORIO_PARLAMENTO = Path("parlamento")
+DIRETORIO_PARLAMENTO = Path("parlamento/camara")
 
 
 def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
