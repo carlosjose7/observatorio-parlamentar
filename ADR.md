@@ -923,3 +923,273 @@ Consequências:
   qualidade da Sprint 4 — não implementado agora.
 
 ---
+
+ADR-018
+Título: Adoção de dbt Core no Gold com quarentena por construção (sem hooks Pandera)
+
+Status:
+Aceito
+
+Contexto:
+ADR-006 já havia decidido manter dbt Core na stack, justificado pelo
+lineage automático e data dictionary nativo exigidos por RF-07
+(`dbt docs generate`), com o custo de setup (`profiles.yml`,
+`dbt_project.yml`) explicitamente postergado para o momento em que
+houvesse schema real a materializar — ou seja, a Sprint 4.
+
+Silver usa Pandera + `quality.py` para validar antes de escrever,
+com quarentena de registros inválidos (ADR-013, ADR-015). Ao avaliar
+como preservar esse princípio na fronteira Silver→Gold com dbt,
+duas alternativas foram consideradas:
+
+(a) Testes dbt nativos (schema.yml + singular tests) como validação,
+    com quarentena expressa via CTE/WHERE dentro do próprio model SQL.
+(b) Pandera executando via hook (pre-hook/post-hook) do dbt.
+
+A opção (b) foi descartada: hooks dbt rodam antes/depois da
+materialização do model, o que implicaria escrever a tabela Gold e
+só then aplicar a validação — reproduzindo o anti-padrão
+"escrever, testar depois, decidir o que fazer com a falha", que
+contraria o princípio de defesa-em-profundidade estabelecido em
+ADR-014.
+
+Decisão:
+1. Adotar dbt Core exclusivamente para a camada Gold. Bronze e
+   Silver permanecem procedurais em Python (inalterados).
+2. Cada entidade Gold é modelada como dois models dbt, sem prefixo
+   `gold_` (redundante — o diretório `gold/models/` e o target DuckDB
+   já qualificam a camada):
+   - `{entidade}.sql` — `SELECT ... FROM {staging} WHERE (regra_valida)`
+   - `{entidade}_quarantine.sql` — `SELECT ..., 'motivo' AS
+     motivo_quarentena FROM {staging} WHERE NOT (regra_valida)`
+   Exemplos: `fact_despesa` / `fact_despesa_quarantine`,
+   `dim_parlamentar` / `dim_parlamentar_quarantine`. O sufixo
+   qualifica o destino (a tabela que falhou a regra) e não colide
+   com a convenção de prefixo do Silver (`quarantine_*`), já que
+   vivem em camadas distintas dentro do mesmo DuckDB.
+   A regra de validade mora no próprio SQL (quarentena por
+   construção), não em um passo de pós-processamento.
+3. `schema.yml` + testes de estrutura dbt cobrem uma segunda camada de
+   checagens: `not_null`, `unique`, `relationships` (integridade
+   referencial fato→dimensão, ADR-022) e testes SQL customizados de
+   órfãos.
+4. Pandera permanece exclusivo da fronteira Bronze→Silver. Não é
+   introduzido no runtime do dbt.
+5. Setup mínimo: `profiles.yml` (target DuckDB local), `dbt_project.yml`,
+   diretório `gold/models/` com subpastas por domínio (dimensões,
+   fatos, analytics). `dbt-duckdb` e `dbt-core` já constam do grupo
+   opcional `pipeline` do `pyproject.toml` desde a Sprint 2 (ADR-006).
+
+Consequências:
+- Estrutura de arquivos do Gold: par de models `{entidade}.sql` +
+  `{entidade}_quarantine.sql` por entidade, mais `schema.yml` — não
+  há pasta de hooks Pandera no Gold.
+- `dbt docs generate` entrega lineage e data dictionary
+  automaticamente (RF-07), sem trabalho manual adicional.
+- Curva de aprendizado e setup inicial de dbt, precificados desde
+  ADR-006, são absorvidos nesta sprint.
+- Qualquer nova entidade Gold deve seguir o par de models
+  válido/quarentena — desvio desse padrão exige justificativa
+  registrada em revisão técnica.
+- dbt é a única forma de escrita regular na camada Gold a partir desta
+  sprint; escrita procedural direta ao Gold via Python é descontinuada
+  (exceção pontual documentada no ADR-019 para o backfill de
+  `pipeline_runs`).
+
+---
+
+ADR-019
+Título: Migração de pipeline_runs de Parquet (Bronze) para tabela DuckDB (Gold)
+
+Status:
+Aceito
+
+Contexto:
+`runs.py` persiste hoje 1 arquivo Parquet por `run_id` no Bronze, com
+schema de 1 linha por execução e colunas `watermark_{fonte}`. O
+docstring do próprio módulo já previa a migração para DuckDB na
+Sprint 4 (`versionamento.md §4`). RF-12 exige reprodutibilidade de
+qualquer execução anterior a partir de `run_id` e `pipeline_version`,
+e o Data Quality Report do Gold precisa referenciar `run_id` no mesmo
+engine em que fatos/dimensões vivem — não é prático fazer join
+DuckDB↔Parquet-Bronze em toda consulta de auditoria.
+
+Decisão:
+1. Criar tabela `pipeline_runs` no DuckDB Gold, mantendo o grão atual:
+   1 linha por `run_id`, com colunas `watermark_{fonte}` (não se
+   normaliza para 1 linha por fonte por run nesta sprint).
+2. `pipeline_runs` é um model dbt incremental (chave única `run_id`),
+   lendo o Parquet do Bronze como dbt source declarado em
+   `gold/models/sources.yml`. Essa é a via de sincronização de rotina
+   — preserva o princípio do ADR-018 de que dbt é a única forma
+   regular de escrita no Gold.
+3. Exceção pontual e documentada: `scripts/backfill_pipeline_runs.py`
+   — script único, não incremental, executado uma vez para migrar o
+   histórico de Parquets já gerado nas Sprints 2/3 (anterior à
+   existência do model incremental). Não é caminho de escrita
+   rotineiro; após o backfill, toda sincronização passa pelo model
+   dbt.
+4. Bronze continua recebendo o Parquet por run (não é descontinuado)
+   — a tabela DuckDB é a fonte de consulta primária a partir desta
+   sprint; o Parquet permanece como registro raw imutável e como
+   source do model incremental.
+5. Se o futuro exigir granularidade por fonte, trata-se de extensão
+   da tabela de relatório, não quebra a chave `run_id` existente.
+
+Consequências:
+- Consultas de reprodutibilidade e o Data Quality Report do Gold
+  passam a usar `pipeline_runs` via DuckDB diretamente.
+- `scripts/backfill_pipeline_runs.py` é executado uma única vez, sob
+  responsabilidade explícita do Engenheiro de Dados — não integra o
+  `dbt build` de rotina.
+- `gold/models/sources.yml` precisa declarar o Parquet do Bronze como
+  source, o que exige o dbt ter acesso de leitura ao diretório Bronze
+  (path relativo/configurável via `config/pipeline.yaml`).
+- `runs.py` permanece escrevendo apenas o Parquet do Bronze; a
+  sincronização DuckDB é responsabilidade exclusiva do model dbt
+  incremental (ADR-018), evitando escrita dupla em Python.
+
+---
+
+ADR-020
+Título: Estratégia SCD Type 2 para dim_parlamentar
+
+Status:
+Aceito
+
+Contexto:
+PROJECT_CONTEXT.md §7 já define as colunas de auditoria SCD2 exigidas
+(`effective_date`, `end_date`, `is_current`, `surrogate_key`) para
+`dim_parlamentar`, mas não a estratégia de carga. RF-11 exige
+histórico rastreável de mudança de partido/status. A Sprint 4 também
+introduz o mecanismo de resolução de autor de emenda (ADR-017), que
+depende de consultar `dim_parlamentar` vigente em um ano específico —
+ou seja, a estratégia de vigência-por-ano precisa estar definida antes
+da Onda 2.
+
+Decisão:
+1. Carga via merge/upsert por snapshot: cada execução do pipeline Gold
+   compara o snapshot atual (Silver/API Câmara-Senado) contra o
+   registro `is_current = true` existente por `id_parlamentar`.
+   - Sem mudança em atributos rastreados (partido, situação): não
+     gera nova versão.
+   - Com mudança: fecha o registro vigente (`end_date` = data da
+     execução, `is_current = false`) e insere novo registro
+     (`effective_date` = data da execução, `is_current = true`,
+     novo `surrogate_key`).
+2. Vigência-por-ano (consumo do ADR-017): a versão vigente de um
+   parlamentar em dado ano é aquela cujo intervalo `[effective_date,
+   end_date)` contém qualquer data daquele ano — necessária para
+   resolver autoria de emendas de anos anteriores à execução atual.
+3. `surrogate_key` é `BIGINT` autoincremental por versão, nunca
+   reaproveitado.
+
+Consequências:
+- `dim_parlamentar` requer lookup por intervalo de datas, não apenas
+  por chave natural — estratégia de consulta/indexação a decidir na
+  implementação.
+- ADR-017 (resolução de autor de emenda) passa a ter definição precisa
+  de "parlamentar vigente no ano X".
+- Primeira carga (bootstrap) não tem snapshot anterior — todos os
+  registros entram com `effective_date` = data da primeira execução
+  do Gold e `is_current = true`, sem histórico prévio reconstruível a
+  partir das fontes disponíveis (limitação conhecida, não bloqueante).
+
+---
+
+ADR-021
+Título: Escopo das tabelas analíticas (§7) na Sprint 4 — placeholder vs. populado
+
+Status:
+Aceito
+
+Contexto:
+PROJECT_CONTEXT.md §7 lista tabelas analíticas Gold com duas categorias
+distintas de dependência:
+- Agregações puras de Silver (GROUP BY/COUNT/SUM), sem ML:
+  `supplier_concentration` (HHI direto de `fact_despesa`),
+  `supplier_growth`.
+- Dependentes de modelos de ML/rede (Isolation Forest, PageRank,
+  NetworkX), só existentes a partir da Sprint 5: `politician_similarity`,
+  `expense_outliers`, `network_edges`, `network_nodes`, `risk_scores`.
+
+Decidir agora evita `ALTER TABLE` retroativo quando a Sprint 5
+começar a popular as tabelas dependentes de ML.
+
+Decisão:
+1. Tabelas puramente agregadas (`supplier_concentration`,
+   `supplier_growth`) são schema + dados populados na Onda 1 da
+   Sprint 4, como models dbt regulares.
+2. Tabelas dependentes de ML/rede (`politician_similarity`,
+   `expense_outliers`, `network_edges`, `network_nodes`,
+   `risk_scores`) são materializadas como schema vazio (placeholder)
+   na Sprint 4 — contrato de colunas definido, sem dados — e populadas
+   exclusivamente na Sprint 5.
+3. Placeholders seguem o mesmo padrão de nomenclatura e diretório dos
+   models Gold definitivos, evitando renomeação futura.
+
+Consequências:
+- O contrato completo do Gold (§7) fica estável a partir da Sprint 4,
+  mesmo com dados parciais.
+- Sprint 5 apenas insere/atualiza dados nas tabelas placeholder — não
+  cria schema novo.
+- Testes dbt (`schema.yml`) das tabelas placeholder validam apenas
+  estrutura (tipos, colunas), não conteúdo, até a Sprint 5.
+
+---
+
+ADR-022
+Título: Contrato de qualidade Gold — integridade referencial fato-dimensão
+
+Status:
+Aceito
+
+Contexto:
+Pandera valida a fronteira Bronze→Silver (ADR-013). Faltava contrato de
+qualidade formal para a fronteira Silver→Gold, onde o risco muda de
+natureza: não é mais "campo malformado", mas "chave estrangeira órfã"
+(ex: despesa referenciando `fornecedor_sk` inexistente em
+`dim_fornecedor`) — risco inerente a popular fatos a partir de
+dimensões carregadas independentemente (Onda 1 vs. Onda 3).
+
+Decisão:
+1. Todo model de fato Gold (`fact_despesa`, `fact_cartao_cpgf`,
+   futuramente `fact_emenda`) declara em `schema.yml`:
+   - `not_null` em toda coluna de chave estrangeira (`*_sk`).
+   - `relationships` test contra a dimensão correspondente para cada FK.
+2. Registros de fato cuja FK não resolve contra a dimensão vigente não
+   são descartados em silêncio: seguem a quarentena por construção do
+   ADR-018 — model `{fato}_quarantine.sql` com `motivo_quarentena =
+   'fk_orfa:{coluna}'`.
+3. Testes singulares SQL cobrem casos não expressáveis por
+   `relationships` puro (ex: `id_unidade_gestora` nullable em
+   `fact_despesa` mas NOT NULL em `fact_cartao_cpgf` — regra
+   condicional por fonte, já registrada como aprendizado do projeto).
+
+3a. Severidade dos testes de integridade referencial: `severity: warn`
+    para os singular tests de FK órfã, com contagem de `fk_orfa` por
+    tabela de fato reportada no Data Quality Report. Threshold
+    configurável via `config/pipeline.yaml` (default: FK órfãs > 5%
+    do total no fato dispara alerta no relatório) — não bloqueia
+    `dbt build`. Justificativa: FK órfã é sintoma de dimensão ainda
+    não sincronizada (ex: fornecedor novo no fato antes da próxima
+    carga de `dim_fornecedor`), não necessariamente erro de dado —
+    bloquear penalizaria o pipeline por condição transitória e
+    esperada em cargas incrementais.
+4. `dbt build` (run + test) é o comando padrão de execução do Gold.
+   Falhas de teste com `severity: error` (schema estrutural `not_null`,
+   `unique`) bloqueiam a promoção; falhas com `severity: warn`
+   (integridade referencial, item 3a) são reportadas no Data Quality
+   Report sem bloquear.
+
+Consequências:
+- Todo novo fato Gold exige `schema.yml` com `relationships` antes de
+  ser considerado completo — checklist de revisão técnica atualizado.
+- Volume de quarentena Gold é observável via `{entidade}_quarantine`,
+  alimentando o Data Quality Report (mesmo princípio do Silver,
+  ADR-015).
+- `dbt build` como gate único simplifica CI futura (Sprint 9): um
+  comando, falha estrutural = pipeline vermelho, falha referencial =
+  alerta observável sem bloqueio.
+
+---
