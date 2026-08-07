@@ -177,6 +177,7 @@
 ☐ `dim_parlamentar` SCD Type 2 (snapshot merge/upsert, ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`.
 ☐ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado; matching por nome vigente ao ano; quarentena por motivo.
 ☐ Desenhar o mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`.
+☐ **`dim_unidade_gestora` permanece schema-only nesta sprint** — o seed `dim_orgao` (Trilha A) carrega Câmara/Senado com UG SIAFI onde disponível, mas a tabela `dim_unidade_gestora` (ADR-010) não é materializada nem populada agora (sem requisito funcional que justifique o grão; registro explícito para não parecer "coberto" por proximidade com `dim_orgao`).
 
 ### Onda 3 — Fatos
 

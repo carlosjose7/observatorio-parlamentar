@@ -34,5 +34,7 @@ models:
         tests:
           - not_null
       - name: sigla
+        description: Chave natural da dimensão (§7) — sigla do órgão (CD, SF).
         tests:
           - not_null
+          - unique
