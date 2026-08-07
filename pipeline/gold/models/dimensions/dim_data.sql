@@ -1,16 +1,16 @@
 -- Dimensão calendário (Trilha A). Gerada por série de datas, sem
 -- dependência de fonte Silver ou de silver_* populada — por isso não
 -- há model de quarentena (não existe "dado inválido" numa dimensão
--- gerada). Baseada no ano de início real da Câmara
--- (config/pipeline.yaml: camara.carga_historica.data_inicio = 2015-01-01)
--- e projeção de ~20 anos à frente.
+-- gerada). Horizonte externalizado em `dbt_project.yml` (vars, ADR-008):
+-- data_inicio espelha o início real da Câmara
+-- (config/sources.yaml: camara.carga_historica.data_inicio).
 
 with date_spine as (
     select cast(d as date) as calendar_date
     from (
         select * from range(
-            date '2015-01-01',
-            date '2036-01-01',
+            date '{{ var("dim_data_inicio") }}',
+            date '{{ var("dim_data_fim") }}' + interval '1 day',
             interval 1 day
         )
     ) as t(d)
