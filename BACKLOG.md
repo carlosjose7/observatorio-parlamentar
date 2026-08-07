@@ -189,5 +189,18 @@
 
 ---
 
+## Sprint 6.5 — Validação End-to-End
+
+> **Resíduo registrado no fechamento da Sprint 4/Trilha B** (não bloqueante):
+> o encadeamento `executar_bronze >> executar_silver` foi confirmado por
+> **leitura de código**, não por import-test do DAG — Airflow não está
+> instalado no ambiente de desenvolvimento. É a mesma classe de lacuna de
+> "parece certo no código, mas nunca foi exercitado" que originou o ADR-023.
+
+☐ **`dag_test.py`** — import-test do DAG com Airflow `DagBag` (sem subir o
+   scheduler): valida parsing do módulo `pipeline/dags/pipeline_dag.py`,
+   a estrutura de dependências de todas as tasks (ordem passada) e a
+   integridade XCom; rodar em CI junto da suíte pytest.
+
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
 *Versão atual: 0.4 — Sprint 4: planejamento ADRs 018–023 + trilhas A e B concluídas (Gold dimensional, HMAC via plugin dbt, `dbt build` 35/35 verde); Onda 2 (dim_parlamentar SCD2/ADR-017) e Onda 3 (fatos) em aberto.*
