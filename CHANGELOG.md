@@ -30,10 +30,15 @@ Histórico das alterações, organizado por sprint (ver
 ### Corrigido
 - `sources.yml` do Gold sem `database:` explícito — catálogo DuckDB é o
   nome do arquivo (`observatorio`), não `main`; `schema: main` mapeia as
-  fontes.
-- Plugin dbt-duckdb: `configure_connection` usava `con` (NameError) —
-  corrigido para `conn.create_function(...)`, propagando erros reais em
-  vez de engolir.
+  fontes Silver.
+- **`hmac_udf.py` — registro da UDF reescrito (regressão da Trilha B).** O
+  original usava `con` (NameError) dentro de `try/except Exception: pass` —
+  o erro real era mascarado (_anti-padrão §15_) e o registro era silencioso.
+  Agora: guarda de idempotência consultando `duckdb_functions()` (sem
+  casamento frágil de string de erro) e `null_handling=SPECIAL` (NULL /
+  string vazia retornam NULL limpo em vez de falhar o build). Teste de
+  regressão isolado `tests/pipeline/test_gold_hmac_udf.py` (5 cenários:
+  digest, NULL/vazio, idempotência, chave ausente, erro real propagado).
 
 ---
 
