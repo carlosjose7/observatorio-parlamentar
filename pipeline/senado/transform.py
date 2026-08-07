@@ -1,14 +1,17 @@
-"""pipeline/senado/transform.py — Bronze → Silver das despesas CEAPS do Senado (Trilha B).
+"""pipeline/senado/transform.py — Bronze → Silver do Senado (Trilha B, ADR-023).
 
-Mesmo contrato do `transform.py` da Câmara (ADR-023): lê o Parquet Bronze,
-normaliza para o grão canônico de `silver_despesa` e delega a carga ao
-`carregar_tabela_silver`.
+Duas cargas Silver a partir do Bronze do Senado:
+
+1. Despesas CEAPS → `silver_despesa` (fonte='senado'): lê o Parquet Bronze,
+   normaliza para o grão canônico e delega a carga ao `carregar_tabela_silver`.
+2. Dados mestres de senadores (Onda 2, ADR-020) → `silver_parlamentar`
+   (fonte='senado'), mesmo contrato da Câmara; o snapshot de
+   `parlamento/senado/` alimenta o SCD2 de `dim_parlamentar`.
 
 Diferenças de fonte (ADR-016):
 - Datas em DD/MM/AAAA e valores em string pt-BR (`parse_decimal_ptbr`).
-- Não existe conceito de glosa — `valor_glosa` é fixado em 0.0.
+- Não existe glosa — `valor_glosa` é fixado em 0.0.
 - `fonte='senado'`; chave de negócio `["fonte", "cod_documento"]`.
-- Como não há glosa, `valor_liquido` = `VALOR_REEMBOLSADO`.
 
 O HMAC de CPF é aplicado no Gold (dbt) — aqui apenas digitação limpa
 (`clean_document_number`) + classificação (ADR-011).
@@ -23,7 +26,11 @@ import structlog
 
 from pipeline.contracts import resolve_tipo_documento
 from pipeline.normalize import parse_date_multi_format, parse_decimal_ptbr
-from pipeline.silver import ResultadoCargaSilver, carregar_tabela_silver
+from pipeline.silver import (
+    COLUNAS_SILVER_PARLAMENTAR,
+    ResultadoCargaSilver,
+    carregar_tabela_silver,
+)
 from pipeline.storage import Storage
 
 logger = structlog.get_logger()
@@ -47,6 +54,8 @@ COLUNAS_SILVER = [
 ]
 
 DIRETORIO_BRONZE = Path("senado")
+
+DIRETORIO_PARLAMENTO = Path("parlamento/senado")
 
 
 def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
@@ -119,4 +128,74 @@ def carregar_silver_despesa(
         run_id,
         chaves_dedup=["fonte", "cod_documento"],
         campos_criticos=["valor_liquido", "nome_fornecedor", "data_documento"],
+    )
+
+
+def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
+    """Mapeia o snapshot Bronze de `parlamento/senado/` para o grão canônico.
+
+    Mesmo contrato de `silver_parlamentar` da Câmara (ADR-020), com
+    `fonte='senado'`: em `nome` prefere o nome parlamentar (urna) e recai no
+    completo; `situacao` é a descrição de participação do mandato (ex: Titular);
+    `data` é o `data_status` (data de execução do snapshot, as-of do SCD2).
+
+    Args:
+        df_bronze: DataFrame achatado dos snapshots (`records_to_dataframe`).
+
+    Returns:
+        DataFrame canônico de `silver_parlamentar` (fonte='senado') ou vazio
+        com o schema fixo quando não há registros.
+    """
+    if df_bronze.empty:
+        return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
+
+    n = len(df_bronze)
+    df = pd.DataFrame(
+        {
+            "fonte": ["senado"] * n,
+            "id_parlamentar": df_bronze["id_senador"].astype("int64"),
+            "nome": df_bronze["nome_parlamentar"].fillna(df_bronze["nome_completo"]),
+            "sigla_partido": df_bronze["sigla_partido"],
+            "sigla_uf": df_bronze["sigla_uf"],
+            "id_legislatura": df_bronze["id_legislatura"].astype("int64"),
+            "situacao": df_bronze["situacao"],
+            "data": pd.to_datetime(df_bronze["data_status"]),
+            "run_id": df_bronze["run_id"],
+            "pipeline_version": df_bronze["pipeline_version"],
+            "execution_timestamp": df_bronze["execution_timestamp"],
+            "source_version": df_bronze["source_version"],
+        }
+    )
+    return df[COLUNAS_SILVER_PARLAMENTAR]
+
+
+def carregar_silver_parlamentar(
+    storage: Storage, run_id: str
+) -> ResultadoCargaSilver | None:
+    """Lê o snapshot Bronze e carrega `silver_parlamentar` (fonte='senado').
+
+    Consolida todo o diretório `parlamento/senado/` (todos os dias já
+    ingeridos): a dedup independente colapsa snapshots idênticos pela chave
+    `(fonte, id_parlamentar, data)` e o gate Pandera das cargas, junto com o
+    da Câmara, mantém a dimensão parlamentar completa (ADR-020).
+
+    Args:
+        storage: Persistência Parquet do Bronze (injetável).
+        run_id: Identificador da execução (mesmo da Bronze, via XCom).
+
+    Returns:
+        `ResultadoCargaSilver`, ou `None` quando o Bronze da fonte está vazio.
+    """
+    df_bronze = storage.read_dir(DIRETORIO_PARLAMENTO)
+    if df_bronze.empty:
+        logger.warning("silver_parlamento_senado_sem_dados", run_id=run_id)
+        return None
+
+    df_silver = construir_silver_parlamentar(df_bronze)
+    return carregar_tabela_silver(
+        df_silver,
+        "silver_parlamentar",
+        run_id,
+        chaves_dedup=["fonte", "id_parlamentar", "data"],
+        campos_criticos=["nome", "id_parlamentar"],
     )

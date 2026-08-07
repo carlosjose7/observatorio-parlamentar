@@ -30,6 +30,45 @@ RETRY_TESTS = RetryDefaultSettings(
 
 DEPUTADOS = {"dados": [{"id": 1, "nome": "Deputada A"}], "links": []}
 
+DEPUTADO_DETALHE = {
+    "dados": {
+        "id": 1,
+        "nomeCivil": "Deputada A",
+        "nomeEleitoral": "Deputada A",
+        "ultimoStatus": {
+            "nome": "Deputada A",
+            "siglaPartido": "PSOL",
+            "siglaUf": "SP",
+            "idLegislatura": 57,
+            "situacao": "Exercício",
+            "condicaoEleitoral": "Titular",
+            "data": "2026-08-07T00:00:00",
+        },
+    }
+}
+
+SENADORES = {
+    "ListaParlamentarEmExercicio": {
+        "Parlamentares": {
+            "Parlamentar": [
+                {
+                    "IdentificacaoParlamentar": {
+                        "CodigoParlamentar": "5672",
+                        "NomeParlamentar": "Alan Rick",
+                        "NomeCompletoParlamentar": "Alan Rick Miranda",
+                        "SiglaPartidoParlamentar": "REPUBLICANOS",
+                        "UfParlamentar": "AC",
+                    },
+                    "Mandato": {
+                        "PrimeiraLegislaturaDoMandato": {"NumeroLegislatura": "58"},
+                        "DescricaoParticipacao": "Titular",
+                    },
+                }
+            ]
+        }
+    }
+}
+
 DESPESA = {
     "ano": 2026,
     "mes": 7,
@@ -113,11 +152,15 @@ def _cliente_mock(
             return httpx.Response(
                 200, json=DEPUTADOS if pagina == 1 else {"dados": [], "links": []}
             )
+        if "/deputados/" in path and not path.endswith("/despesas"):
+            return httpx.Response(200, json=DEPUTADO_DETALHE)
         if path.endswith("/despesas"):
             pagina = int(params.get("pagina", 1))
             return httpx.Response(
                 200, json={"dados": [DESPESA] if pagina == 1 else [], "links": []}
             )
+        if path.endswith("senador/lista/atual.json"):
+            return httpx.Response(200, json=SENADORES)
         if path.endswith(".csv"):
             if senado_falha:
                 return httpx.Response(503, json={"erro": "indisponível"})
@@ -225,6 +268,14 @@ def test_run_completo_sucesso(ambiente):
     assert cartao_df is not None and len(cartao_df) == 1
     assert cartao_df.iloc[0]["id"] == 500
     assert cartao_df.iloc[0]["estabelecimento_nome"] == "Restaurante X"
+
+    camara_parlamentar_df = _ler_parquet(ambiente, "parlamento", "camara")
+    assert camara_parlamentar_df is not None and len(camara_parlamentar_df) == 1
+    assert camara_parlamentar_df.iloc[0]["nome_eleitoral"] == "Deputada A"
+
+    senado_parlamentar_df = _ler_parquet(ambiente, "parlamento", "senado")
+    assert senado_parlamentar_df is not None and len(senado_parlamentar_df) == 1
+    assert senado_parlamentar_df.iloc[0]["nome_parlamentar"] == "Alan Rick"
 
     runs_df = _ler_controle(ambiente)
     assert len(runs_df) == 1

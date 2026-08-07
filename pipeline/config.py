@@ -147,6 +147,20 @@ class ExecucaoSenadoSettings(_StrictModel):
     frequencia: str = "sazonal"
 
 
+class ApiDadosAbertosSettings(_StrictModel):
+    """API de Dados Abertos do Senado (legislativo) — Onda 2.
+
+    Fonte distinta do CSV CEAPS: `legis.senado.leg.br/dadosabertos`.
+    Fornece os dados mestres de senadores (`/senador/lista/atual.json`)
+    para `dim_parlamentar` (ADR-020).
+    """
+
+    base_url: str
+    formato: str = "json"
+    encoding: str = "utf-8"
+    endpoints: dict[str, EndpointSettings]
+
+
 class SenadoSettings(_StrictModel):
     """Fonte: CSV anual CEAPS do Senado Federal (ADR-009)."""
 
@@ -159,6 +173,7 @@ class SenadoSettings(_StrictModel):
     quote_char: str = '"'
     separador_decimal: str = ","
     formato_data: str = "%d/%m/%Y"
+    api_dados: ApiDadosAbertosSettings
     deduplicacao: DeduplicacaoSettings
     carga_historica: CargaHistoricaSettings | None = None
     watermark: dict[str, WatermarkSettings]

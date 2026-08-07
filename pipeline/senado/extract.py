@@ -1,14 +1,19 @@
-"""Extração de despesas CEAPS do Senado Federal (Sprint 2 — Pipeline Bronze).
+"""Extração de dados do Senado Federal (CEAPS — Sprint 2 / Onda 2).
 
-Fonte: CSV anual `despesa_ceaps_{ano}.csv` (ISO-8859-1, separador ';').
-Sem watermark incremental (ADR-009) — o "watermark" é o próprio ano do CSV
-(versionamento.md §2.2). Deduplicação por `COD_DOCUMENTO` é aplicada na carga
-em Bronze (read-merge-write, ver pipeline/storage.py).
+Duas fontes distintas sob a mesma Fonte Senado:
+
+- Despesas CEAPS: CSV anual `despesa_ceaps_{ano}.csv` (ISO-8859-1, ';').
+  Sem watermark incremental (ADR-009) — o "watermark" é o próprio ano do CSV
+  (versionamento.md §2.2). Deduplicação por `COD_DOCUMENTO` na carga Bronze.
+- Dados mestres de senadores (Onda 2, dim_parlamentar / ADR-020): snapshot via
+  API de Dados Abertos (`GET /senador/lista/atual.json`); `data_status` = data
+  de execução.
 """
 
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import httpx
 import pandas as pd
@@ -16,8 +21,8 @@ import structlog
 
 from pipeline.config import RetryDefaultSettings, SenadoSettings
 from pipeline.contracts import ExtractResult, LoadMetadata
-from pipeline.senado.schemas import SenadoBronzeDespesa
-from pipeline.utils import request_text
+from pipeline.senado.schemas import SenadoBronzeDespesa, SenadoBronzeParlamentar
+from pipeline.utils import request_json, request_text
 
 logger = structlog.get_logger()
 
@@ -108,4 +113,84 @@ def extract_ceaps(
         records=registros,
         new_watermark=str(ano),
         source_version=cfg.padrao_arquivo.format(ano=ano),
+    )
+
+
+def _itens_senador(payload: dict) -> list[dict]:
+    """Extrai a lista de senadores do aninhamento da API de Dados Abertos.
+
+    A API devolve `Parlamentar` ora como lista, ora como objeto único
+    (quando há um só registro) — ambos normalizados para lista.
+    """
+    lista = payload.get("ListaParlamentarEmExercicio", {}) or {}
+    itens = lista.get("Parlamentares", {}) or {}
+    parl = itens.get("Parlamentar", []) or []
+    if isinstance(parl, dict):
+        parl = [parl]
+    return parl
+
+
+def _construir_senador(item: dict[str, Any], run_meta: LoadMetadata) -> SenadoBronzeParlamentar:
+    """Acha um item `Parlamentar` do `lista/atual` no registro Bronze.
+
+    Os atributos de vigência (partido, UF, situação, legislatura) já vêm no
+    próprio item da lista — não há request por id (diferente da Câmara).
+    """
+    ident = item.get("IdentificacaoParlamentar", {}) or {}
+    mandato = item.get("Mandato", {}) or {}
+    primeira = mandato.get("PrimeiraLegislaturaDoMandato", {}) or {}
+    segunda = mandato.get("SegundaLegislaturaDoMandato", {}) or {}
+    leg = primeira.get("NumeroLegislatura") or segunda.get("NumeroLegislatura")
+
+    meta = run_meta.model_copy(
+        update={"source_version": run_meta.execution_timestamp.date().isoformat()}
+    )
+    return SenadoBronzeParlamentar(
+        id_senador=int(ident.get("CodigoParlamentar") or 0),
+        nome_parlamentar=ident.get("NomeParlamentar") or "",
+        nome_completo=ident.get("NomeCompletoParlamentar") or None,
+        sigla_partido=ident.get("SiglaPartidoParlamentar") or None,
+        sigla_uf=ident.get("UfParlamentar") or None,
+        id_legislatura=int(leg) if leg else 0,
+        situacao=(mandato.get("DescricaoParticipacao") or None),
+        data_status=run_meta.execution_timestamp.date().isoformat(),
+        metadata=meta,
+    )
+
+
+def extract_senadores(
+    cfg: SenadoSettings,
+    client: httpx.Client,
+    run_meta: LoadMetadata,
+    retry_settings: RetryDefaultSettings | None = None,
+) -> ExtractResult:
+    """Extrai o snapshot de dados mestres dos senadores em exercício (Onda 2).
+
+    Uma requisição ao endpoint `senador/lista/atual` da API de Dados Abertos
+    (a lista já carrega os atributos rastreados pelo SCD2 de
+    `dim_parlamentar` (ADR-020); sem segundo request por id). O snapshot é o
+    estado observado na data de execução (`data_status` = `run_meta`), mesmo
+    padrão dos deputados da Câmara.
+
+    Args:
+        cfg: Configuração da fonte (`config/sources.yaml` → senado).
+        client: Cliente HTTP compartilhado (injetável para testes).
+        run_meta: Metadados de carga (RF-12); `source_version` é a data de
+            execução (versionamento.md §3).
+        retry_settings: Política de retry (tenacity) — override para testes.
+
+    Returns:
+        ExtractResult com os registros de senadores e o watermark (data da
+        execução).
+    """
+    logger.info("iniciando_extracao_senadores")
+    url = cfg.api_dados.base_url + cfg.api_dados.endpoints["senadores"].path
+    payload = request_json(client, url, None, retry_settings)
+    registros = [_construir_senador(item, run_meta) for item in _itens_senador(payload)]
+
+    watermark = run_meta.execution_timestamp.date().isoformat()
+    return ExtractResult(
+        records=registros,
+        new_watermark=watermark,
+        source_version=watermark,
     )

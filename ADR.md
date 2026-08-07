@@ -875,6 +875,15 @@ Decisão:
       Nunca grava `id_parlamentar` por critério arbitrário.
    d. Matching fuzzy/similaridade permanece descartado nesta decisão
       pelo risco conhecido de falso positivo silencioso.
+   e. Autor individual sem cobertura em `dim_parlamentar` no ano da
+      emenda — nome corresponde a um parlamentar que não faz parte do
+      universo coberto pelos dados mestres (Câmara + Senado) vigentes
+      naquele ano (ex.: mandato exercido em outro órgão, período sem
+      snapshot capturado) → quarentena com motivo `autor_fora_cobertura`,
+      distinguindo do `autor_nao_resolvido` (há cobertura, mas o nome
+      não casou). A cobertura de `dim_parlamentar` exige a Onda 2
+      materializada com Câmara **e** Senado (BACKLOG.md); sem isso,
+      emendas de senador seriam mascaradas como `autor_nao_resolvido`.
 4. `fact_emenda` no Gold recebe apenas emendas com autor individual
    já resolvido sem ambiguidade. Emendas colegiadas ou não resolvidas
    ficam fora do modelo dimensional atual — não descartadas, apenas
@@ -882,9 +891,9 @@ Decisão:
    autor agregado) motivada por requisito funcional explícito (nenhum
    CU-01 a CU-08 atual depende de emendas colegiadas).
 5. O mecanismo de relatório/quarentena para as categorias
-   (`autor_colegiado`, `autor_nao_resolvido`, `autor_ambiguo`) é
-   escopo explícito da Sprint 4, não do `data_quality_report` da
-   Silver (ADR-015) — a mecânica concreta (extensão de schema, tabela
+   (`autor_colegiado`, `autor_nao_resolvido`, `autor_ambiguo`,
+   `autor_fora_cobertura`) é escopo explícito da Sprint 4, não do
+   `data_quality_report` da Silver (ADR-015) — a mecânica concreta (extensão de schema, tabela
    própria, etc.) será desenhada no planejamento arquitetural da
    Sprint 4, não especificada por antecipação aqui. A classificação
    primária por `tipo_emenda` já é produzida e persistida em
