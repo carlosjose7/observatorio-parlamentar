@@ -1,0 +1,36 @@
+name: 'observatorio_gold'
+version: '1.0.0'
+config-version: 2
+
+profile: 'observatorio_gold'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  observatorio_gold:
+    dimensions:
+      +materialized: table
+    facts:
+      +materialized: table
+    analytics:
+      +materialized: table
+    control:
+      +materialized: incremental
+
+seeds:
+  observatorio_gold:
+    dim_orgao:
+      +column_types:
+        id_orgao: bigint
+        poder: varchar
+        instituicao: varchar
+        sigla: varchar
+        ug_siafi: varchar
+        gestao: varchar
