@@ -3,7 +3,12 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 
 from pipeline.bronze import run_pipeline
-from pipeline.camara.transform import carregar_silver_despesa as silver_camara
+from pipeline.camara.transform import (
+    carregar_silver_despesa as silver_camara,
+)
+from pipeline.camara.transform import (
+    carregar_silver_parlamentar as silver_parlamentar,
+)
 from pipeline.logging import configure_logging
 from pipeline.senado.transform import carregar_silver_despesa as silver_senado
 from pipeline.storage import criar_storage
@@ -37,7 +42,7 @@ def _executar_bronze(**context):
 
 
 def _executar_silver(**context):
-    """Executa as cargas Silver para as três fontes (ADR-023).
+    """Executa as cargas Silver para as três fontes (ADR-023), Onda 2 inclusa.
 
     Roda em seguida da Bronze, reaproveitando o `run_id` dela (XCom) — o
     Data Quality Report fica chaveado pela mesma execução. Cada fonte é
@@ -47,6 +52,9 @@ def _executar_silver(**context):
     storage = criar_storage()
     resultados = {
         "camara": silver_camara(storage=storage, run_id=run_id),
+        "camara_parlamentares": silver_parlamentar(
+            storage=storage, run_id=run_id
+        ),
         "senado": silver_senado(storage=storage, run_id=run_id),
         "transparencia_cartoes": carregar_silver_cartao(
             storage=storage, run_id=run_id

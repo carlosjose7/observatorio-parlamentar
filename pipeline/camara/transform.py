@@ -14,6 +14,12 @@ A coluna `fonte` é `'camara'` (chave de negócio de `silver_despesa` é
 `["fonte", "cod_documento"]`, ADR-023). O HMAC de CPF é aplicado na carga
 Gold (dbt), não aqui — o CPF viaja em dígitos limpos até o Gold
 (`CamaraSilverDespesa.cnpj_cpf_valor`, ADR-011).
+
+Onda 2: snapshot de dados mestres dos deputados (ADR-020). O bronze de
+`parlamento/` (um Parquet por dia de execução) é consolidado em
+`silver_parlamentar` — Deduplicação colapsa snapshots idênticos e o gate
+Pandera (`carregar_tabela_silver`) garante a chave de negócio
+(`fonte`, `id_parlamentar`, `data`), base do SCD2 em Gold.
 """
 
 from __future__ import annotations
@@ -48,7 +54,24 @@ COLUNAS_SILVER = [
     "source_version",
 ]
 
+COLUNAS_SILVER_PARLAMENTAR = [
+    "fonte",
+    "id_parlamentar",
+    "nome",
+    "sigla_partido",
+    "sigla_uf",
+    "id_legislatura",
+    "situacao",
+    "data",
+    "run_id",
+    "pipeline_version",
+    "execution_timestamp",
+    "source_version",
+]
+
 DIRETORIO_BRONZE = Path("camara")
+
+DIRETORIO_PARLAMENTO = Path("parlamento")
 
 
 def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
@@ -121,4 +144,74 @@ def carregar_silver_despesa(
         run_id,
         chaves_dedup=["fonte", "cod_documento"],
         campos_criticos=["valor_liquido", "nome_fornecedor", "data_documento"],
+    )
+
+
+def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
+    """Mapeia o snapshot Bronze de `parlamento/` para o grão Silver canônico.
+
+    Em `nome` prefere o nome eleitoral (campanha) e recai no nome civil.
+    A as-of date é `data_status` (a data de vigência de `ultimoStatus`
+    informada pela API) — é ela que indexa o SCD2. Colunas que podem
+    vir vazias no `ultimoStatus` (partido, UF, situação) seguem nullable.
+
+    Args:
+        df_bronze: DataFrame achatado dos snapshots (`records_to_dataframe`).
+
+    Returns:
+        DataFrame canônico de `silver_parlamentar` (fonte='camara') ou
+        vazio com o schema fixo quando não há registros.
+    """
+    if df_bronze.empty:
+        return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
+
+    n = len(df_bronze)
+    df = pd.DataFrame(
+        {
+            "fonte": ["camara"] * n,
+            "id_parlamentar": df_bronze["id_deputado"].astype("int64"),
+            "nome": df_bronze["nome_eleitoral"].fillna(df_bronze["nome_civil"]),
+            "sigla_partido": df_bronze["sigla_partido"],
+            "sigla_uf": df_bronze["sigla_uf"],
+            "id_legislatura": df_bronze["id_legislatura"].astype("int64"),
+            "situacao": df_bronze["situacao"],
+            "data": pd.to_datetime(df_bronze["data_status"]),
+            "run_id": df_bronze["run_id"],
+            "pipeline_version": df_bronze["pipeline_version"],
+            "execution_timestamp": df_bronze["execution_timestamp"],
+            "source_version": df_bronze["source_version"],
+        }
+    )
+    return df[COLUNAS_SILVER_PARLAMENTAR]
+
+
+def carregar_silver_parlamentar(
+    storage: Storage, run_id: str
+) -> ResultadoCargaSilver | None:
+    """Lê o snapshot Bronze e carrega `silver_parlamentar` (fonte='camara').
+
+    Consolida todo o diretório `parlamento/` (todos os dias já ingeridos):
+    a dedup independente do `carregar_tabela_silver` colapsa snapshots de
+    meses iguais pela chave `(fonte, id_parlamentar, data)` e o gate
+    Pandera isola registros com data inválida ou nome ausente.
+
+    Args:
+        storage: Persistência Parquet do Bronze (injetável).
+        run_id: Identificador da execução (mesmo da Bronze, via XCom).
+
+    Returns:
+        `ResultadoCargaSilver`, ou `None` quando o Bronze da fonte está vazio.
+    """
+    df_bronze = storage.read_dir(DIRETORIO_PARLAMENTO)
+    if df_bronze.empty:
+        logger.warning("silver_parlamento_sem_dados", run_id=run_id)
+        return None
+
+    df_silver = construir_silver_parlamentar(df_bronze)
+    return carregar_tabela_silver(
+        df_silver,
+        "silver_parlamentar",
+        run_id,
+        chaves_dedup=["fonte", "id_parlamentar", "data"],
+        campos_criticos=["nome", "id_parlamentar"],
     )

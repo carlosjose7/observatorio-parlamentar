@@ -35,6 +35,7 @@ from pipeline.quality import (
     schema_silver_cartao,
     schema_silver_despesa,
     schema_silver_emenda,
+    schema_silver_parlamentar,
 )
 
 logger = structlog.get_logger()
@@ -210,8 +211,8 @@ def persistir_qualidade_report(linha: LinhaQualidadeReport) -> None:
 def _schema_para(tabela: str):
     """Retorna o schema Pandera da tabela Silver (ADR-013).
 
-    Schemas declarados: `silver_despesa`, `silver_cartao` e
-    `silver_emenda`; demais tabelas (parlamentar etc.) serão adicionadas
+    Schemas declarados: `silver_despesa`, `silver_cartao`,
+    `silver_emenda` e `silver_parlamentar`; novas tabelas são adicionadas
     à medida que os transform.py por fonte forem integrados.
     """
     if tabela == "silver_despesa":
@@ -220,6 +221,8 @@ def _schema_para(tabela: str):
         return schema_silver_cartao()
     if tabela == "silver_emenda":
         return schema_silver_emenda()
+    if tabela == "silver_parlamentar":
+        return schema_silver_parlamentar()
     raise ValueError(f"Schema Pandera não registrado para a tabela Silver: {tabela}")
 
 

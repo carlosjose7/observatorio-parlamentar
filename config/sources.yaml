@@ -19,6 +19,8 @@ sources:
     endpoints:
       deputados:
         path: "/deputados"
+      deputados_detalhe:
+        path: "/deputados/{id_deputado}"
       despesas_por_deputado:
         path: "/deputados/{id_deputado}/despesas"
     watermark:
