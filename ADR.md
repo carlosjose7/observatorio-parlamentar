@@ -854,7 +854,7 @@ Decisão:
 2. **Chave de negócio da deduplicação de `silver_emenda` é composta
    `(ano, codigo_emenda)`** — não `codigo_emenda` sozinho. A
    configuração já trata `codigo_emenda` como chave natural "por ano"
-   (config/sources.yaml:47); a chave composta mantém a propriedade
+   (`config/sources.yaml:100`); a chave composta mantém a propriedade
    por-ano à prova de futuras colisões globais e torna explícita a
    anomalia `S/I` (que colide dentro de um mesmo ano, expondo a
    linha como duplicata na dedup em vez de gravar 3 códigos iguais).
