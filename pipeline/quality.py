@@ -198,6 +198,45 @@ def schema_silver_emenda() -> pa.DataFrameSchema:
     )
 
 
+def schema_silver_parlamentar() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_parlamentar` (snapshot Onda 2, ADR-020).
+
+    Dados mestres dos deputados: um registro por `(fonte, id_parlamentar,
+    data_status)` — grão estritamente diário da observação de
+    `ultimoStatus`. `data` não pode ser do futuro nem anterior a 2015
+    (janela plausível da fonte). `nome` e `id_parlamentar` são críticos
+    (não nulos); partido/UF/legislatura podem faltar no `ultimoStatus`
+    para parlamentares sem mandato vigente, por isso são nullables.
+
+    A unicidade da chave de negócio composta mantém o SCD2: snapshots
+    idênticos entre execuções colapsam; uma mudança de partido/UF/
+    situação gera nova linha — insumo do `dim_parlamentar` Gold
+    (ADR-020).
+    """
+    return pa.DataFrameSchema(
+        columns={
+            "fonte": pa.Column(str, nullable=False),
+            "id_parlamentar": pa.Column("int64", nullable=False),
+            "nome": pa.Column(str, nullable=False),
+            "sigla_partido": pa.Column(str, nullable=True),
+            "sigla_uf": pa.Column(str, nullable=True),
+            "id_legislatura": pa.Column("int64", nullable=False),
+            "situacao": pa.Column(str, nullable=True),
+            "data": pa.Column(
+                "datetime64[ns]",
+                nullable=False,
+                checks=[
+                    _nao_anterior_a(2015),
+                    _nao_futura(),
+                ],
+            ),
+        },
+        checks=[
+            _chave_negocio_unica_check(["fonte", "id_parlamentar", "data"])
+        ],
+    )
+
+
 # ── Linha do Data Quality Report (ADR-015) ───────────────────────
 
 

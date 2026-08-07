@@ -82,3 +82,34 @@ class CamaraSilverDespesa(BaseModel):
     valor_liquido: Decimal
 
     metadata: LoadMetadata
+
+
+class CamaraBronzeDeputado(BaseModel):
+    """Registro bruto do snapshot de um deputado (dados mestres, Onda 2).
+
+    Fonte: GET /deputados/{id} (dadosabertos.camara.leg.br). O detalhe retorna
+    `dados` como objeto; os atributos rastreados para SCD2 (ADR-020) vivem em
+    `ultimoStatus` (partido, UF, situação, legislatura). Bronze preserva o
+    formato bruto achatado, sem parsing — `data_status` fica como string ISO.
+    """
+
+    id_deputado: int = Field(..., alias="id")
+    nome_civil: str = Field(default="", alias="nomeCivil")
+    nome_eleitoral: str | None = Field(
+        default=None, alias="nomeEleitoral"
+    )
+    sigla_partido: str | None = Field(..., alias="siglaPartido")
+    sigla_uf: str | None = Field(..., alias="siglaUf")
+    id_legislatura: int = Field(..., alias="idLegislatura")
+    situacao: str | None = Field(default=None, alias="situacao")
+    condicao_eleitoral: str | None = Field(
+        default=None, alias="condicaoEleitoral"
+    )
+    data_status: str = Field(
+        ..., alias="data", description="Data de vigência do status (ISO)"
+    )
+
+    metadata: LoadMetadata
+
+    class Config:
+        populate_by_name = True
