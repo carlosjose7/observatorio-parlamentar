@@ -28,6 +28,9 @@ notes/
 .airflow/
 target/
 dbt_packages/
+pipeline/gold/target/
+pipeline/gold/logs/
+pipeline/gold/.user.yml
 
 # Generated data and local services
 data/bronze/*
