@@ -112,7 +112,7 @@
 ☑ ADR-015 — Data Quality Report persistido em tabela estruturada (`data_quality_report` particionada por `run_id`)
 ☑ ADR-016 — Módulo dedicado de normalização multi-fonte (`pipeline/normalize.py`)
 ☑ ADR-017 — Política de resolução de autor de emenda (individual vs. colegiado); execução diferida para a Sprint 4 (dependência de camada); chave de dedup composta `(ano, codigo_emenda)`
-☑ Pipeline Silver — normalização, deduplicação e gate Pandera por tabela (`silver_despesa`, `silver_cartao`, `silver_emenda`)
+☑ Pipeline Silver — motor completo (dedup ADR-014, gate Pandera ADR-013, persistência DuckDB, DQ Report ADR-015) — **nota corretiva (ADR-023): apenas o motor foi entregue; o caminho de carga (transform.py) não existe e foi absorvido como pré-requisito da Sprint 4/Onda 1**
 ☑ Quarentena de registros inválidos (`quarantine_*`) — não descartar nem derrubar a execução
 ☑ `data_quality_report` — persistido a cada execução, agora com `registros_deduplicados`
 ☑ Helper de parse (`pipeline/normalize.py`) — encerra em NULL/NaT + log estruturado, nunca exceção; coberto por testes unitários isolados
@@ -145,24 +145,35 @@
 > (matching por nome contra `dim_parlamentar` SCD2, vigente no ano da emenda;
 > quarentena com motivos `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`).
 
-### Planejamento arquitetural — ADRs 018–022 (concluído)
+### Planejamento arquitetural — ADRs 018–023 (concluído)
 
 ☑ **ADR-018 — dbt Core no Gold com quarentena por construção** (sem hooks Pandera): dbt entra de vez na camada Gold (ADR-006 postergado para a Sprint 4); quarentena expressa como par de models `{entidade}.sql`/`{entidade}_quarantine.sql` (regra no próprio SQL); `schema.yml` como segunda camada de checagem; Pandera segue exclusivo da fronteira Bronze→Silver; dbt é a única forma regular de escrita no Gold.
 ☑ **ADR-019 — `pipeline_runs` Parquet (Bronze) → DuckDB (Gold)**: tabela controla em DuckDB, model dbt incremental chaveado por `run_id`; Bronze Parquet permanece como source/registro imutável e como dbt source (`sources.yml`); `scripts/backfill_pipeline_runs.py` migra o histórico das Sprints 2/3.
-☑ **ADR-020 — SCD Type 2 para `dim_parlamentar`**: merge/upsert por snapshot (fecha vigente, insere nova versão); vigência-por-ano via `[effective_date, end_date)` (insumo do ADR-001 na Onda 2); `surrogate_key` BIGINT por versão.
+☑ **ADR-020 — SCD Type 2 para `dim_parlamentar`**: merge/upsert por snapshot (fecha vigente, insere nova versão); vigência-por-ano via `[effective_date, end_date)` (insumo do ADR-017 na Onda 2); `surrogate_key` BIGINT por versão.
 ☑ **ADR-021 — Tabelas analíticas §7**: agregados puros (`supplier_concentration`, `supplier_growth`) populados na Onda 1; dependentes de ML/rede (`risk_scores`, `expense_outliers`, etc.) criadas como schema vazio (placeholder) e populadas só na Sprint 5.
-☑ **ADR-022 — Contrato de qualidade Gold**: `relationships` + `not_null` por FK em `schema.yml` para todo fato; órfãos de FK na quarentena (`motivo_quarentena = 'fk_orfa:{coluna}'`); singular tests de FK com `severity: warn` + threshold > 5% configurável, sem bloquear `dbt build`; falha estrutural (`not_null`/`unique`) bloqueia (o `dbt build` é o gate).
+☑ **ADR-022 — Contrato de qualidade Gold**: `relationships` + `not_null` por FK em `schema.yml` para todo fato; motivo de FK órfã na quarentena (`motivo_quarentena = 'fk_orfa:{coluna}'`); singular tests de FK com `severity: warn` + threshold > 5% configurável, sem bloquear `dbt build`; falha estrutural (`not_null`/`unique`) bloqueia (o `dbt build` é o gate).
+☑ **ADR-023 — Silver sem caminho de carga**: verificação contra o repo revelou que os 3 `transform.py` (Câmara, Senado, CGU) não existem; `carregar_tabela_silver` nunca é chamada; o DAG só tem `_executar_bronze`. Os 3 módulos entram como **pré-requisito da Onda 1** (Trilha B), com interface comum (cada um usa `normalize.py` e chama `carregar_tabela_silver` com chave/campos por entidade).
 
-### Onda 1 — Fundação Gold (motor dbt + dims)
+### Trilha A — Não bloqueada (não depende de `silver_*` populada)
 
-☑ Setup do Gold: `gold/` com `profiles.yml` (target DuckDB), `dbt_project.yml`, `models/sources.yml` (Parquet Bronze como source); `dbt-duckdb`/`dbt-core` já no grupo `pipeline` do pyproject.
-☑ `dim_fornecedor` — schema revisto ADR-011 (CNPJ claro / CPF hash HMAC / `tipo_documento`), populada a partir da Silver.
-☑ `dim_orgao` — Câmara + Senado (mínimo, com UG/Gestão SIAFI quando disponível); `dim_data` — calendário completo com `data_sk` YYYYMMDD e flags; `dim_categoria_despesa` — tipos CEAP.
+☑ Setup do Gold: `gold/` com `profiles.yml` (target DuckDB, **um único arquivo** `DUCKDB_DATABASE_PATH`), `dbt_project.yml`, `models/sources.yml` (lê `main.silver_*` no mesmo DuckDB); `dbt-duckdb`/`dbt-core` já no grupo `pipeline` do pyproject.
+☐ `dim_data` — calendário completo gerado (2015 em diante, início real da Câmara), `data_sk` YYYYMMDD e flags; fine como model dbt sem dependência de fonte.
+☐ `dim_orgao` — tabela de referência institucional semeada (Câmara, Senado com UG/Gestão SIAFI), **não** derivada de `silver_despesa` (que não tem coluna de órgão).
+
+### Trilha B — Bloqueada até os `transform.py` (pré-requisito ADR-023)
+
+☐ `transform.py` Câmara → `silver_despesa` (`fonte=camara`, chave `["fonte","cod_documento"]`, ADR-023) + DAG task Silver.
+☐ `transform.py` Senado → `silver_despesa` (`fonte=senado`, mesmo contrato) + DAG task Silver idem.
+☐ `transform.py` CGU → `silver_emenda` (chave `["ano","codigo_emenda"]`) e `silver_cartao` (chave a confirmar na implementação) + DAG task Silver.
+☐ `pipeline_dag.py` — task(s) Silver conectando Bronze→Silver (ADR-023) depois que os `transform.py` existirem.
+☐ `dim_fornecedor` — de `silver_despesa` com HMAC-SHA256 no Gold (CPF) + `tipo_documento` (ADR-011).
+☐ `dim_categoria_despesa` — de `silver_despesa.tipo_despesa`.
 ☐ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021).
-☐ `pipeline_runs` dbt incremental operante; `scripts/backfill_pipeline_runs.py` migra o histórico das Sprints 2/3 (ADR-019).
+☐ `pipeline_runs` dbt incremental operante; `scripts/backfill_pipeline_runs.py` migra o histórico das Sprints 2/3 (ADR-019) com as colunas reais de `PipelineRun` (inclui `fontes_com_erro`; sem `source_version`/`watermark_transparencia`).
 
 ### Onda 2 — `dim_parlamentar` SCD2 + mecanismo ADR-017
 
+☐ Fonte de parlamentares na Silver (Câmara/Senado) — necessária para materializar `dim_parlamentar` (ADR-020).
 ☐ `dim_parlamentar` SCD Type 2 (snapshot merge/upsert, ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`.
 ☐ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado; matching por nome vigente ao ano; quarentena por motivo.
 ☐ Desenhar o mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`.
@@ -178,4 +189,4 @@
 ---
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.2 — Sprint 4 em andamento (planejamento arquitetural ADRs 018–022 concluído; ondas 1–3 em aberto).*
+*Versão atual: 0.3 — Sprint 4 em andamento (planejamento arquitetural ADRs 018–023 concluído; Trilha A em curso; Trilha B/Ondas 2–3 em aberto).*

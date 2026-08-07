@@ -1193,3 +1193,91 @@ Consequências:
   alerta observável sem bloqueio.
 
 ---
+
+ADR-023
+Título: Silver sem caminho de carga — transform.py ausente nas três fontes
+
+Status:
+Aceito
+
+Contexto:
+O fechamento da Sprint 3 aprovou o item "Pipeline Silver" do
+`BACKLOG.md` com base na existência do motor: `silver.py`
+(orquestração dedup + gate + persistência), `quality.py` (schemas
+Pandera) e os testes (44 na época). Verificação contra o repositório
+real revelou que **não há caminho de chamada que transforme Bronze →
+Silver**:
+
+1. Não existe `transform.py` em nenhuma fonte (`pipeline/camara`,
+   `pipeline/senado`, `pipeline/transparencia`).
+2. `carregar_tabela_silver` (`silver.py:226`) só é **definida**, nunca
+   invocada — `grep` não encontra chamada em lugar algum.
+3. O DAG (`pipeline_dags/pipeline_dag.py:19`) expõe apenas
+   `_executar_bronze`; não há task Silver.
+4. `extract.py` por fonte produzem apenas registros Bronze
+   (`CamaraBronzeDespesa`, `SenadoBronzeDespesa`, `CguBronzeEmenda`,
+   `CguBronzeCartao`).
+5. O único teste que toca o motor Silver (`test_quality.py`) o
+   alimenta **manualmente com DataFrames**, não através de
+   transformação de fonte.
+
+Ou seja: a Sprint 3 entregou **contrato (schemas Pydantic/Pandera) +
+gate de qualidade + persistência DuckDB**, mas nenhum dado real
+percorre o pipeline Silver ainda. O próprio `silver.py` antecipa o
+ponto de entrada inexistente no docstring: "os `transform.py` por
+fonte são os pontos que chamam estas funções com os DataFrames
+Bronze". Causa raiz: fechamento baseado na existência do motor, sem
+verificação de que havia um caminho de chamada real.
+
+Consequência transversal: qualquer sprint futura que dependa de
+"Silver funcionando" (incluindo a própria Sprint 4/Gold) precisa
+tratar essa lacuna como pré-requisito explícito, não implícito — é o
+que a Onda 1/Trilha B da Sprint 4 faz (ver ADR-018/019/022).
+
+Decisão:
+1. Os três `transform.py` (Câmara, Senado, CGU — emenda + cartão)
+   entram como **pré-requisito da Onda 1 da Sprint 4**, absorvendo o
+   gap da Sprint 3. A contabilidade é feita por nota corretiva no
+   `BACKLOG.md`/`PROJECT_CONTEXT.md`, não por reabertura cerimonial da
+   Sprint 3.
+2. Interface comum obrigatória para os três módulos (evita três
+   implementações divergentes):
+   - Chamam `pipeline/normalize.py` (ADR-016) para parsing de datas,
+     valores pt-BR e CNPJ/CPF.
+   - Constroem o DataFrame Silver unificado por entidade e chamam
+     `carregar_tabela_silver(df, tabela, run_id, chaves_dedup=...,
+     campos_criticos=...)` (`silver.py:226`).
+   - Chaves de negócio por entidade (ADR-014):
+     - `silver_despesa` → `["fonte", "cod_documento"]`
+     - `silver_emenda` → `["ano", "codigo_emenda"]`
+     - `silver_cartao` → chave a confirmar na implementação (o `id`
+       nativo da CGU não é propagado à Silver; a dedup da camada
+       repassa a chave via `chaves_dedup`, ver ADR-013/schema).
+   - Campos críticos para o percentual de nulos reportado no DQ
+     Report (ADR-015) também por entidade.
+3. `silver_despesa` unifica Câmara e Senado: a tabela recebe a coluna
+   `fonte` (`'camara'`/`'senado'`) e as colunas canônicas do schema
+   Pandera (`schema_silver_despesa`); mapeamento dos campos divergentes
+   entre as duas fontes (ex: `nome_fornecedor`/`fornecedor`) é
+   responsabilidade do `transform.py` de cada uma.
+4. `pipeline_dag.py` ganha a(s) task(s) Silver **depois** que os
+   `transform.py` existirem (item derivado no BACKLOG) — sem isso, o
+   gap se repete: motor pronto, nada chamando. A task Bronze
+   permanece como hoje.
+5. O Gold (dbt, ADR-018) só consome tabelas Silver quando a trilha de
+   carga estiver operante; models dbt escritos antes disso (Trilha A:
+   `dim_data`, `dim_orgao`) são independentes de `silver_*` populada.
+
+Consequências:
+- A Sprint 4 passa a cobrir explicitamente o caminho Bronze → Silver
+  → Gold de ponta a ponta para as três fontes.
+- `BACKLOG.md`/`PROJECT_CONTEXT.md` recebem nota corretiva sobre o
+  item "Pipeline Silver" da Sprint 3 (motor apenas, carga pendente).
+- Testes de transformação fonte-a-fonte passam a existir (novos
+  `transform_test` por fonte) — o `test_quality.py` atual testa o
+  motor, não o caminho.
+- Risco residual: chave de dedup de `silver_cartao` a confirmar na
+  implementação (ponto 2) — não bloqueia a Onda 1, pois
+  `silver_cartao` não alimenta os models da Trilha A.
+
+---

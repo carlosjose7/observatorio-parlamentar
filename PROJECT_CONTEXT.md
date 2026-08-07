@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 4 em planejamento (Gold — dbt Core com quarentena por construção, pipeline_runs DuckDB, SCD2 dim_parlamentar, contrato de qualidade Gold; ADRs 001-022)
+> Última atualização: Sprint 4 em planejamento (Gold — dbt Core com quarentena por construção, pipeline_runs DuckDB, SCD2 dim_parlamentar, contrato de qualidade Gold; ADR-023 — Silver sem caminho de carga); ADRs 001-023
  
 ---
  
@@ -255,22 +255,22 @@ observatorio-parlamentar/
 │   ├── Dockerfile
 │   ├── dependencies.py               # Sprint 6
 │   └── main.py
-├── pipeline/                         # ETL (Sprint 3 concluído — Bronze e Silver; Gold, 4)
+├── pipeline/                         # ETL (Sprint 3: Bronze + motor Silver; caminho de carga Silver pendente — ADR-023; Gold, 4)
 │   ├── camara/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
-│   │   └── transform.py              # Sprint 3
+│   │   └── transform.py              # Pendente — ADR-023 (Sprint 4)
 │   ├── senado/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
-│   │   └── transform.py              # Sprint 3
+│   │   └── transform.py              # Pendente — ADR-023 (Sprint 4)
 │   ├── transparencia/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
-│   │   └── transform.py              # Sprint 3
+│   │   └── transform.py              # Pendente — ADR-023 (Sprint 4)
 │   ├── gold/                         # dbt (ADR-018) — Sprint 4
 │   │   ├── models/
 │   │   │   ├── sources.yml           # Parquet Bronze como source (ADR-019)
@@ -756,4 +756,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.4 — Sprint 4 em planejamento (Gold; ADRs 001-022)*
+*Versão atual: 1.5 — Sprint 4 em planejamento (Gold; ADR-023 registra a lacuna de carga Silver); ADRs 001-023*

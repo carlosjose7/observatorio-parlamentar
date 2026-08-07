@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: dim_data
+    description: Calendário completo, grão diário (gerado, sem fonte).
+    columns:
+      - name: data_sk
+        tests:
+          - unique
+          - not_null
+      - name: data
+        tests:
+          - not_null
+      - name: ano
+        tests:
+          - not_null
+      - name: is_dia_util
+        tests:
+          - not_null
+
+  - name: dim_orgao
+    description: Órgãos institucionais (Câmara, Senado) — seed de referência (ADR-010).
+    columns:
+      - name: id_orgao
+        tests:
+          - unique
+          - not_null
+      - name: poder
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Legislativo', 'Executivo', 'Judiciário']
+      - name: instituicao
+        tests:
+          - not_null
+      - name: sigla
+        tests:
+          - not_null

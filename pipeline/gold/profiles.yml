@@ -1,0 +1,11 @@
+observatorio_gold:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_DATABASE_PATH', 'data/silver/observatorio.duckdb') }}"
+      threads: 4
+    prod:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_DATABASE_PATH') }}"
+      threads: 4
