@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 3 (Silver + Qualidade — normalização multi-fonte, Pandera, Data Quality Report; ADRs 013-017)
+> Última atualização: Sprint 4 em planejamento (Gold — dbt Core com quarentena por construção, pipeline_runs DuckDB, SCD2 dim_parlamentar, contrato de qualidade Gold; ADRs 001-022)
  
 ---
  
@@ -271,6 +271,14 @@ observatorio-parlamentar/
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
 │   │   └── transform.py              # Sprint 3
+│   ├── gold/                         # dbt (ADR-018) — Sprint 4
+│   │   ├── models/
+│   │   │   ├── sources.yml           # Parquet Bronze como source (ADR-019)
+│   │   │   ├── dimensoes/
+│   │   │   ├── fatos/
+│   │   │   └── analytics/
+│   │   ├── profiles.yml
+│   │   └── dbt_project.yml
 │   ├── dags/
 │   │   └── pipeline_dag.py
 │   ├── __init__.py
@@ -748,4 +756,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.3 — Sprint 3 concluída (normalização multi-fonte, validação Pandera, Data Quality Report e schemas silver_cartao/silver_emenda; ADRs 001-017)*
+*Versão atual: 1.4 — Sprint 4 em planejamento (Gold; ADRs 001-022)*
