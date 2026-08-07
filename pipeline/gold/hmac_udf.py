@@ -14,11 +14,14 @@ import hmac as hmac_module
 import os
 from pathlib import Path
 
-import duckdb
-
 from dbt.adapters.duckdb.plugins import BasePlugin
 
 _RAIZ = Path(__file__).resolve().parents[2]
+
+try:
+    from _duckdb._func import FunctionNullHandling
+except ImportError:  # pragma: no cover — duckdb antigo sem o enum público, usa default
+    FunctionNullHandling = None
 
 
 def _segredo() -> str:
@@ -41,6 +44,11 @@ class Plugin(BasePlugin):
     A função devolve o digest hex HMAC-SHA256 da mensagem (CPF em dígitos),
     ou None para valor nulo. Levanta `RuntimeError` se a chave estiver
     ausente — pseudonimização nunca opera com chave vazia.
+
+    Idempotente por construção: antes de registrar consulta o catálogo
+    `duckdb_functions()`; se a função já existir na conexão, não re-registra.
+    Não há `try/except` mascara erro real (PROJECT_CONTEXT.md §15 — sem
+    `except: pass`).
     """
 
     def configure_connection(self, conn):
@@ -61,10 +69,17 @@ class Plugin(BasePlugin):
                 hashlib.sha256,
             ).hexdigest()
 
-        try:
+        ja_registrada = conn.execute(
+            "select 1 from duckdb_functions()"
+            " where function_name = 'hmac_sha256_cpf'"
+        ).fetchone()
+        if ja_registrada is None:
+            parametros = {"return_type": "VARCHAR"}
+            if FunctionNullHandling is not None:
+                # NULL e string vazia retornam NULL limpo em vez de falhar o
+                # build (default lança erro se a UDF devolve NULL para linha
+                # não-nula).
+                parametros["null_handling"] = FunctionNullHandling.SPECIAL
             conn.create_function(
-                "hmac_sha256_cpf", hmac_sha256_cpf, return_type="VARCHAR"
+                "hmac_sha256_cpf", hmac_sha256_cpf, **parametros
             )
-        except duckdb.Error as erro:
-            if "already exists" not in str(erro).lower():
-                raise

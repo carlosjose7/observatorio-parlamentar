@@ -31,6 +31,9 @@
         watermark_cgu_cartao
     from read_parquet('{{ var('bronze_pipeline_runs_dir') }}')
 {% else %}
+    -- Sem arquivos de controle: tabela vazia com schema compatível — NUNCA
+    -- insere linha fictícia (nada distingue "dummy" de execução real; zero
+    -- linhas = zero falsos positivos em DQ/reprodutibilidade/RF-12).
     select
         cast(null as varchar) as run_id,
         cast(null as varchar) as pipeline_version,
