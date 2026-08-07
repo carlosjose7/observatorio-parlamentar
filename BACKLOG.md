@@ -157,19 +157,19 @@
 ### Trilha A — Não bloqueada (não depende de `silver_*` populada)
 
 ☑ Setup do Gold: `gold/` com `profiles.yml` (target DuckDB, **um único arquivo** `DUCKDB_DATABASE_PATH`), `dbt_project.yml`, `models/sources.yml` (lê `main.silver_*` no mesmo DuckDB); `dbt-duckdb`/`dbt-core` já no grupo `pipeline` do pyproject.
-☐ `dim_data` — calendário completo gerado (2015 em diante, início real da Câmara), `data_sk` YYYYMMDD e flags; fine como model dbt sem dependência de fonte.
-☐ `dim_orgao` — tabela de referência institucional semeada (Câmara, Senado com UG/Gestão SIAFI), **não** derivada de `silver_despesa` (que não tem coluna de órgão).
+☑ `dim_data` — calendário completo gerado (2015 em diante, início real da Câmara), `data_sk` YYYYMMDD e flags; fine como model dbt sem dependência de fonte.
+☑ `dim_orgao` — tabela de referência institucional semeada (Câmara, Senado com UG/Gestão SIAFI), **não** derivada de `silver_despesa` (que não tem coluna de órgão).
 
 ### Trilha B — Bloqueada até os `transform.py` (pré-requisito ADR-023)
 
-☐ `transform.py` Câmara → `silver_despesa` (`fonte=camara`, chave `["fonte","cod_documento"]`, ADR-023) + DAG task Silver.
-☐ `transform.py` Senado → `silver_despesa` (`fonte=senado`, mesmo contrato) + DAG task Silver idem.
-☐ `transform.py` CGU → `silver_emenda` (chave `["ano","codigo_emenda"]`) e `silver_cartao` (chave a confirmar na implementação) + DAG task Silver.
-☐ `pipeline_dag.py` — task(s) Silver conectando Bronze→Silver (ADR-023) depois que os `transform.py` existirem.
-☐ `dim_fornecedor` — de `silver_despesa` com HMAC-SHA256 no Gold (CPF) + `tipo_documento` (ADR-011).
-☐ `dim_categoria_despesa` — de `silver_despesa.tipo_despesa`.
-☐ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021).
-☐ `pipeline_runs` dbt incremental operante; `scripts/backfill_pipeline_runs.py` migra o histórico das Sprints 2/3 (ADR-019) com as colunas reais de `PipelineRun` (inclui `fontes_com_erro`; sem `source_version`/`watermark_transparencia`).
+☑ `transform.py` Câmara → `silver_despesa` (`fonte=camara`, chave `["fonte","cod_documento"]`, ADR-023) + DAG task Silver — `pipeline/camara/transform.py`.
+☑ `transform.py` Senado → `silver_despesa` (`fonte=senado`, mesmo contrato) — `pipeline/senado/transform.py`.
+☑ `transform.py` CGU → `silver_emenda` (chave `["ano","codigo_emenda"]`) e `silver_cartao` (chave `["id"]`, id nativo da CGU propagado até a Silver) + DAG task Silver — `pipeline/transparencia/transform.py`.
+☑ `pipeline_dag.py` — task `executar_silver` conectando Bronze→Silver (ADR-023), agregando os 4 `carregar_silver_*` com XCom.
+☑ `dim_fornecedor` — de `silver_despesa` com HMAC-SHA256 no Gold (CPF via UDF do plugin `hmac_udf.py`; CNPJ claro) + `tipo_documento` (ADR-011) + quarentena por construção.
+☑ `dim_categoria_despesa` — de `silver_despesa.tipo_despesa` + quarentena.
+☑ `pipeline_runs` dbt incremental operante (glob no Bronze Parquet + dummy quando vazio); pendente o `scripts/backfill_pipeline_runs.py` para migrar o histórico das Sprints 2/3 (ADR-019).
+☐ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021) — Onda 3.
 
 ### Onda 2 — `dim_parlamentar` SCD2 + mecanismo ADR-017
 
@@ -190,4 +190,4 @@
 ---
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.3 — Sprint 4 em andamento (planejamento arquitetural ADRs 018–023 concluído; Trilha A em curso; Trilha B/Ondas 2–3 em aberto).*
+*Versão atual: 0.4 — Sprint 4: planejamento ADRs 018–023 + trilhas A e B concluídas (Gold dimensional, HMAC via plugin dbt, `dbt build` 35/35 verde); Onda 2 (dim_parlamentar SCD2/ADR-017) e Onda 3 (fatos) em aberto.*

@@ -3,8 +3,14 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 
 from pipeline.bronze import run_pipeline
+from pipeline.camara.transform import carregar_silver_despesa as silver_camara
 from pipeline.logging import configure_logging
+from pipeline.senado.transform import carregar_silver_despesa as silver_senado
 from pipeline.storage import criar_storage
+from pipeline.transparencia.transform import (
+    carregar_silver_cartao,
+    carregar_silver_emenda,
+)
 from pipeline.watermark import AirflowVariableStore
 
 default_args = {
@@ -30,6 +36,31 @@ def _executar_bronze(**context):
     return str(run.run_id)
 
 
+def _executar_silver(**context):
+    """Executa as cargas Silver para as três fontes (ADR-023).
+
+    Roda em seguida da Bronze, reaproveitando o `run_id` dela (XCom) — o
+    Data Quality Report fica chaveado pela mesma execução. Cada fonte é
+    carregada em isolamento (falhas não derrubam as demais).
+    """
+    run_id = context["ti"].xcom_pull(task_ids="executar_bronze")
+    storage = criar_storage()
+    resultados = {
+        "camara": silver_camara(storage=storage, run_id=run_id),
+        "senado": silver_senado(storage=storage, run_id=run_id),
+        "transparencia_cartoes": carregar_silver_cartao(
+            storage=storage, run_id=run_id
+        ),
+        "transparencia_emendas": carregar_silver_emenda(
+            storage=storage, run_id=run_id
+        ),
+    }
+    return {
+        fonte: None if resultado is None else len(resultado.aceitos)
+        for fonte, resultado in resultados.items()
+    }
+
+
 with DAG(
     dag_id="observatorio_pipeline",
     description="Pipeline principal de ingestão e transformação de dados"
@@ -46,4 +77,9 @@ with DAG(
         python_callable=_executar_bronze,
     )
 
-    executar_bronze
+    executar_silver = PythonOperator(
+        task_id="executar_silver",
+        python_callable=_executar_silver,
+    )
+
+    executar_bronze >> executar_silver

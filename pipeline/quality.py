@@ -136,10 +136,10 @@ def schema_silver_cartao() -> pa.DataFrameSchema:
     CGU sempre fornece `unidadeGestora` — e portanto NÃO é tratada como
     nullable, ao contrário de despesa/emenda que têm UG inativa na v1.
 
-    Obs: a unicidade da chave de negócio não é fixada aqui — o `id`
-    nativo da CGU não é propagado até a Silver e a chave de fato difere
-    da despesa; a deduplicação e o fallback de unicidade são passados
-    pela camada ao `avaliar_qualidade` via `chaves_negocio`.
+    Obs: a unicidade da chave de negócio não é fixada aqui — a chave de
+    negócio é o `id` nativo da CGU, propagado até a Silver no
+    `pipeline/transparencia/transform.py`; o fallback de unicidade é
+    passado pela camada ao `avaliar_qualidade` via `chaves_negocio`.
     """
     return pa.DataFrameSchema(
         columns={

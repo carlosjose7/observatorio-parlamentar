@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 4 em planejamento (Gold — dbt Core com quarentena por construção, pipeline_runs DuckDB, SCD2 dim_parlamentar, contrato de qualidade Gold; ADR-023 — Silver sem caminho de carga); ADRs 001-023
+> Última atualização: Sprint 4 em curso — trilhas A e B do Gold concluídas (dbt Core com quarentena por construção, HMAC-SHA256 via plugin dbt, `pipeline_runs` DuckDB, `transform.py` das 3 fontes e task Silver no DAG / ADR-023); Onda 2 (SCD2 dim_parlamentar / ADR-017) e Onda 3 (fatos) em aberto. ADRs 001-023
  
 ---
  
@@ -255,26 +255,28 @@ observatorio-parlamentar/
 │   ├── Dockerfile
 │   ├── dependencies.py               # Sprint 6
 │   └── main.py
-├── pipeline/                         # ETL (Sprint 3: Bronze + motor Silver; caminho de carga Silver pendente — ADR-023; Gold, 4)
+├── pipeline/                         # ETL (Sprint 3: Bronze + motor Silver; caminho de carga Silver — ADR-023, Sprint 4; Gold)
 │   ├── camara/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
-│   │   └── transform.py              # Pendente — ADR-023 (Sprint 4)
+│   │   └── transform.py              # ADR-023 (Sprint 4) — silver_despesa
 │   ├── senado/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
-│   │   └── transform.py              # Pendente — ADR-023 (Sprint 4)
+│   │   └── transform.py              # ADR-023 (Sprint 4) — silver_despesa
 │   ├── transparencia/
 │   │   ├── __init__.py
 │   │   ├── extract.py                # Sprint 2
 │   │   ├── schemas.py                # Sprint 1
-│   │   └── transform.py              # Pendente — ADR-023 (Sprint 4)
+│   │   └── transform.py              # ADR-023 (Sprint 4) — silver_cartao/silver_emenda
 │   ├── gold/                         # dbt (ADR-018) — Sprint 4
+│   │   ├── hmac_udf.py               # plugin UDF HMAC-SHA256 p/ CPF (ADR-011)
 │   │   ├── models/
-│   │   │   ├── sources.yml           # Parquet Bronze como source (ADR-019)
-│   │   │   ├── dimensoes/
+│   │   │   ├── sources.yml           # DuckDB Silver main.* como source (ADR-019)
+│   │   │   ├── dimensions/           # dim_fornecedor(+quarantine), dim_categoria_despesa(+quarantine), dim_data
+│   │   │   ├── control/              # pipeline_runs (incremental)
 │   │   │   ├── fatos/
 │   │   │   └── analytics/
 │   │   ├── profiles.yml
@@ -756,4 +758,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.5 — Sprint 4 em planejamento (Gold; ADR-023 registra a lacuna de carga Silver); ADRs 001-023*
+*Versão atual: 1.6 — Sprint 4 em curso: trilhas A e B do Gold concluídas (ADRs 018-023; `transform.py` das 3 fontes, task Silver no DAG, dim_fornecedor/dim_categoria_despesa/pipeline_runs, HMAC via plugin dbt; `dbt build` 35/35 verde); Onda 2 (dim_parlamentar SCD2/ADR-017) e Onda 3 (fatos) em aberto; ADRs 001-023.*

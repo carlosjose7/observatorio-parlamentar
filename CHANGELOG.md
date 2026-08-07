@@ -8,6 +8,35 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 4 — Camada Gold (trilhas A e B)
+
+### Adicionado
+- ADRs 018–023: dbt Core no Gold com quarentena por construção,
+  `pipeline_runs` DuckDB, SCD2 `dim_parlamentar` (Onda 2), tabelas
+  analíticas §7, contrato de qualidade Gold e Silver sem caminho de
+  carga (lacuna Sprints 2/3 → absorvida como ADR-023/Sprint 4).
+- Gold dbt em `pipeline/gold/` (`profiles.yml`, `dbt_project.yml`,
+  `models/sources.yml`, `models/dimensions/`) — `dim_data`,
+  `dim_orgao` (seed), `dim_fornecedor`, `dim_categoria_despesa`, suas
+  quarentenas por construção e `pipeline_runs` (incremental) —
+  `dbt build` 35/35 verde.
+- Plugin `pipeline/gold/hmac_udf.py` — UDF `hmac_sha256_cpf` (HMAC-SHA256
+  sobre CPF na Gold; chave de `CPF_HMAC_SECRET_KEY`, sem vazar ao SQL).
+- `pipeline/camara/transform.py`, `pipeline/senado/transform.py` e
+  `pipeline/transparencia/transform.py` — caminho de carga Silver das 3
+  fontes (ADR-023), incluindo `normalizar_nome_proprio` em `normalize.py`.
+- Task `executar_silver` no `pipeline_dag.py` — conecta Bronze→Silver.
+
+### Corrigido
+- `sources.yml` do Gold sem `database:` explícito — catálogo DuckDB é o
+  nome do arquivo (`observatorio`), não `main`; `schema: main` mapeia as
+  fontes.
+- Plugin dbt-duckdb: `configure_connection` usava `con` (NameError) —
+  corrigido para `conn.create_function(...)`, propagando erros reais em
+  vez de engolir.
+
+---
+
 ## [Não publicadas] — pendências da Sprint 2
 
 - ☐ CGU Emendas: conferir o comportamento de rollover de ano no
