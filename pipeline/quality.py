@@ -76,6 +76,22 @@ def _chave_negocio_unica_check(chaves: list[str]) -> pa.Check:
     return pa.Check(_check, name="chave_negocio_unica")
 
 
+def _codigo_emenda_nao_si() -> pa.Check:
+    """Check: `codigo_emenda` não usa o marcador de ausência `S/I`.
+
+    A amostragem da API CGU (ADR-017) revelou registros com
+    `codigoEmenda = "S/I"` (código "sem informação"), que não é uma
+    chave válida nem um código real. Linhas com esse marcador são
+    isoladas na quarentena em vez de serem validadas como código
+    legítimo.
+    """
+
+    def _check(series: pd.Series) -> pd.Series:
+        return series.map(lambda v: not (isinstance(v, str) and v.strip() == "S/I"))
+
+    return pa.Check(_check, name="codigo_nao_si")
+
+
 # ── Schemas Pandera por tabela Silver (ADR-013) ──────────────────
 
 
@@ -153,6 +169,35 @@ def schema_silver_cartao() -> pa.DataFrameSchema:
     )
 
 
+def schema_silver_emenda() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_emenda` (CGU emendas, ADR-013/ADR-017).
+
+    Regras de lote: valores monetários não negativos, unicidade da
+    chave de negócio composta (`ano`, `codigo_emenda`) e rejeição do
+    marcador de ausência `S/I`. `nome_autor` é carregado normalizado
+    (uppercase, sem acento) e `tipo_emenda` fielmente tipado — sem
+    tentativa de resolução para `id_parlamentar`, deferida ao Gold
+    (ADR-017, Sprint 4).
+    """
+    return pa.DataFrameSchema(
+        columns={
+            "ano": pa.Column("int64", nullable=False),
+            "codigo_emenda": pa.Column(
+                str, nullable=False, checks=_codigo_emenda_nao_si()
+            ),
+            "tipo_emenda": pa.Column(str, nullable=False),
+            "nome_autor": pa.Column(str, nullable=False),
+            "funcao": pa.Column(str, nullable=True),
+            "subfuncao": pa.Column(str, nullable=True),
+            "localidade_do_gasto": pa.Column(str, nullable=True),
+            "valor_empenhado": pa.Column("float64", nullable=True, checks=pa.Check.ge(0)),
+            "valor_liquidado": pa.Column("float64", nullable=True, checks=pa.Check.ge(0)),
+            "valor_pago": pa.Column("float64", nullable=True, checks=pa.Check.ge(0)),
+        },
+        checks=[_chave_negocio_unica_check(["ano", "codigo_emenda"])],
+    )
+
+
 # ── Linha do Data Quality Report (ADR-015) ───────────────────────
 
 
@@ -168,6 +213,8 @@ class LinhaQualidadeReport:
         registros_quarentena: Que falharam e foram isolados.
         regras_violadas: Nomes das regras/colunas Pandera com falha.
         percentual_nulos_criticos: Ratio de nulos em campos críticos.
+        registros_deduplicados: Linhas removidas pela dedup independente
+            (ADR-014) antes do gate.
         execution_timestamp: Momento da validação.
     """
 
@@ -178,6 +225,7 @@ class LinhaQualidadeReport:
     registros_quarentena: int
     regras_violadas: list[str] = field(default_factory=list)
     percentual_nulos_criticos: float = 0.0
+    registros_deduplicados: int = 0
     execution_timestamp: datetime | None = None
 
 
