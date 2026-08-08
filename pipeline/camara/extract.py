@@ -47,11 +47,15 @@ def _listar_deputados(
     return ids
 
 
-def _construir_registro(item: dict[str, Any], run_meta: LoadMetadata) -> CamaraBronzeDespesa:
+def _construir_registro(
+    item: dict[str, Any], id_deputado: int, run_meta: LoadMetadata
+) -> CamaraBronzeDespesa:
     meta = run_meta.model_copy(
         update={"source_version": run_meta.execution_timestamp.date().isoformat()}
     )
-    return CamaraBronzeDespesa.model_validate({**item, "metadata": meta.model_dump()})
+    return CamaraBronzeDespesa.model_validate(
+        {**item, "id_deputado": id_deputado, "metadata": meta.model_dump()}
+    )
 
 
 def _deduplicar(registros: list[CamaraBronzeDespesa]) -> list[CamaraBronzeDespesa]:
@@ -106,7 +110,7 @@ def extract_despesas(
             dados = request_json(client, url, params, retry_settings)
             itens = dados.get("dados", [])
             for item in itens:
-                registros.append(_construir_registro(item, run_meta))
+                registros.append(_construir_registro(item, id_deputado, run_meta))
             if len(itens) < _itens_por_pagina(cfg):
                 break
             pagina += 1

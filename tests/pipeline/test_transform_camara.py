@@ -18,6 +18,7 @@ from pipeline.storage import LocalParquetStorage
 
 def _df_bronze(**override) -> pd.DataFrame:
     dados = {
+        "id_deputado": [141],
         "ano": [2024],
         "mes": [7],
         "cnpj_cpf_fornecedor": ["01.234.567/0001-89"],
@@ -42,6 +43,8 @@ class TestConstruirCamara:
 
         assert list(df.columns) == COLUNAS_SILVER
         assert df.loc[0, "fonte"] == "camara"
+        assert df.loc[0, "id_parlamentar"] == 141
+        assert df.loc[0, "nome_parlamentar"] is None
         assert df.loc[0, "cod_documento"] == "a3f3c9b1-0000-4000-8000-000000000001"
         assert df.loc[0, "cnpj_cpf_valor"] == "01234567000189"
         assert df.loc[0, "tipo_documento"] == "CNPJ"

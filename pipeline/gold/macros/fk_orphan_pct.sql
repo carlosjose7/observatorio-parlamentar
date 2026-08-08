@@ -23,13 +23,21 @@
 
 {% test fk_orphan_pct(model, column_name, to, field, threshold_pct=var('fk_orfas_threshold_pct')) %}
 
+    -- A razão é medida por LINHAS do fato, mas o count absoluto de órfãos usa
+    -- anti-join (NOT EXISTS) em vez de LEFT JOIN: em dimensões SCD Type 2
+    -- (dim_parlamentar, ADR-020) um mesmo valor natural tem MÚLTIPLAS versões,
+    -- e um LEFT JOIN pelo id natural MULTIPLICA as linhas do fato (total) sem
+    -- multiplicar os órfãos, mascando o percentual real. Contar total no fato
+    -- e órfãos por NOT EXISTS preserva a base de 100% (fato) e o denominador
+    -- intacto mesmo com versões duplicadas na dimensão.
     with contagem as (
         select
             count(*) as total,
-            count(case when d.{{ field }} is null then 1 end) as n_orfao
+            count(*) filter (where not exists (
+                select 1 from {{ to }} as d
+                where d.{{ field }} = f.{{ column_name }}
+            )) as n_orfao
         from {{ model }} as f
-        left join {{ to }} as d
-            on f.{{ column_name }} = d.{{ field }}
         where f.{{ column_name }} is not null
     )
     select n_orfao as n_orfao_ultrapassa_threshold

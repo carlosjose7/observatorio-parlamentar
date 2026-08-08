@@ -40,6 +40,8 @@ class TestConstruirSenado:
 
         assert list(df.columns) == COLUNAS_SILVER
         assert df.loc[0, "fonte"] == "senado"
+        assert df.loc[0, "id_parlamentar"] is None
+        assert df.loc[0, "nome_parlamentar"] == "EDUARDO GOMES"
         assert df.loc[0, "cod_documento"] == "90201"
         assert df.loc[0, "cnpj_cpf_valor"] == "04433000000190"
         assert df.loc[0, "tipo_documento"] == "CNPJ"

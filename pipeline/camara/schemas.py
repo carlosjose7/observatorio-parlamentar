@@ -23,6 +23,13 @@ class CamaraBronzeDespesa(BaseModel):
     arquitetura medalhão (arch_medalhao.md).
     """
 
+    id_deputado: int = Field(
+        ...,
+        description="Identidade do deputado na fonte (GET /deputados/{id}/despesas). "
+        "NÃO vem no corpo do item — o id do deputado é injetado pela iteração "
+        "do endpoint; sem ele a linhagem Silver→Gold de fact_despesa.id_parlamentar "
+        "seria perdida na Bronze.",
+    )
     ano: int
     mes: int
     cnpj_cpf_fornecedor: str | None = Field(
@@ -66,6 +73,12 @@ class CamaraSilverDespesa(BaseModel):
 
     ano: int
     mes: int
+    id_parlamentar: int | None = Field(
+        default=None,
+        description="Identidade parlamentar provinda da Bronze (`id_deputado`). "
+        "NOT NULL por contrato no Gold (FactDespesa); a Silver preserva o valor "
+        "da fonte sem resolver vigência (o SCD2 é resolvido no dbt, ADR-020).",
+    )
     cnpj_cpf_valor: str | None = Field(
         default=None,
         description="Dígitos sanitizados (CNPJ em claro) ou dígitos pendentes de HMAC (CPF) — hash aplicado na carga Gold",
