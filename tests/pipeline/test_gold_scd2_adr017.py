@@ -93,6 +93,17 @@ def _seed(db: Path) -> None:
                 (2020, "E6", "Emenda de Comissão", "COMISSAO DE SAUDE", "0", "0", "l", 600, 0, 0, "r", "p", "2026-01-01 00:00:00", "s"),
             ],
         )
+        # `silver_despesa` VAZIA: evita erro íntegro quando os testes de FK do
+        # fact_despesa (que compartilham dim_orgao/dim_data/dim_parlamentar)
+        # são agendados junto com as dimensões selecionadas; sem fatos, passam.
+        con.execute(
+            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
+            " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
+            " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
+            " valor_glosa double, run_id varchar, pipeline_version varchar,"
+            " execution_timestamp timestamp, source_version varchar)"
+        )
     finally:
         con.close()
 
@@ -137,6 +148,7 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 _SELECAO_FATO = (
     "dim_orgao dim_data dim_parlamentar emenda_autor emenda_autor_quarantine"
     " fact_emenda fact_emenda_quarantine"
+    " +fact_despesa +fact_despesa_quarantine"
 )
 
 
@@ -369,7 +381,11 @@ def _injetar_orfos(con, n_orfos: int, n_totais: int) -> None:
 
 
 def _test_fk_orphan(tmp_path, monkeypatch) -> dict[str, str]:
-    """Roda `dbt test --select test_name:fk_orphan_pct` e devolve name+status por node.
+    """Roda `dbt test --select fact_emenda,test_name:fk_orphan_pct` e devolve status por node.
+
+    A seleção fica ESCOTADA ao fato de emenda: `test_name:fk_orphan_pct` global
+    casaria também os testes do `fact_despesa` (que não existe neste fixture) e
+    quebraria a medição aqui.
 
     Injeta `--vars` de `config/pipeline.yaml` (fonte única, ADR-008) — a var
     `fk_orfas_threshold_pct` é exigida pelo test e não existe no projeto dbt.
@@ -390,7 +406,7 @@ def _test_fk_orphan(tmp_path, monkeypatch) -> dict[str, str]:
             "--profiles-dir",
             str(_GOLD),
             "--select",
-            "test_name:fk_orphan_pct",
+            "fact_emenda,test_name:fk_orphan_pct",
             "--vars",
             json.dumps(get_dbt_vars()),
         ]

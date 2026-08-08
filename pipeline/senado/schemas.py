@@ -56,7 +56,19 @@ class SenadoSilverDespesa(BaseModel):
 
     ano: int
     mes: int
-    senador: str
+    id_parlamentar: int | None = Field(
+        default=None,
+        description="Identidade parlamentar. A fonte CEAPS não expõe o id do "
+        "senador (apenas o nome) — NULL na Silver; resolvido no Gold por "
+        "matching de nome normalizado contra dim_parlamentar (SCD2, vigência "
+        "na data da despesa), mesmo padrão do ADR-017.",
+    )
+    nome_parlamentar: str | None = Field(
+        default=None,
+        description="Nome do senador como publicado na fonte (coluna SENADOR). "
+        "Preservado na Silver para permitir a resolução do id_parlamentar "
+        "no Gold (a premissa do ADR-017 para a Câmara se aplica aqui por nome).",
+    )
     tipo_despesa: str
     cnpj_cpf_valor: str | None
     tipo_documento: TipoDocumento | None

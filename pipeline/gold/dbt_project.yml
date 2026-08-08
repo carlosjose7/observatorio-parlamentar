@@ -42,6 +42,8 @@ models:
       +materialized: incremental
     emenda:
       +materialized: table
+    despesa:
+      +materialized: table
 
 seeds:
   observatorio_gold:

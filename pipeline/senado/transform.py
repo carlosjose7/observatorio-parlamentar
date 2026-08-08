@@ -38,6 +38,8 @@ logger = structlog.get_logger()
 
 COLUNAS_SILVER = [
     "fonte",
+    "id_parlamentar",
+    "nome_parlamentar",
     "ano",
     "mes",
     "cod_documento",
@@ -81,6 +83,8 @@ def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "fonte": ["senado"] * n,
+            "id_parlamentar": pd.Series([None] * n, dtype="object"),
+            "nome_parlamentar": df_bronze["senador"],
             "ano": df_bronze["ano"].astype("int64"),
             "mes": df_bronze["mes"].astype("int64"),
             "cod_documento": df_bronze["cod_documento"].astype(str),
