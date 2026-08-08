@@ -158,12 +158,13 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
 
     n = len(df_bronze)
-    data = pd.to_datetime(df_bronze["data_status"])
-    id_legislatura = (
-        data.dt.date.map(legislatura_para_data)
-        .astype("Int64")
-        .fillna(0)
-        .astype("int64")
+    data = pd.to_datetime(df_bronze["data_status"], errors="coerce")
+    id_legislatura = pd.Series(
+        [
+            (legislatura_para_data(ts.date()) or 0) if pd.notna(ts) else 0
+            for ts in data
+        ],
+        dtype="int64",
     )
 
     df = pd.DataFrame(

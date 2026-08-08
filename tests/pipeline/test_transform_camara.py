@@ -169,6 +169,16 @@ class TestConstruirParlamentarCamara:
         # o gate gt(0) da Silver manda para a quarentena (ADR-024)
         assert df.loc[0, "id_legislatura_fonte"] == 57
 
+    def test_data_nao_parseavel_vira_zero_na_derivacao(self):
+        from pipeline.camara.transform import construir_silver_parlamentar
+
+        df = construir_silver_parlamentar(
+            _df_bronze_parlamentar(data_status=["valor_invalido"])
+        )
+        # NaT → 0 → capturado pelo gate gt(0) (ADR-024); não quebra o transform
+        assert df.loc[0, "id_legislatura"] == 0
+        assert pd.isna(df.loc[0, "data"])
+
     def test_situacao_desconhecida_vira_sentinela(self):
         from pipeline.camara.transform import construir_silver_parlamentar
 
