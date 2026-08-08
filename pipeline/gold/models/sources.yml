@@ -14,6 +14,11 @@ sources:
         description: Despesas normalizadas Câmara + Senado (coluna `fonte`; ADR-016/ADR-023).
       - name: silver_emenda
         description: Emendas parlamentares CGU normalizadas (ADR-017).
+      - name: silver_parlamentar
+        description: >
+          Registros as-of de parlamentares Câmara+Senado (fonte `fonte`),
+          snapshot por data — insumo bruto da dimensão SCD Type 2
+          `dim_parlamentar` (ADR-020).
       - name: silver_cartao
         description: Transações CPGF CGU normalizados (chave `id`, transform.py).
       - name: data_quality_report

@@ -186,9 +186,9 @@
   `GET /senador/lista/atual.json` (lista já traz partido/UF/legislatura; sem
   request por id), snapshot `parlamento/senado/`, fonte='senado', task
   `senado_parlamentares` no DAG.
-- ☐ `dim_parlamentar` SCD Type 2 (snapshot merge/upsert, ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`.
-- ☐ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado; matching por nome vigente ao ano; quarentena por motivo.
-- ☐ Desenhar o mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`/`autor_fora_cobertura`.
+- ☑ `dim_parlamentar` SCD Type 2 (ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`; recomputada deterministicamente do histórico de snapshots (idempotente, `end_date` na data as-of real, não da execução); quarentena por construção (ADR-018).
+- ☑ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado (`emenda_tipos_colegiados`, var dbt a validar com o catálogo real); matching por nome normalizado contra a versão vigente no ano da emenda (`[effective_date, end_date)`).
+- ☑ Mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`/`autor_fora_cobertura` — `emenda_autor` (só resolvido) + `emenda_autor_quarantine` (motivos `autor_colegiado`/`autor_ambiguo`/`autor_fora_cobertura`/`autor_nao_resolvido`); classificação centralizada no modelo efêmero `em_autor_classificacao`.
 - ☑ **ADR-024 — paridade semântica `silver_parlamentar` (Câmara×Senado)**: `id_legislatura` derivada de calendário (`pipeline/parlamento.py`, nunca da API) + `gt(0)` no gate (fim do bug do `0` do Senado); `situacao_bruta` + `situacao_normalizada` (de-para versionado, sentinela `nao_mapeado`).
 - ☐ **Catálogo real de `situacao` (ação de seguimento do ADR-024)**: na primeira captura real, verificar vocabulários de `DescricaoParticipacao` (Senado) e `ultimoStatus.situacao` (Câmara) e adicionar ao de-para com teste.
 - ☐ **Manutenção periódica do calendário `LEGISLATURAS` (ação de seguimento do ADR-024)**: a derivação de `id_legislatura` cobre as legislaturas 54ª–58ª (fim exclusivo em 2031-02-01); snapshots além da janela caem no gate `gt(0)` → quarentena. **Gatilho**: ampliar `pipeline/parlamento.py::LEGISLATURAS` a cada início de legislatura (ex.: 59ª a partir de 2031-02-01, cobre a janela 2035 do `dim_data` Gold). **Dono**: owner do pipeline.
@@ -218,4 +218,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.4 — Sprint 4: planejamento ADRs 018–023 + trilhas A e B concluídas (Gold dimensional, HMAC via plugin dbt, `dbt build` 35/35 verde); Onda 2 (dim_parlamentar SCD2/ADR-017) e Onda 3 (fatos) em aberto.*
+*Versão atual: 0.4 — Sprint 4: planejamento ADRs 018–023 + trilhas A e B concluídas (Gold dimensional, HMAC via plugin dbt, `dbt build` 35/35 verde); Onda 3 (fatos) em aberto. Onda 2 concluída: `dim_parlamentar` SCD2 (ADR-020) + mecanismo ADR-017 (`emenda_autor`/`emenda_autor_quarantine`), 114 testes verdes.*
