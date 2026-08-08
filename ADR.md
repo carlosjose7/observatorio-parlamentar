@@ -1124,6 +1124,49 @@ Consequências:
   do Gold e `is_current = true`, sem histórico prévio reconstruível a
   partir das fontes disponíveis (limitação conhecida, não bloqueante).
 
+Nota de emenda (Onda 2 — supersessão parcial):
+A implementação de `dim_parlamentar` (pipeline/gold/models/dimensions/
+dim_parlamentar.sql) diverge deliberadamente da decisão 1 acima: em
+vez de carga incremental merge/upsert por snapshot, a dimensão é
+**recomputada deterministicamente** do histórico completo de snapshots
+de `silver_parlamentar` (append-only, ordenado por data as-of), e
+registrada em nota de emenda deste ADR para registrar a decisão e sua
+justificativa técnica.
+
+Justificativa técnica (motivo da supersessão):
+1. **Precisão de `end_date`**: o merge por snapshot data marca `end_date`
+   como **data da execução** do Gold — uma aproximação do momento real da
+   mudança. O recompute usa `end_date` = data as-of da observação seguinte
+   (window `lead(effective_date)`), medida observacional exata, não
+   administrativa. O teste de regressão (tests/pipeline/test_gold_scd2_adr017.py)
+   prova o SCD2 pegando a versão que vigia no ano, justamente porque a
+   primeira versão fecha em 2019-07-01 (observação seguinte), não "na data
+   em que o pipeline rodou".
+2. **Robustez a reprocessamento**: merge incremental não refaz versões já
+   fechadas em execuções anteriores quando há backfill/reprocessamento da
+   Silver — estado divergente (ADR clássico de SCD2 incremental). O recompute
+   é idempotente e reproduz o histórico inteiro exatamente a cada execução
+   (RF-12), a um custo aceitável para o volume esperado do projeto.
+3. **Coerência com o modelo de materialização do Gold**: todas as camadas
+   Gold são reconstruídas via `dbt build` na base da Silver, sem camada
+   cumulativa que justifique o estado incremental.
+
+Alterações de contrato documentadas:
+- `surrogate_key` deixa de ser autoincremental (decidido na decisão 3)
+  e passa a ser **composta determinística**:
+  `namespace(fonte) + id_parlamentar * 1000 + id_versao`, onde `id_versao`
+  é o ordinal de versão computado por window (soma de flag LAG de mudança
+  de `(nome, sigla_partido, sigla_uf, situacao_normalizada)` ordenado por
+  `data`). Propriedades: idempotente; estável para um histórico estável;
+  **não garante unicidade imaterial sob backfill retroativo** inserido no
+  meio do histórico (versões ao vivo renumerem) — limitação aceita porque as
+  fontes atuais são append-only sem reconstrução retroativa, e registrada
+  aqui como risco observável.
+- Contrato de vigência-por-ano (decisão 2) mantido integralmente.
+
+Status da nota: emendado, aguarda re-aprovação do ADR-020 na revisão da
+Onda 2.
+
 ---
 
 ADR-021
