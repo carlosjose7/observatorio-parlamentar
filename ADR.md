@@ -1158,11 +1158,21 @@ Alterações de contrato documentadas:
   é o ordinal de versão computado por window (soma de flag LAG de mudança
   de `(nome, sigla_partido, sigla_uf, situacao_normalizada)` ordenado por
   `data`). Propriedades: idempotente; estável para um histórico estável;
-  **não garante unicidade imaterial sob backfill retroativo** inserido no
-  meio do histórico (versões ao vivo renumerem) — limitação aceita porque as
-  fontes atuais são append-only sem reconstrução retroativa, e registrada
-  aqui como risco observável.
+  **não garante estabilidade da numeração sob backfill retroativo** inserido
+  no meio do histórico (versões adjacentes renumeram) — limitação aceita
+  porque as fontes atuais são append-only sem reconstrução retroativa, e
+  registrada aqui como risco observável.
 - Contrato de vigência-por-ano (decisão 2) mantido integralmente.
+
+Consequência derivada (implicação prática não bloqueante, Sprint 6):
+`surrogate_key` é estável apenas dentro de uma mesma execução completa do
+`dbt build`; não deve ser exposto como identificador externo durável (API,
+exports, cache). Para referência externa/idempotência entre execuções, usar
+a **chave natural composta** `(fonte, id_parlamentar, effective_date)`:
+estável sob qualquer re-computação do histórico. A Sprint 6 (API) deve
+tratar essa restrição explicitamente ao desenhar endpoints que referenciem
+parlamentares — mesma classe de dívida que já custou as Sprints 3 e Onda 2
+(Senado); registrada antecipadamente para não virar descoberta tardia.
 
 Status da nota: emendado, aguarda re-aprovação do ADR-020 na revisão da
 Onda 2.
