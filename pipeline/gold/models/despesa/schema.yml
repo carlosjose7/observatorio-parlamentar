@@ -83,6 +83,22 @@ models:
                 field: id_parlamentar
               config:
                 severity: warn
+      - name: surrogate_key
+        description: Versão exata de dim_parlamentar vigente em data_documento (auditoria ADR-017). FK 1:1 — prova a versão, não apenas o id (dims SCD2 têm várias versões por id).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: surrogate_key
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: surrogate_key
+              config:
+                severity: warn
       - name: id_fornecedor
         description: dim_fornecedor da despesa (ADR-011) — CNPJ claro, CPF por HMAC da UDF.
         tests:
