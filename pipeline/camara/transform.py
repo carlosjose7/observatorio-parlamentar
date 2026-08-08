@@ -31,6 +31,7 @@ import structlog
 
 from pipeline.contracts import resolve_tipo_documento
 from pipeline.normalize import parse_date_multi_format
+from pipeline.parlamento import legislatura_para_data, normalizar_situacao
 from pipeline.silver import (
     COLUNAS_SILVER_PARLAMENTAR,
     ResultadoCargaSilver,
@@ -140,21 +141,31 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
     """Mapeia o snapshot Bronze de `parlamento/` para o grão Silver canônico.
 
     Em `nome` prefere o nome eleitoral (campanha) e recai no nome civil.
+
     A as-of date é `data_status` (a data de vigência de `ultimoStatus`
-    informada pela API) — é ela que indexa o SCD2. Colunas que podem
-    vir vazias no `ultimoStatus` (partido, UF, situação) seguem nullable.
+    informada pela API) — é ela que indexa o SCD2. **ADR-024**: `id_legislatura`
+    é derivada do calendário legislativo a partir de `data` (não copiada da
+    API, que mede semântica própria por Casa); o valor bruto da fonte é
+    preservado em `id_legislatura_fonte` (auditoria). `situacao_bruta`
+    preserva o original e `situacao_normalizada` aplica o de-para versionado
+    (pipeline.parlamento) — a taxonomia comum alimenta o SCD2 sem depender do
+    vocabulário de cada API.
 
-    Args:
-        df_bronze: DataFrame achatado dos snapshots (`records_to_dataframe`).
-
-    Returns:
-        DataFrame canônico de `silver_parlamentar` (fonte='camara') ou
-        vazio com o schema fixo quando não há registros.
+    Data fora do calendário conhecido → `id_legislatura = 0` (cai no gate
+    `gt(0)` da Silver, quarentena — ADR-024).
     """
     if df_bronze.empty:
         return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
 
     n = len(df_bronze)
+    data = pd.to_datetime(df_bronze["data_status"])
+    id_legislatura = (
+        data.dt.date.map(legislatura_para_data)
+        .astype("Int64")
+        .fillna(0)
+        .astype("int64")
+    )
+
     df = pd.DataFrame(
         {
             "fonte": ["camara"] * n,
@@ -162,9 +173,13 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
             "nome": df_bronze["nome_eleitoral"].fillna(df_bronze["nome_civil"]),
             "sigla_partido": df_bronze["sigla_partido"],
             "sigla_uf": df_bronze["sigla_uf"],
-            "id_legislatura": df_bronze["id_legislatura"].astype("int64"),
-            "situacao": df_bronze["situacao"],
-            "data": pd.to_datetime(df_bronze["data_status"]),
+            "id_legislatura": id_legislatura,
+            "id_legislatura_fonte": df_bronze["id_legislatura"].astype("Int64"),
+            "situacao_bruta": df_bronze["situacao"],
+            "situacao_normalizada": df_bronze["situacao"].map(
+                lambda v: normalizar_situacao("camara", v)
+            ),
+            "data": data,
             "run_id": df_bronze["run_id"],
             "pipeline_version": df_bronze["pipeline_version"],
             "execution_timestamp": df_bronze["execution_timestamp"],

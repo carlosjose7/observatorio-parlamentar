@@ -28,6 +28,8 @@ except ImportError:  # pandera 0.18–0.19 — import top-level
 
 import structlog
 
+from pipeline.parlamento import _VALORES_NORMALIZADOS
+
 logger = structlog.get_logger()
 
 _DATA_INICIO_PLAUSIVEL = date(2015, 1, 1)
@@ -199,14 +201,22 @@ def schema_silver_emenda() -> pa.DataFrameSchema:
 
 
 def schema_silver_parlamentar() -> pa.DataFrameSchema:
-    """Schema Silver para `silver_parlamentar` (snapshot Onda 2, ADR-020).
+    """Schema Silver para `silver_parlamentar` (snapshot Onda 2, ADR-020/ADR-024).
 
     Dados mestres dos deputados: um registro por `(fonte, id_parlamentar,
-    data_status)` — grão estritamente diário da observação de
-    `ultimoStatus`. `data` não pode ser do futuro nem anterior a 2015
-    (janela plausível da fonte). `nome` e `id_parlamentar` são críticos
-    (não nulos); partido/UF/legislatura podem faltar no `ultimoStatus`
-    para parlamentares sem mandato vigente, por isso são nullables.
+    data_status)` — grão estritamente diário da observação de `ultimoStatus`.
+    `data` não pode ser do futuro nem anterior a 2015 (janela plausível da
+    fonte). `nome` e `id_parlamentar` são críticos (não nulos); partido/UF podem
+    faltar no `ultimoStatus` para parlamentares sem mandato vigente, por isso
+    `sigla_partido`/`sigla_uf` são nullables.
+
+    ADR-024 (paridade semântica Câmara×Senado):
+    - `id_legislatura` é derivada do calendário legislativo a partir de `data` e
+      deve ser `> 0` — data fora do calendário cai na quarentena (e o bug do
+      hard-coded `0` do Senado deixa de ser uma linha válida).
+    - `id_legislatura_fonte` guarda o bruto da API (auditoria, nullable).
+    - `situacao_normalizada` usa o enum comum de `pipeline/parlamento`; valores
+      fora do de-para viram `nao_mapeado` (nunca NULL silencioso).
 
     A unicidade da chave de negócio composta mantém o SCD2: snapshots
     idênticos entre execuções colapsam; uma mudança de partido/UF/
@@ -220,8 +230,18 @@ def schema_silver_parlamentar() -> pa.DataFrameSchema:
             "nome": pa.Column(str, nullable=False),
             "sigla_partido": pa.Column(str, nullable=True),
             "sigla_uf": pa.Column(str, nullable=True),
-            "id_legislatura": pa.Column("int64", nullable=False),
-            "situacao": pa.Column(str, nullable=True),
+            "id_legislatura": pa.Column(
+                "int64",
+                nullable=False,
+                checks=pa.Check.gt(0, name="legislatura_valida"),
+            ),
+            "id_legislatura_fonte": pa.Column("Int64", nullable=True),
+            "situacao_bruta": pa.Column(str, nullable=True),
+            "situacao_normalizada": pa.Column(
+                str,
+                nullable=False,
+                checks=pa.Check.isin(list(_VALORES_NORMALIZADOS)),
+            ),
             "data": pa.Column(
                 "datetime64[ns]",
                 nullable=False,

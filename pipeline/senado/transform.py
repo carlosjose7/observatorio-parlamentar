@@ -26,6 +26,7 @@ import structlog
 
 from pipeline.contracts import resolve_tipo_documento
 from pipeline.normalize import parse_date_multi_format, parse_decimal_ptbr
+from pipeline.parlamento import legislatura_para_data, normalizar_situacao
 from pipeline.silver import (
     COLUNAS_SILVER_PARLAMENTAR,
     ResultadoCargaSilver,
@@ -136,8 +137,11 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
 
     Mesmo contrato de `silver_parlamentar` da Câmara (ADR-020), com
     `fonte='senado'`: em `nome` prefere o nome parlamentar (urna) e recai no
-    completo; `situacao` é a descrição de participação do mandato (ex: Titular);
-    `data` é o `data_status` (data de execução do snapshot, as-of do SCD2).
+    completo. **ADR-024**: `id_legislatura` é derivada do calendário a partir
+    de `data` (a API do Senado mede a legislatura do *mandato* — semântica
+    distinta da Câmara); o bruto vai para `id_legislatura_fonte`.
+    `situacao_bruta` (ex: Titular) e `situacao_normalizada` (de-para
+    versionado). `data` = `data_status` (as-of do SCD2).
 
     Args:
         df_bronze: DataFrame achatado dos snapshots (`records_to_dataframe`).
@@ -150,6 +154,14 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
 
     n = len(df_bronze)
+    data = pd.to_datetime(df_bronze["data_status"])
+    id_legislatura = (
+        data.dt.date.map(legislatura_para_data)
+        .astype("Int64")
+        .fillna(0)
+        .astype("int64")
+    )
+
     df = pd.DataFrame(
         {
             "fonte": ["senado"] * n,
@@ -157,9 +169,13 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
             "nome": df_bronze["nome_parlamentar"].fillna(df_bronze["nome_completo"]),
             "sigla_partido": df_bronze["sigla_partido"],
             "sigla_uf": df_bronze["sigla_uf"],
-            "id_legislatura": df_bronze["id_legislatura"].astype("int64"),
-            "situacao": df_bronze["situacao"],
-            "data": pd.to_datetime(df_bronze["data_status"]),
+            "id_legislatura": id_legislatura,
+            "id_legislatura_fonte": df_bronze["id_legislatura"].astype("Int64"),
+            "situacao_bruta": df_bronze["situacao"],
+            "situacao_normalizada": df_bronze["situacao"].map(
+                lambda v: normalizar_situacao("senado", v)
+            ),
+            "data": data,
             "run_id": df_bronze["run_id"],
             "pipeline_version": df_bronze["pipeline_version"],
             "execution_timestamp": df_bronze["execution_timestamp"],

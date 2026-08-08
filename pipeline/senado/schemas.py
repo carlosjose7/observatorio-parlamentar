@@ -86,8 +86,11 @@ class SenadoBronzeParlamentar(BaseModel):
             está vazio.
         sigla_partido: Partido vigente no snapshot (`SiglaPartidoParlamentar`).
         sigla_uf: UF do mandato vigente.
-        id_legislatura: Legislatura do mandato (primeira do mandato; 0
-            quando a fonte não informa — cai no gate da Silver).
+        id_legislatura: Legislatura informada pela fonte (primeira do mandato;
+            0 quando a fonte não informa). **ADR-024**: valor bruto, preservado
+            apenas para auditoria em `silver_parlamentar.id_legislatura_fonte`;
+            a regra de negócio do SCD2 usa a legislatura **derivada do
+            calendário** a partir de `data_status`.
         situacao: Descrição de participação no mandato (ex: Titular).
         data_status: Data de vigência do snapshot (ISO, data de execução).
     """

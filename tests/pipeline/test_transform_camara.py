@@ -153,8 +153,30 @@ class TestConstruirParlamentarCamara:
         assert df.loc[0, "nome"] == "ANA BEATRIZ"
         assert df.loc[0, "sigla_partido"] == "PSB"
         assert df.loc[0, "sigla_uf"] == "PE"
-        assert df.loc[0, "id_legislatura"] == 57
+        assert df.loc[0, "id_legislatura"] == 57  # derivada do calendário (2026-08-07)
+        assert df.loc[0, "id_legislatura_fonte"] == 57  # bruto da API
+        assert df.loc[0, "situacao_bruta"] == "Exercício"
+        assert df.loc[0, "situacao_normalizada"] == "ativo"
         assert str(df.loc[0, "data"])[:10] == "2026-08-07"
+
+    def test_legislatura_derivada_fora_do_calendario_vira_zero(self):
+        from pipeline.camara.transform import construir_silver_parlamentar
+
+        df = construir_silver_parlamentar(
+            _df_bronze_parlamentar(data_status=["2000-01-01T00:00:00"])
+        )
+        assert df.loc[0, "id_legislatura"] == 0
+        # o gate gt(0) da Silver manda para a quarentena (ADR-024)
+        assert df.loc[0, "id_legislatura_fonte"] == 57
+
+    def test_situacao_desconhecida_vira_sentinela(self):
+        from pipeline.camara.transform import construir_silver_parlamentar
+
+        df = construir_silver_parlamentar(
+            _df_bronze_parlamentar(situacao=["Inventada"])
+        )
+        assert df.loc[0, "situacao_bruta"] == "Inventada"
+        assert df.loc[0, "situacao_normalizada"] == "nao_mapeado"
 
     def test_nome_recai_no_civil_quando_eleitoral_ausente(self):
         from pipeline.camara.transform import construir_silver_parlamentar

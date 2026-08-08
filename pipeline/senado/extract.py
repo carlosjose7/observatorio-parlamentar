@@ -135,6 +135,11 @@ def _construir_senador(item: dict[str, Any], run_meta: LoadMetadata) -> SenadoBr
 
     Os atributos de vigência (partido, UF, situação, legislatura) já vêm no
     próprio item da lista — não há request por id (diferente da Câmara).
+
+    A `id_legislatura` gravada aqui é o valor bruto (primeira do mandato, ou
+    0 quando ausente) — preservado apenas para auditoria. A regra de negócio
+    do SCD2 não usa esse número: a Silver deriva a legislatura do calendário
+    a partir de `data_status` (ADR-024).
     """
     ident = item.get("IdentificacaoParlamentar", {}) or {}
     mandato = item.get("Mandato", {}) or {}

@@ -1290,3 +1290,87 @@ Consequências:
   `silver_cartao` não alimenta os models da Trilha A.
 
 ---
+
+ADR-024
+Título: Paridade semântica de `silver_parlamentar` entre Câmara e Senado —
+legislatura derivada por calendário e taxonomia normalizada de situação
+
+Status:
+Aceito
+
+Contexto:
+A Onda 2 cobriu Câmara e Senado na mesma tabela `silver_parlamentar`
+(chave dedup composta `(fonte, id_parlamentar, data)`, ADR-020). Revisão
+técnica pós-cobertura identificou que o schema unificado partiu do
+payload da Câmara e dois campos que alimentam o SCD2 de `dim_parlamentar`
+não têm paridade semântica quando o Senado entra:
+
+1. **`id_legislatura` incompatível por fonte — não é bug de mapeamento.**
+   A Câmara informa a legislatura **vigente** (`ultimoStatus.idLegislatura`);
+   o Senado informa a **primeira do mandato** (`Mandato.`
+   `PrimeiraLegislaturaDoMandato.NumeroLegislatura` — mandato de 8 anos,
+   duas legislaturas). Campos que medem coisas diferentes no mesmo lugar;
+   pior: o fallback hard-coded `0` do Senado chegava à Silver como linha
+   **válida** (doc e schema antigos diziam "cai no gate", mas não havia
+   `gt(0)`), gerando dimensão com legislatura 0.
+2. **`situacao` usa taxonomias diferentes por fonte.** Câmara: situação de
+   exercício em `ultimoStatus` (ex: "Exercício", "Licença"); Senado:
+   descrição de participação no mandato (ex: "Titular", "Suplente"). Os
+   vocabulários não se comparam e não é possível derivá-los por cálculo —
+   só por um de-para explícito e documentado.
+
+O propósito do SCD2 é rastrear a troca de partido/status no tempo (RF-11);
+um atributo de histórico assimétrico entre Câmara e Senado quebra a
+semântica da dimensão.
+
+Decisão:
+1. **Legislatura derivada por calendário** (opção (a) da revisão):
+   `pipeline/parlamento.py` centraliza o calendário das legislaturas federais
+   (54ª–58ª, intervalo contínuo desde 2011; dado estável e público);
+   `silver_parlamentar.id_legislatura` é calculada do **calendário a partir
+   de `data`** (as-of do snapshot) nos dois transformadores, nunca copiada da
+   API.
+   - O valor bruto da API é preservado em `id_legislatura_fonte` (auditoria,
+     nullable) — inclusive o `0` do Senado deixa de injetar dado falso na
+     dimensão e vira só marcador de auditoria.
+2. **Gate Pandera com `Check.gt(0)` em `id_legislatura`** (bug
+   independente da decisão acima, corrigido já): data fora do calendário
+   (ex: ano 2000) → legislatura não resolvida → `id_legislatura=0` →
+   **quarentena**, não linha válida. A `data_status` é o as-of e o calendário
+   cobre o histórico 2015+ (o gate `nao_anterior_a(2015)` já isola
+   o absurdo), reforçando a paridade.
+3. **Taxonomia normalizada de `situacao`** com de-para versionado e
+   **dois campos**:
+   - `situacao_bruta`: valor original da fonte (rastreável, auditável).
+   - `situacao_normalizada`: enum comum de `pipeline/parlamento`
+     (`ativo`, `licenca`, `afastado`, `fim_mandato`, `nao_mapeado`).
+   - De-para por fonte em tabela explícita (`_DE_PARA_SITUACAO` em
+     `pipeline/parlamento.py`, chaves `camara`/`senado`), versionada com
+     teste; vocabulário não catalogado → sentinela `nao_mapeado` (nunca
+     NULL silencioso, auditável pelo bruto).
+   - Não estende de-para inline em transformador: vocabulário novo entra em
+     `pipeline/parlamento.py` com teste.
+4. `schema_silver_parlamentar` (quality.py) reflete:
+   - `id_legislatura` `int64` + `gt(0)`.
+   - `id_legislatura_fonte` `Int64` nullable (bruto).
+   - `situacao_bruta` nullable; `situacao_normalizada` not-null `isin`.
+
+Consequências:
+- `silver_parlamentar` ganha `id_legislatura_fonte`, `situacao_bruta` e
+  `situacao_normalizada` e perde `situacao` — quebra de schema em tabela
+  ainda não consolidada em produção (Onda 2 não materializada no Gold), sem
+  impacto operacional.
+- O histórico SCD2 de `dim_parlamentar` passa a comparar Câmara e Senado com
+  semântica comum de legislatura e de situação — evitando viés
+  Câmara×Senado nos atributos rastreados por RF-11.
+- `nao_mapeado` é sinal de vocabulário novo a catalogar: o Data Quality
+  Report da Silver contabiliza (via `registros_quarentena` do gate `isin`,
+  quando a regra captar) — ver ADR-015.
+- O de-para depende do vocabulário real das APIs; uma primeira captura real
+  pode trazer valores não catalogados → `nao_mapeado`, e devem ser
+  adicionados ao de-para com teste na sequência (ação registrada no
+  BACKLOG, Onda 2).
+
+---
+
+<!-- Continue with further ADRs -->

@@ -45,6 +45,12 @@ DIRETORIO_QUARENTENA = Path("_quarantine")
 # Contrato canônico de `silver_parlamentar` — tabela alimentada por ambas as
 # Casas (Câmara e Senado, Onda 2 / ADR-020). Fica aqui (Silver compartilhado)
 # para que os `transform.py` por fonte mapeiem o mesmo grão de colunas.
+#
+# ADR-024 (paridade semântica): `id_legislativa` é **derivada do calendário
+# legislativo a partir da `data`** (as-of do snapshot) — nunca copiada da API,
+# pois cada API mede coisa diferente. `id_legislatura_fonte` guarda o valor
+# bruto original para auditoria. `situacao_bruta` é o valor original e
+# `situacao_normalizada` a taxonomia mínima comum (de-para versionado).
 COLUNAS_SILVER_PARLAMENTAR = [
     "fonte",
     "id_parlamentar",
@@ -52,7 +58,9 @@ COLUNAS_SILVER_PARLAMENTAR = [
     "sigla_partido",
     "sigla_uf",
     "id_legislatura",
-    "situacao",
+    "id_legislatura_fonte",
+    "situacao_bruta",
+    "situacao_normalizada",
     "data",
     "run_id",
     "pipeline_version",
