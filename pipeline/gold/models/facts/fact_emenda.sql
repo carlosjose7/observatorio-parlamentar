@@ -8,8 +8,10 @@
 --
 -- FKs/dimensões (modelo de constelação, ADR-012):
 --   - id_parlamentar → dim_parlamentar (versão vigente no ano, via ADR-017).
---   - id_orgao       → dim_orgao (seed): CD=1 / SF=2, derivada da `fonte` da
---                      versão de dim_parlamentar casada no matching.
+--   - id_orgao       → dim_orgao (seed), via JOIN por `sigla` derivada da
+--                      `fonte` da versão casada (emenda_autor_orgao) — sem
+--                      literal da casa [ADR-022.1]; fonte sem órgão conhecido
+--                      NÃO promove aqui (Vai à quarentena ADR-018).
 --   - data_sk        → dim_data: a CGU só expõe o `ano` do exercício; a emenda
 --                      é representada no último dia do ano (ANO-12-31), dentro
 --                      do horizonte de dim_data (2015–2035).
@@ -43,13 +45,14 @@ with resolvidas as (
     inner join {{ ref('emenda_autor') }} ma using (ano, codigo_emenda)
 ),
 
-com_fonte as (
+com_orgao as (
     select
         r.*,
-        case when d.fonte = 'senado' then 2 else 1 end as id_orgao
+        eao.id_orgao
     from resolvidas r
-    inner join {{ ref('dim_parlamentar') }} d
-        on r.surrogate_key = d.surrogate_key
+    inner join {{ ref('emenda_autor_orgao') }} eao
+        on r.ano = eao.ano and r.codigo_emenda = eao.codigo_emenda
+    where eao.id_orgao is not null
 )
 
 select
@@ -75,4 +78,4 @@ select
     pipeline_version,
     execution_timestamp,
     source_version
-from com_fonte
+from com_orgao

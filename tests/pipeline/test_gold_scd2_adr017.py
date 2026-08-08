@@ -1,21 +1,31 @@
 # tests/pipeline/test_gold_scd2_adr017.py
-"""Integração dbt Gold — `dim_parlamentar` SCD Type 2 + resolução de autor (ADR-017).
+"""Integração dbt Gold — `dim_parlamentar` SCD Type 2 + resolução de autor
+(ADR-017) + contratos de qualidade dos fatos (ADR-022.1/3a).
 
-Regressão da Onda 2 (BACKLOG.md): a dimensão SCD2 (ADR-020) e o mecanismo de
-resolução de autor de emenda (ADR-017) são modelos Gold e são exercitados de
-verdade aqui (dbtRunner invocado por teste), não apenas compilados.
+Regressão da Onda 2/3 (BACKLOG.md): a dimensão SCD2 (ADR-020), o mecanismo de
+resolução de autor de emenda (ADR-017) e as duas camadas de integridade
+referencial do ADR-022 são modelos Gold exercitados de verdade aqui (dbtRunner
+invocado por teste), não apenas compilados.
 
 Este teste cria um DuckDB temporário com `silver_parlamentar` + `silver_emenda`
-realistas, roda `dbt build` nos modelos correspondentes e confere:
+realistas, roda os modelos correspondentes e confere:
 
 - SCD2: mudança de partido abre nova versão com `end_date` na data as-of
   seguinte e `is_current` só na última.
 - ADR-017: `autor_resolvido` (casa a versão vigente no ano da emenda),
   `autor_colegiado`, `autor_ambiguo`, `autor_fora_cobertura` e
   `autor_nao_resolvido` — cada status observável na saída.
+- ADR-022.1: `id_orgao` de `fact_emenda` resolve por JOIN de `dim_orgao` via
+  `sigla` (CD/SF) derivada da `fonte` da versão casada — sem literal hardcoded;
+  fonte cujo órgão está ausente da dimensão (lag) vai para a quarentena
+  (`orgao_nao_resolvido`), nunca NULL silencioso.
+- ADR-022.3a: o test genérico customizado `fk_orphan_pct` computa a razão
+  órfãos/total por fato e só dispara quando a razão ultrapassa o threshold
+  configurável (`var('fk_orfas_threshold_pct')`, default 5%) — coberto acima e
+  abaixo do limiar, não só no caso feliz de zero órfãos.
 
-Segue PROJECT_CONTEXT §15: nenhum `except` silencioso — erro do dbt derruba
-o teste (assert result.success).
+Segue PROJECT_CONTEXT §15: nenhum `except` silencioso, erro do dbt derruba o
+teste (assert result.success).
 """
 
 from __future__ import annotations
@@ -199,7 +209,8 @@ def test_fact_emenda_promove_so_resolvido(tmp_path, monkeypatch):
     finally:
         con.close()
 
-    # só E1 entra; autores não-resolvidos nunca ganham id_parlamentar
+    # só E1 entra; autores não-resolvidos nunca ganham id_parlamentar; nenhum
+    # órfão de órgão no cenário base (todas as fontes têm sigla em dim_orgao)
     assert fato == [
         (2019, "E1", 1, 1, 20191231, "Emenda Individual - Transferências", 100)
     ]
@@ -208,3 +219,178 @@ def test_fact_emenda_promove_so_resolvido(tmp_path, monkeypatch):
     assert ("E4", "autor_fora_cobertura") in quarentena
     assert ("E5", "autor_ambiguo") in quarentena
     assert ("E6", "autor_colegiado") in quarentena
+    assert all(m != "orgao_nao_resolvido" for _, m in quarentena)
+
+
+def test_fact_emenda_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
+    """ADR-022.1: órgão ausente da dimensão NÃO promove; vai à quarentena.
+
+    Simula dessincronização de dimensão (o cenário do ADR-022): `dim_orgao`
+    built uma vez; o registro `CD` é removido da tabela e só os fatos são
+    re-executados. E1 (fonte 'camara' → sigla CD) passa a ter `id_orgao` NULL
+    no `emenda_autor_orgao` → `fact_emenda` exclui e `fact_emenda_quarantine`
+    registra `orgao_nao_resolvido` — nunca NULL silencioso.
+    """
+    _seed(tmp_path / "gold.duckdb")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
+
+    con = _conectar(tmp_path / "gold.duckdb")
+    try:
+        assert con.execute(
+            "select sigla, id_orgao from main.dim_orgao order by id_orgao"
+        ).fetchall() == [("CD", 1), ("SF", 2)]
+        con.execute("delete from main.dim_orgao where sigla = 'CD'")
+    finally:
+        con.close()
+
+    _build(tmp_path, monkeypatch, "fact_emenda fact_emenda_quarantine")
+
+    con = _conectar(tmp_path / "gold.duckdb")
+    try:
+        fato = {
+            cod for (cod,) in con.execute("select codigo_emenda from main.fact_emenda").fetchall()
+        }
+        quarentena = {
+            (codigo, motivo)
+            for codigo, motivo in con.execute(
+                "select codigo_emenda, motivo_quarentena from main.fact_emenda_quarantine"
+            ).fetchall()
+        }
+    finally:
+        con.close()
+
+    # E1 tem autor resolvido, mas órgão não-resolvido → quarentena, não fato
+    assert "E1" not in fato
+    assert ("E1", "orgao_nao_resolvido") in quarentena
+    # E2 (colegiada) segue quarentenada — o cenário estende, não quebra as
+    # classificações base (motivos de autor continuam intactos).
+    assert ("E2", "autor_colegiado") in quarentena
+
+
+def _injetar_orfos(con, n_orfos: int, n_totais: int) -> None:
+    """Substitui as linhas de `fact_emenda` por um cenário com razão de órfãos.
+
+    Gera `n_totais` registros: os `n_totais - n_orfos` válidos usam
+    `id_parlamentar=1`/`surrogate_key=100000001001`/`id_orgao=1` (existem nas
+    dimensões); os `n_orfos` órfãos usam `id_parlamentar=999`/
+    `surrogate_key=999` (ausentes em `dim_parlamentar`). `id_orgao` e `data_sk`
+    ficam sempre válidos, isolando o disparo nas FKs de parlamentar.
+    """
+    con.execute("delete from main.fact_emenda")
+    con.executemany(
+        "INSERT INTO main.fact_emenda (id_emenda, ano, codigo_emenda,"
+        " id_parlamentar, surrogate_key, id_orgao, id_unidade_gestora, data_sk,"
+        " tipo_emenda, nome_autor, funcao, subfuncao, localidade_do_gasto,"
+        " valor_empenhado, valor_liquidado, valor_pago, run_id,"
+        " pipeline_version, execution_timestamp, source_version)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            (
+                i + 1,
+                2019,
+                f"V{i}",
+                1,
+                100000001001,
+                1,
+                None,
+                20191231,
+                "Emenda Individual - Transferências",
+                "JOSE SILVA",
+                "0",
+                "0",
+                "l",
+                10,
+                0,
+                0,
+                "r",
+                "p",
+                "2026-01-01 00:00:00",
+                "s",
+            )
+            for i in range(n_totais - n_orfos)
+        ],
+    )
+    con.executemany(
+        "INSERT INTO main.fact_emenda (id_emenda, ano, codigo_emenda,"
+        " id_parlamentar, surrogate_key, id_orgao, id_unidade_gestora, data_sk,"
+        " tipo_emenda, nome_autor, funcao, subfuncao, localidade_do_gasto,"
+        " valor_empenhado, valor_liquidado, valor_pago, run_id,"
+        " pipeline_version, execution_timestamp, source_version)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            (
+                1000 + i,
+                2019,
+                f"O{i}",
+                999,
+                999999999999,
+                1,
+                None,
+                20191231,
+                "Emenda Individual",
+                "Z",
+                "0",
+                "0",
+                "l",
+                20,
+                0,
+                0,
+                "r",
+                "p",
+                "2026-01-01 00:00:00",
+                "s",
+            )
+            for i in range(n_orfos)
+        ],
+    )
+
+
+def _test_fk_orphan(tmp_path, monkeypatch) -> dict[str, str]:
+    """Roda `dbt test --select fk_orphan_pct` e devolve name+status por node."""
+    from dbt.cli.main import dbtRunner
+
+    monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
+    monkeypatch.setenv("PYTHONPATH", str(_GOLD))
+    result = dbtRunner().invoke(
+        ["test", "--project-dir", str(_GOLD), "--profiles-dir", str(_GOLD), "--select", "test_name:fk_orphan_pct"]
+    )
+    return {r.node.name: r.status for r in result.result.results}
+
+
+def test_adr022_fk_orphan_pct_abaixo_do_limiar(tmp_path, monkeypatch):
+    """ADR-022.3a: razão de órfãos ≤ threshold padrão (5%) NÃO dispara o test.
+
+    9/200 = 4.5% — abaixo do limiar, `fk_orphan_pct` passa mesmo com órfãos
+    presentes (quem dispara com um órfão isolado é o `relationships`).
+    """
+    _seed(tmp_path / "gold.duckdb")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
+    con = _conectar(tmp_path / "gold.duckdb")
+    try:
+        _injetar_orfos(con, n_orfos=9, n_totais=200)
+    finally:
+        con.close()
+
+    statuses = _test_fk_orphan(tmp_path, monkeypatch)
+    assert statuses, "nenhum teste fk_orphan_pct selecionado"
+    for nome, status in statuses.items():
+        assert status == "pass", (nome, status)
+
+
+def test_adr022_fk_orphan_pct_acima_do_limiar(tmp_path, monkeypatch):
+    """ADR-022.3a: razão > 5% dispara o alerta (reportado, sem bloquear build).
+
+    15/200 = 7.5% — supera o threshold: `fk_orphan_pct` para `id_parlamentar`
+    retorna linhas (falha/warn), alimentando o Data Quality Report.
+    """
+    _seed(tmp_path / "gold.duckdb")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
+    con = _conectar(tmp_path / "gold.duckdb")
+    try:
+        _injetar_orfos(con, n_orfos=15, n_totais=200)
+    finally:
+        con.close()
+
+    statuses = _test_fk_orphan(tmp_path, monkeypatch)
+    assert statuses, "nenhum teste fk_orphan_pct selecionado"
+    assert any(v != "pass" for v in statuses.values()), statuses

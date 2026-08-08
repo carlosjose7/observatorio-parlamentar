@@ -307,6 +307,19 @@ class ValidacaoSettings(_StrictModel):
     limite_periodos: int | None = Field(default=None, ge=1)
 
 
+class DataQualitySettings(_StrictModel):
+    """Gate de integridade referencial da camada Gold (ADR-022.3a).
+
+    `fk_orfa_threshold_pct` é o percentual de FK órfã nos fatos que dispara
+    o alerta do test genérico dbt `fk_orphan_pct`. O mesmo valor também é o
+    default do `var('fk_orfas_threshold_pct')` em pipeline/gold/dbt_project.yml
+    — mantenha os dois em sincronia (o var dbt é a fonte de verdade da
+    execução; este espelho alimenta reportes/alertas fora do dbt).
+    """
+
+    fk_orfa_threshold_pct: float = Field(default=5.0, gt=0)
+
+
 class PipelineSettings(_StrictModel):
     """Configuração de runtime do pipeline."""
 
@@ -318,6 +331,7 @@ class PipelineSettings(_StrictModel):
     retry_default: RetryDefaultSettings = Field(default_factory=RetryDefaultSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     validacao: ValidacaoSettings = Field(default_factory=ValidacaoSettings)
+    data_quality: DataQualitySettings = Field(default_factory=DataQualitySettings)
 
 
 # ── .env (segredos e variáveis de ambiente) ──────────────────────
