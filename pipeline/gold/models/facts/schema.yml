@@ -1,11 +1,27 @@
 version: 2
 
+# Contrato de qualidade do fato (ADR-022).
+#
+# DUAS camadas de integridade referencial convivem, por DESIGN — não remover uma
+# como "redundante":
+#
+#   1. `relationships` (genérico, `severity: warn`): binário — qualquer órfão
+#      (ex: PK duplicada na dimensão, ref trocada) é sintoma de erro estrutural
+#      de modelagem. Dispara com UM órfão.
+#   2. `fk_orphan_pct` (genérico custom, `severity: warn`): métrica de saúde
+#      operacional consumida pelo Data Quality Report (ADR-022.3a) — computa a
+#      razão órfãos/total do fato e SÓ dispara quando ela ultrapassa o threshold
+#      `fk_orfas_threshold_pct` (default 5%, espelhado em config/pipeline.yaml).
+#      Falha estrutural grosseira é pega pelo `relationships`; órfão transitório
+#      (ex: fornecedor novo no fato antes da próxima carga da dimensão) é alerta
+#      observável sem bloquear o build.
+
 models:
   - name: fact_emenda
     description: >
       Fato de emendas parlamentares de autor individual resolvido (ADR-012/017).
       Grão: uma emenda. Apenas autoria sem ambiguidade é promovida; o restante
-      fica em fact_emenda_quarantine.
+      fica em fact_emenda_quarantine (inclui orgao_nao_resolvido, ADR-022.1).
     columns:
       - name: id_emenda
         description: Surrogate determinístico do fato (row_number sobre a resolução ordenada). Não é identificador externo durável (nota ADR-020).
@@ -28,6 +44,12 @@ models:
                 field: id_parlamentar
               config:
                 severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
       - name: surrogate_key
         description: Versão exata de dim_parlamentar usada no matching (auditoria ADR-017).
         tests:
@@ -38,11 +60,23 @@ models:
                 field: surrogate_key
               config:
                 severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: surrogate_key
+              config:
+                severity: warn
       - name: id_orgao
-        description: dim_orgao do autor (CD=1/SF=2), derivada da fonte da versão casada.
+        description: dim_orgao do autor (CD=1/SF=2), derivada via JOIN por sigla da fonte da versão casada (sem literal hardcoded).
         tests:
           - not_null
           - relationships:
+              arguments:
+                to: ref('dim_orgao')
+                field: id_orgao
+              config:
+                severity: warn
+          - fk_orphan_pct:
               arguments:
                 to: ref('dim_orgao')
                 field: id_orgao
@@ -58,16 +92,27 @@ models:
                 field: data_sk
               config:
                 severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_data')
+                field: data_sk
+              config:
+                severity: warn
       - name: tipo_emenda
         tests:
           - not_null
 
   - name: fact_emenda_quarantine
-    description: Emendas de autoria não resolvida, não promovidas (ADR-017/018).
+    description: Emendas de autoria não resolvida, não promovidas (ADR-017/018) — inclui motivo orgao_nao_resolvido (FK de órgão não casou).
     columns:
       - name: motivo_quarentena
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['autor_colegiado', 'autor_ambiguo', 'autor_fora_cobertura', 'autor_nao_resolvido']
+                values:
+                  - 'autor_colegiado'
+                  - 'autor_ambiguo'
+                  - 'autor_fora_cobertura'
+                  - 'autor_nao_resolvido'
+                  - 'orgao_nao_resolvido'

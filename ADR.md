@@ -1256,12 +1256,19 @@ Decisão:
 3a. Severidade dos testes de integridade referencial: `severity: warn`
     para os singular tests de FK órfã, com contagem de `fk_orfa` por
     tabela de fato reportada no Data Quality Report. Threshold
-    configurável via `config/pipeline.yaml` (default: FK órfãs > 5%
-    do total no fato dispara alerta no relatório) — não bloqueia
-    `dbt build`. Justificativa: FK órfã é sintoma de dimensão ainda
-    não sincronizada (ex: fornecedor novo no fato antes da próxima
-    carga de `dim_fornecedor`), não necessariamente erro de dado —
-    bloquear penalizaria o pipeline por condição transitória e
+    configurável (default: FK órfãs > 5% do total no fato dispara alerta
+    no relatório) — não bloqueia `dbt build`. Implementação concreta: o
+    test genérico customizado `fk_orphan_pct` (macros/) computa a razão
+    órfãos/total por fato com o parâmetro `threshold_pct`, cujo default
+    é o `var('fk_orfas_threshold_pct')` (pipeline/gold/dbt_project.yml)
+    e o mesmo valor é espelhado em `config/pipeline.yaml`
+    (`data_quality.fk_orfa_threshold_pct`, ADR-008 — chave registrada em
+    `DataQualitySettings`); coexiste com o `relationships` genérico
+    (inspeção binária por registro), deixando a decisão de bloqueio por
+    razão de massa para o alerta `warn`. Justificativa: FK órfã é sintoma
+    de dimensão ainda não sincronizada (ex: fornecedor novo no fato antes
+    da próxima carga de `dim_fornecedor`), não necessariamente erro de
+    dado — bloquear penalizaria o pipeline por condição transitória e
     esperada em cargas incrementais.
 4. `dbt build` (run + test) é o comando padrão de execução do Gold.
    Falhas de teste com `severity: error` (schema estrutural `not_null`,
