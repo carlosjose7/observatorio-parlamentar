@@ -10,17 +10,18 @@
 -- dispara.
 --
 -- Parâmetros (declarados no schema.yml, sob `arguments:`):
---   - model: o model setremo do qual coluna pertence (auto passado pelo dbt).
+--   - model: o model do qual o column pertence (auto passado pelo dbt).
 --   - column_name: a FK a verificar (auto passado pelo dbt).
 --   - to: ref() da dimensão de referência.
 --   - field: coluna de referência na dimensão.
---   - threshold_pct: % máximo tolerado de órfãos; default via var
---     `fk_orfas_threshold_pct` (mirror em config/pipeline.yaml, ADR-022.3a).
---
--- Falha (retorna linhas) quando e somente quando:
---   total > 0  E  100 * n_orfao / total > threshold_pct
+--   - threshold_pct: % máximo tolerado de órfãos. O default é o
+--     `var('fk_orfas_threshold_pct')` — OBRIGATÓRIO por construção: o valor
+--     vem de `config/pipeline.yaml` via `--vars` gerado por
+--     `pipeline.config.get_dbt_vars()` (fonte única, ADR-008). ELE NÃO TEM
+--     default no código — se a var faltar, o dbt falha (PROJECT_CONTEXT §15),
+--     em vez de aplicar silenciosamente um número divergente da config.
 
-{% test fk_orphan_pct(model, column_name, to, field, threshold_pct=var('fk_orfas_threshold_pct', 5.0)) %}
+{% test fk_orphan_pct(model, column_name, to, field, threshold_pct=var('fk_orfas_threshold_pct')) %}
 
     with contagem as (
         select

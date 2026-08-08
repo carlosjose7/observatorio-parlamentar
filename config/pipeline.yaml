@@ -45,9 +45,9 @@ pipeline:
     espera_exponencial_max_segundos: 60
 
   # Qualidade Gold (ADR-022.3a): gate de integridade referencial.
-  # O test genérico dbt `fk_orphan_pct` usa o var `fk_orfas_threshold_pct`
-  # (pipeline/gold/dbt_project.yml) com MESMO default aqui — mantenha os dois
-  # em sincronia ao alterar.
+  # FONTE ÚNICA do threshold: o test genérico dbt `fk_orphan_pct` o recebe via
+  # `--vars` gerado por `pipeline.config.get_dbt_vars()` — o projeto dbt NÃO
+  # declara o número (ADR-008). Alterar aqui propaga para o dbt e os reportes.
   data_quality:
     fk_orfa_threshold_pct: 5.0  # % de FK órfã nos fatos que dispara alerta
 
