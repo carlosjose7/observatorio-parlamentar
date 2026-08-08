@@ -180,7 +180,7 @@ def test_despesa_promove_so_resolvido(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         fato = con.execute(
-            "select cod_documento, id_parlamentar, id_orgao, id_fornecedor,"
+            "select cod_documento, id_parlamentar, surrogate_key, id_orgao, id_fornecedor,"
             " data_sk, cod_tipo from main.fact_despesa order by id_despesa"
         ).fetchall()
         parlam_quar = {
@@ -201,6 +201,9 @@ def test_despesa_promove_so_resolvido(tmp_path, monkeypatch):
                 "select cod_documento, surrogate_key from main.desp_parlamento"
             ).fetchall()
         )
+        dim_sk = {k for (k,) in con.execute(
+            "select surrogate_key from main.dim_parlamentar"
+        ).fetchall()}
         fornecedor_cnpj = con.execute(
             "select id_fornecedor from main.dim_fornecedor"
             " where cnpj_cpf_valor = '12345678000190' and tipo_documento = 'CNPJ'"
@@ -220,13 +223,21 @@ def test_despesa_promove_so_resolvido(tmp_path, monkeypatch):
 
     linhas = {row[0]: row for row in fato}
     assert set(linhas) == {"D1", "D2", "D3"}
+    # colunas: 0=cod_documento 1=id_parlamentar 2=surrogate_key 3=id_orgao
+    #          4=id_fornecedor 5=data_sk 6=cod_tipo
     # D1 — câmara → CD (id_orgao=1); data 2019-05-10 → data_sk 20190510
-    assert linhas["D1"][1:4] == (1, 1, fornecedor_cnpj)
-    assert linhas["D1"][4] == 20190510
-    assert linhas["D2"][3] == fornecedor_cpf_id  # CPF resolveu pelo HMAC da dimensão
-    # D3 — senado → SF (id_orgao=2), resolvido por nome (id 6)
-    assert linhas["D3"][1:4] == (6, 2, fornecedor_d3)
-    assert linhas["D3"][4] == 20200310
+    #      versão vigente na data = JOSE SILVA v1 (partido A até 2019-07)
+    assert linhas["D1"][1:5] == (1, 100000001001, 1, fornecedor_cnpj)
+    assert linhas["D1"][5] == 20190510
+    # D2 — mesma versão de D1; fornecedor CPF resolveu pelo HMAC da dimensão
+    assert linhas["D2"][2] == 100000001001
+    assert linhas["D2"][4] == fornecedor_cpf_id
+    # D3 — senado → SF (id_orgao=2), resolvido por nome (id 6),
+    #      versão vigente em 2020-03-10 = MARIA SANTOS senado v1
+    assert linhas["D3"][1:5] == (6, 200000006001, 2, fornecedor_d3)
+    assert linhas["D3"][5] == 20200310
+    # FK 1:1 por versão exata: a chave do fato existe em dim_parlamentar
+    assert {row[2] for row in fato} <= dim_sk
     assert surrogates["D1"] == 100000001001  # versão vigente em 2019-05-10
     assert surrogates["D3"] == 200000006001  # senado id 6, versão 1
 
@@ -299,23 +310,23 @@ def _injetar_orfos(con, id_fornecedor_valido: int, n_orfos: int, n_totais: int) 
     con.execute("delete from main.fact_despesa")
     linhas_validas = [
         (
-            i + 1, 1, id_fornecedor_valido, 1, None, cod_tipo, 20190101,
+            i + 1, 1, 100000001001, id_fornecedor_valido, 1, None, cod_tipo, 20190101,
             f"V{i}", 10, 0, "r", "p", "2026-01-01 00:00:00", "s",
         )
         for i in range(n_totais - n_orfos)
     ]
     linhas_orfas = [
         (
-            1000 + i, 999, id_fornecedor_valido, 1, None, cod_tipo, 20190101,
+            1000 + i, 999, 999999999999, id_fornecedor_valido, 1, None, cod_tipo, 20190101,
             f"O{i}", 20, 0, "r", "p", "2026-01-01 00:00:00", "s",
         )
         for i in range(n_orfos)
     ]
     con.executemany(
-        "INSERT INTO main.fact_despesa (id_despesa, id_parlamentar, id_fornecedor,"
-        " id_orgao, id_unidade_gestora, cod_tipo, data_sk, cod_documento,"
+        "INSERT INTO main.fact_despesa (id_despesa, id_parlamentar, surrogate_key,"
+        " id_fornecedor, id_orgao, id_unidade_gestora, cod_tipo, data_sk, cod_documento,"
         " valor_liquido, valor_glosa, run_id, pipeline_version,"
-        " execution_timestamp, source_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " execution_timestamp, source_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         linhas_validas + linhas_orfas,
     )
 

@@ -25,6 +25,14 @@
 -- `id_despesa` é surrogate determinístico (row_number sobre a resolução
 -- ordenada — mesmo padrão de id_fornecedor/id_emenda). A chave natural
 -- composta `(fonte, cod_documento)` é a referência externa/entre execuções.
+--
+-- Já que `id_parlamentar` é chave natural (e `dim_parlamentar` é SCD2, com
+-- várias versões por id), o fato também guarda o `surrogate_key` da versão
+-- EXATA casada em `data_documento` — insumo de auditoria (ADR-017) e alvo de
+-- integridade referencial 1:1 (ver schema.yml): um `relationships` por
+-- `surrogate_key` prova que existe a versão vigente nesta data, não apenas
+-- "alguma versão" do id (paridade com o contrato de `surrogate_key` do
+-- `fact_emenda`).
 
 with resolvidas as (
     select
@@ -61,6 +69,7 @@ select
         order by fonte, cod_documento, id_parlamentar, surrogate_key
     ) as id_despesa,
     id_parlamentar,
+    surrogate_key,
     id_fornecedor,
     id_orgao,
     cast(null as bigint) as id_unidade_gestora,
