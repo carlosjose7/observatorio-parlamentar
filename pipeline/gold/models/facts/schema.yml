@@ -11,7 +11,9 @@ version: 2
 #   2. `fk_orphan_pct` (genérico custom, `severity: warn`): métrica de saúde
 #      operacional consumida pelo Data Quality Report (ADR-022.3a) — computa a
 #      razão órfãos/total do fato e SÓ dispara quando ela ultrapassa o threshold
-#      `fk_orfas_threshold_pct` (default 5%, espelhado em config/pipeline.yaml).
+#      `fk_orfas_threshold_pct`, cuja FONTE ÚNICA é `config/pipeline.yaml`
+#      (`data_quality.fk_orfa_threshold_pct`, via `get_dbt_vars()` — ADR-008;
+#      o projeto dbt não declara o número).
 #      Falha estrutural grosseira é pega pelo `relationships`; órfão transitório
 #      (ex: fornecedor novo no fato antes da próxima carga da dimensão) é alerta
 #      observável sem bloquear o build.

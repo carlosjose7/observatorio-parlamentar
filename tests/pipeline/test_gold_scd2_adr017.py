@@ -21,8 +21,9 @@ realistas, roda os modelos correspondentes e confere:
   (`orgao_nao_resolvido`), nunca NULL silencioso.
 - ADR-022.3a: o test genérico customizado `fk_orphan_pct` computa a razão
   órfãos/total por fato e só dispara quando a razão ultrapassa o threshold
-  configurável (`var('fk_orfas_threshold_pct')`, default 5%) — coberto acima e
-  abaixo do limiar, não só no caso feliz de zero órfãos.
+  `var('fk_orfas_threshold_pct')` — injetado via `--vars` de
+  `config/pipeline.yaml` (fonte única, ADR-008); coberto acima e abaixo do
+  limiar, não só no caso feliz de zero órfãos.
 
 Segue PROJECT_CONTEXT §15: nenhum `except` silencioso, erro do dbt derruba o
 teste (assert result.success).
@@ -38,6 +39,8 @@ import duckdb
 _RAIZ = Path(__file__).resolve().parents[2]
 _GOLD = _RAIZ / "pipeline" / "gold"
 
+if str(_RAIZ) not in sys.path:
+    sys.path.insert(0, str(_RAIZ))
 if str(_GOLD) not in sys.path:
     sys.path.insert(0, str(_GOLD))
 
@@ -99,14 +102,34 @@ def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
 
 
 def _build(tmp_path, monkeypatch, selecao: str) -> None:
-    """Roda `dbt build` no projeto Gold apontando DUCKDB_DATABASE_PATH pro fixture."""
+    """Roda `dbt build` no projeto Gold apontando DUCKDB_DATABASE_PATH pro fixture.
+
+    Injeta `--vars` derivado de `config/pipeline.yaml` via
+    `pipeline.config.get_dbt_vars()` — fonte única do threshold FK órfã
+    (ADR-008); o projeto dbt não declara o número e o test `fk_orphan_pct`
+    exige a var (falha se ausente). Igual à DAG futura do Gold.
+    """
     from dbt.cli.main import dbtRunner
+
+    from pipeline.config import get_dbt_vars
+
+    import json
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
 
     result = dbtRunner().invoke(
-        ["build", "--project-dir", str(_GOLD), "--profiles-dir", str(_GOLD), "--select", selecao]
+        [
+            "build",
+            "--project-dir",
+            str(_GOLD),
+            "--profiles-dir",
+            str(_GOLD),
+            "--select",
+            selecao,
+            "--vars",
+            json.dumps(get_dbt_vars()),
+        ]
     )
     assert result.success, result.exception
 
@@ -346,13 +369,31 @@ def _injetar_orfos(con, n_orfos: int, n_totais: int) -> None:
 
 
 def _test_fk_orphan(tmp_path, monkeypatch) -> dict[str, str]:
-    """Roda `dbt test --select fk_orphan_pct` e devolve name+status por node."""
+    """Roda `dbt test --select test_name:fk_orphan_pct` e devolve name+status por node.
+
+    Injeta `--vars` de `config/pipeline.yaml` (fonte única, ADR-008) — a var
+    `fk_orfas_threshold_pct` é exigida pelo test e não existe no projeto dbt.
+    """
     from dbt.cli.main import dbtRunner
+
+    from pipeline.config import get_dbt_vars
+
+    import json
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
     result = dbtRunner().invoke(
-        ["test", "--project-dir", str(_GOLD), "--profiles-dir", str(_GOLD), "--select", "test_name:fk_orphan_pct"]
+        [
+            "test",
+            "--project-dir",
+            str(_GOLD),
+            "--profiles-dir",
+            str(_GOLD),
+            "--select",
+            "test_name:fk_orphan_pct",
+            "--vars",
+            json.dumps(get_dbt_vars()),
+        ]
     )
     return {r.node.name: r.status for r in result.result.results}
 

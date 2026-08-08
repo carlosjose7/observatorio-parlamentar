@@ -29,11 +29,6 @@ vars:
   # Padrão é o observado na captura real: "Emenda de Bancada" / "Emenda de Comissão"
   # (normalizados em uppercase sem acento).
   emenda_tipos_colegiados: ["EMENDA DE BANCADA", "EMENDA DE COMISSAO"]
-  # Threshold de FK órfã nos fatos (ADR-022.3a): razão órfãos/total acima da qual
-  # o test genérico `fk_orphan_pct` dispara (severity warn, sem bloquear build).
-  # Mirror de config/pipeline.yaml (data_quality.fk_orfa_threshold_pct) — mantenha
-  # os dois em sincronia.
-  fk_orfas_threshold_pct: 5.0
 
 models:
   observatorio_gold:

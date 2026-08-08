@@ -311,10 +311,10 @@ class DataQualitySettings(_StrictModel):
     """Gate de integridade referencial da camada Gold (ADR-022.3a).
 
     `fk_orfa_threshold_pct` é o percentual de FK órfã nos fatos que dispara
-    o alerta do test genérico dbt `fk_orphan_pct`. O mesmo valor também é o
-    default do `var('fk_orfas_threshold_pct')` em pipeline/gold/dbt_project.yml
-    — mantenha os dois em sincronia (o var dbt é a fonte de verdade da
-    execução; este espelho alimenta reportes/alertas fora do dbt).
+    o alerta do test genérico dbt `fk_orphan_pct`. É a FONTE ÚNICA do
+    threshold (ADR-008): o dbt o recebe via `--vars` gerado por
+    `get_dbt_vars()` (ver funções abaixo) — nunca declara o valor próprio em
+    `dbt_project.yml`.
     """
 
     fk_orfa_threshold_pct: float = Field(default=5.0, gt=0)
@@ -395,6 +395,25 @@ def get_sources() -> SourcesSettings:
 def get_pipeline() -> PipelineSettings:
     """Acesso conveniente a `PipelineSettings` (cacheado)."""
     return load_pipeline_settings()
+
+
+def get_dbt_vars() -> dict[str, str]:
+    """Vars a injetar no dbt Gold via `--vars`, derivadas de `config/`.
+
+    Fonte única (ADR-008): cada valor supérfluo vive em `config/pipeline.yaml`
+    (validado por Pydantic) e é reaproveitado aqui na forma entendida pelo dbt —
+    o projeto dbt NÃO declara valores supérfluos próprios. Toda invocação do
+    `dbt build`/`dbt test`/`dbt run` (DAG futura do Gold ou testes) deve passar
+    `--vars (json.dumps(get_dbt_vars()))`; sem isso, o dbt NÃO resolve a variável
+    exigida (falha em vez de aplicar um default divergente — PROJECT_CONTEXT §15).
+
+    O valor é string (JSON `--vars`), preservando a leitura numérica no
+    consumo via `var`.
+    """
+    pipeline = get_pipeline()
+    return {
+        "fk_orfas_threshold_pct": str(pipeline.data_quality.fk_orfa_threshold_pct),
+    }
 
 
 def get_env() -> EnvSettings:
