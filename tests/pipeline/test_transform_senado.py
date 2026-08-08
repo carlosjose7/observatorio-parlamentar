@@ -111,9 +111,31 @@ class TestConstruirParlamentarSenado:
         assert df.loc[0, "nome"] == "ALAN RICK"
         assert df.loc[0, "sigla_partido"] == "REPUBLICANOS"
         assert df.loc[0, "sigla_uf"] == "AC"
-        assert df.loc[0, "id_legislatura"] == 58
-        assert df.loc[0, "situacao"] == "Titular"
+        assert df.loc[0, "id_legislatura"] == 57  # derivada do calendário (2026-08-07)
+        assert df.loc[0, "id_legislatura_fonte"] == 58  # primeira legislação do mandato
+        assert df.loc[0, "situacao_bruta"] == "Titular"
+        assert df.loc[0, "situacao_normalizada"] == "ativo"
         assert str(df.loc[0, "data"])[:10] == "2026-08-07"
+
+    def test_legislatura_bruta_zero_nao_e_a_regra_de_negocio(self):
+        # ADR-024: a API pode entregar 0 (sem campo); a Silver deriva do
+        # calendário e isola o 0 do bruto em `id_legislatura_fonte`.
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df = construir_silver_parlamentar(
+            _df_bronze_parlamentar(id_legislatura=[0])
+        )
+        assert df.loc[0, "id_legislatura"] == 57
+        assert df.loc[0, "id_legislatura_fonte"] == 0
+
+    def test_situacao_desconhecida_vira_sentinela(self):
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df = construir_silver_parlamentar(
+            _df_bronze_parlamentar(situacao=["Inventada"])
+        )
+        assert df.loc[0, "situacao_bruta"] == "Inventada"
+        assert df.loc[0, "situacao_normalizada"] == "nao_mapeado"
 
     def test_nome_recai_no_completo_quando_parlamentar_ausente(self):
         from pipeline.senado.transform import construir_silver_parlamentar

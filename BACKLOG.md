@@ -189,6 +189,8 @@
 - ☐ `dim_parlamentar` SCD Type 2 (snapshot merge/upsert, ADR-020) — `effective_date`/`end_date`/`is_current`/`surrogate_key`.
 - ☐ Resolução autor → `id_parlamentar` em Gold (ADR-017): `tipo_emenda` como discriminador de colegiado; matching por nome vigente ao ano; quarentena por motivo.
 - ☐ Desenhar o mecanismo de qualidade/quarentena do Gold para `autor_colegiado`/`autor_nao_resolvido`/`autor_ambiguo`/`autor_fora_cobertura`.
+- ☑ **ADR-024 — paridade semântica `silver_parlamentar` (Câmara×Senado)**: `id_legislatura` derivada de calendário (`pipeline/parlamento.py`, nunca da API) + `gt(0)` no gate (fim do bug do `0` do Senado); `situacao_bruta` + `situacao_normalizada` (de-para versionado, sentinela `nao_mapeado`).
+- ☐ **Catálogo real de `situacao` (ação de seguimento do ADR-024)**: na primeira captura real, verificar vocabulários de `DescricaoParticipacao` (Senado) e `ultimoStatus.situacao` (Câmara) e adicionar ao de-para com teste.
 - ☐ **`dim_unidade_gestora` permanece schema-only nesta sprint** — o seed `dim_orgao` (Trilha A) carrega Câmara/Senado com UG SIAFI onde disponível, mas a tabela `dim_unidade_gestora` (ADR-010) não é materializada nem populada agora (sem requisito funcional que justifique o grão; registro explícito para não parecer "coberto" por proximidade com `dim_orgao`).
 
 ### Onda 3 — Fatos
