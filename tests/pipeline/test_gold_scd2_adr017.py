@@ -101,10 +101,16 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
     assert result.success, result.exception
 
 
+_SELECAO_FATO = (
+    "dim_orgao dim_data dim_parlamentar emenda_autor emenda_autor_quarantine"
+    " fact_emenda fact_emenda_quarantine"
+)
+
+
 def test_scd2_dim_parlamentar(tmp_path, monkeypatch):
     """SCD2: troca de partido abre nova versão; end_date na data as-of."""
     _seed(tmp_path / "gold.duckdb")
-    _build(tmp_path, monkeypatch, "dim_parlamentar")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
 
     con = _conectar(tmp_path / "gold.duckdb")
     try:
@@ -128,7 +134,7 @@ def test_scd2_dim_parlamentar(tmp_path, monkeypatch):
 def test_adr017_classificacao_completa(tmp_path, monkeypatch):
     """ADR-017: cinco status distintos na saída dos dois modelos."""
     _seed(tmp_path / "gold.duckdb")
-    _build(tmp_path, monkeypatch, "dim_parlamentar emenda_autor emenda_autor_quarantine")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
 
     con = _conectar(tmp_path / "gold.duckdb")
     try:
@@ -155,7 +161,7 @@ def test_adr017_classificacao_completa(tmp_path, monkeypatch):
 def test_emenda_autor_usa_versao_vigente_no_ano(tmp_path, monkeypatch):
     """E1 (emenda de 2019) casa a versão 1 (vigente em 2019), não a última."""
     _seed(tmp_path / "gold.duckdb")
-    _build(tmp_path, monkeypatch, "dim_parlamentar emenda_autor")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
 
     con = _conectar(tmp_path / "gold.duckdb")
     try:
@@ -166,3 +172,39 @@ def test_emenda_autor_usa_versao_vigente_no_ano(tmp_path, monkeypatch):
         con.close()
 
     assert row == (1, 100000001001)
+
+
+def test_fact_emenda_promove_so_resolvido(tmp_path, monkeypatch):
+    """fact_emenda (Onda 3, ADR-012/017): apenas autor resolvido entra no fato.
+
+    A emenda E1 (2019) entra com id_parlamentar=1 (versão vigente no ano) e
+    id_orgao=1 (Câmara); as demais (colegiada, ambígua, fora de cobertura,
+    não resolvida) ficam na quarentena com motivo explícito.
+    """
+    _seed(tmp_path / "gold.duckdb")
+    _build(tmp_path, monkeypatch, _SELECAO_FATO)
+
+    con = _conectar(tmp_path / "gold.duckdb")
+    try:
+        fato = con.execute(
+            "select ano, codigo_emenda, id_parlamentar, id_orgao, data_sk, tipo_emenda,"
+            " valor_empenhado from main.fact_emenda order by codigo_emenda"
+        ).fetchall()
+        quarentena = {
+            (codigo, motivo)
+            for codigo, motivo in con.execute(
+                "select codigo_emenda, motivo_quarentena from main.fact_emenda_quarantine"
+            ).fetchall()
+        }
+    finally:
+        con.close()
+
+    # só E1 entra; autores não-resolvidos nunca ganham id_parlamentar
+    assert fato == [
+        (2019, "E1", 1, 1, 20191231, "Emenda Individual - Transferências", 100)
+    ]
+    assert ("E2", "autor_colegiado") in quarentena
+    assert ("E3", "autor_nao_resolvido") in quarentena
+    assert ("E4", "autor_fora_cobertura") in quarentena
+    assert ("E5", "autor_ambiguo") in quarentena
+    assert ("E6", "autor_colegiado") in quarentena

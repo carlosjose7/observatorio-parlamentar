@@ -198,7 +198,7 @@
 
 ☐ `fact_despesa` (Câmara/Senado) — promoção da Silver + checks `relationships` (ADR-022).
 ☐ `fact_cartao_cpgf` (CGU) — promoção da Silver + `unidade_gestora` NOT NULL.
-☐ `fact_emenda` (CGU) — promoção após a Onda 2 (pré-requisito ADR-017).
+☑ `fact_emenda` (CGU) — promoção via `emenda_autor` (ADR-017): somente autoria individual resolvida sem ambiguidade; `fact_emenda_quarantine` com `motivo_quarentena` (`autor_colegiado`/`autor_ambiguo`/`autor_fora_cobertura`/`autor_nao_resolvido`); `id_orgao` derivado da `fonte` da versão casada (CD=1/SF=2); `data_sk` em 31/12/ano; checks `relationships` + `not_null` (ADR-022).
 ☐ `schema.yml` + singular tests de cada fato (referencial/órfãos `warn`, estrutura `error`).
 ☐ Placeholder das tabelas de ML (ADR-021) como schema vazio.
 

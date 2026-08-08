@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: fact_emenda
+    description: >
+      Fato de emendas parlamentares de autor individual resolvido (ADR-012/017).
+      Grão: uma emenda. Apenas autoria sem ambiguidade é promovida; o restante
+      fica em fact_emenda_quarantine.
+    columns:
+      - name: id_emenda
+        description: Surrogate determinístico do fato (row_number sobre a resolução ordenada). Não é identificador externo durável (nota ADR-020).
+        tests:
+          - unique
+          - not_null
+      - name: ano
+        tests:
+          - not_null
+      - name: codigo_emenda
+        tests:
+          - not_null
+      - name: id_parlamentar
+        description: Chave natural da versão vigente no ano (ADR-017). NOT NULL — identidade do evento.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+      - name: surrogate_key
+        description: Versão exata de dim_parlamentar usada no matching (auditoria ADR-017).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: surrogate_key
+              config:
+                severity: warn
+      - name: id_orgao
+        description: dim_orgao do autor (CD=1/SF=2), derivada da fonte da versão casada.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_orgao')
+                field: id_orgao
+              config:
+                severity: warn
+      - name: data_sk
+        description: dim_data — representa a emenda em 31/12/ano (fonte só expõe ano).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_data')
+                field: data_sk
+              config:
+                severity: warn
+      - name: tipo_emenda
+        tests:
+          - not_null
+
+  - name: fact_emenda_quarantine
+    description: Emendas de autoria não resolvida, não promovidas (ADR-017/018).
+    columns:
+      - name: motivo_quarentena
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['autor_colegiado', 'autor_ambiguo', 'autor_fora_cobertura', 'autor_nao_resolvido']

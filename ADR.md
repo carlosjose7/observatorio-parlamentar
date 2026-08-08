@@ -950,6 +950,11 @@ Implementação (Onda 2, BACKLOG.md):
   padrão "Emenda de Bancada"/"Emenda de Comissão") — a confirmar contra o
   enum real da fonte (item de seguimento no BACKLOG).
 - Cobertos por testes de integração dbt (`tests/pipeline/test_gold_scd2_adr017.py`).
+- `fact_emenda` (ADR-012, decisão 4) promovido na Onda 3 a partir de
+  `emenda_autor`: `id_parlamentar` NOT NULL (identidade do evento) e
+  `surrogate_key` da versão vigente; `id_orgao` derivado da `fonte` da
+  versão casada (CD=1/SF=2); `data_sk` em 31/12/ano (fonte só expõe ano);
+  complemento não-resolvido em `fact_emenda_quarantine` com motivo.
 
 ---
 
