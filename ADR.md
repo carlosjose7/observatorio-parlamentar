@@ -931,6 +931,26 @@ Consequências:
   condicional à taxa obtida de `autor_nao_resolvido` no mecanismo de
   qualidade da Sprint 4 — não implementado agora.
 
+Implementação (Onda 2, BACKLOG.md):
+- A classificação é centralizada no modelo dbt efêmero
+  `em_autor_classificacao` (`pipeline/gold/models/emenda/`), que
+  materializa a regra 3.a–3.e deste ADR de forma determinística e é
+  consumida por dois modelos Gold (padrão ADR-018):
+  - `emenda_autor` — apenas `autor_resolvido` (matching exato com
+    exatamente um `dim_parlamentar` vigente no ano da emenda; grava
+    `id_parlamentar` e `surrogate_key` da versão casada);
+  - `emenda_autor_quarantine` — demais status com motivo explícito
+    (`autor_colegiado`/`autor_ambiguo`/`autor_fora_cobertura`/
+    `autor_nao_resolvido`).
+- `dim_parlamentar` SCD2 (ADR-020) é recomputada deterministicamente do
+  histórico de snapshots de `silver_parlamentar` (Câmara + Senado); o
+  matching usa a vigência-por-ano `[effective_date, end_date)`
+  (`make_date(ano, ...)`), nunca `is_current` do momento da execução.
+- Vocabulário de colegiados em `dbt_project.yml` (`emenda_tipos_colegiados`,
+  padrão "Emenda de Bancada"/"Emenda de Comissão") — a confirmar contra o
+  enum real da fonte (item de seguimento no BACKLOG).
+- Cobertos por testes de integração dbt (`tests/pipeline/test_gold_scd2_adr017.py`).
+
 ---
 
 ADR-018

@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: dim_parlamentar
+    description: >
+      Dimensão de parlamentares Câmara+Senado, SCD Type 2 (ADR-020): uma linha
+      por versão viável, com vigência [effective_date, end_date) e `is_current`.
+    columns:
+      - name: surrogate_key
+        description: Chave determinística, nunca reaproveitada — (código fonte, id_parlamentar, nº da versão).
+        tests:
+          - unique
+          - not_null
+      - name: fonte
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['camara', 'senado']
+      - name: id_parlamentar
+        description: Chave natural por fonte (id_deputado ou id_senador).
+        tests:
+          - not_null
+      - name: nome
+        tests:
+          - not_null
+      - name: nome_normalizado
+        description: Nome em uppercase sem acento (macro nome_normalizado) — vocabulário do matching ADR-017.
+        tests:
+          - not_null
+      - name: sigla_partido
+        tests:
+          - not_null
+      - name: sigla_uf
+        tests:
+          - not_null
+      - name: id_legislatura
+        tests:
+          - not_null
+      - name: effective_date
+        tests:
+          - not_null
+      - name: is_current
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+
+  - name: dim_parlamentar_quarantine
+    description: Linhas de silver_parlamentar rejeitadas em dim_parlamentar (ADR-018).
+    columns:
+      - name: motivo
+        tests:
+          - not_null
+
+  - name: emenda_autor
+    description: Emendas com autor individual resolvido sem ambiguidade (ADR-017).
+    columns:
+      - name: ano
+        tests:
+          - not_null
+      - name: codigo_emenda
+        tests:
+          - not_null
+      - name: id_parlamentar
+        tests:
+          - not_null
+      - name: surrogate_key
+        tests:
+          - not_null
+
+  - name: emenda_autor_quarantine
+    description: Emendas de autoria não promovida, com motivo explícito (ADR-017).
+    columns:
+      - name: motivo
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['autor_colegiado', 'autor_ambiguo', 'autor_fora_cobertura', 'autor_nao_resolvido']
