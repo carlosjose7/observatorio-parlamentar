@@ -28,7 +28,7 @@ features:
   - nome: supplier_concentration_score
     descricao: Concentração do gasto do parlamentar em poucos fornecedores — HHI por parlamentar/ano (ADR-021) normalizado.
     formula: norm(hhi_p); hhi_p = SUM_{f in F_p} (v_{p,f}/V_p)^2
-    origem: ml_staging.supplier_concentration
+    origem: supplier_concentration
     tipo: float
     categoria: agregado
     tabela: supplier_concentration
