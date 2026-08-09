@@ -1533,4 +1533,318 @@ Consequências:
 
 ---
 
+ADR-026
+Título: Fronteira de escrita dbt ↔ Python/ML no Gold Layer (Sprint 5)
+
+Status:
+Aceito
+
+Contexto:
+A Sprint 4 (ADR-021) deixou como placeholder consciente as 5 tabelas Gold
+que dependem de ML/NetworkX — `risk_scores`, `expense_outliers`,
+`network_edges`, `network_nodes`, `politician_similarity` — e nenhuma
+existe no disco ainda (BACKLOG item 217). ADR-018 estabelece dbt como a
+única forma regular de escrita no Gold. RF-07 exige lineage automático
+via `dbt docs`. `pyproject.toml` já inclui scikit-learn e NetworkX no
+grupo `analytics`; o adapter `dbt-duckdb` instalado suporta materialização
+`language: python`, tornando viável — mas não obrigatório — rodar ML dentro
+do próprio dbt.
+
+Três opções foram avaliadas:
+- **A** — Python escreve em schema intermediário `ml_staging` (DuckDB);
+  dbt consome como source e materializa o Gold final via CTAS.
+- **B** — Python escreve direto nas 5 tabelas Gold, fora do dbt.
+- **C** — Os 5 models viram models dbt `language: python`, rodando
+  sklearn/NetworkX dentro do próprio DAG do dbt.
+
+Decisão:
+Adotar **Opção A**.
+1. Python (`pipeline/analytics/`) escreve **exclusivamente** no schema
+   `ml_staging` (DuckDB); nenhum outro processo — Airflow direto, scripts
+   ad-hoc, dbt — escreve nesse schema (single-writer, mesmo princípio do
+   ADR-018 aplicado ao Gold).
+2. dbt consome `ml_staging.*` como `source()` (nova entrada em
+   `sources.yml` mapeada para `schema: ml_staging`) e materializa
+   `risk_scores`, `expense_outliers`, `network_edges`, `network_nodes` e
+   `politician_similarity` como models Gold regulares, com `schema.yml`
+   e testes nativos (`not_null`, `relationships` contra
+   `dim_parlamentar`/`dim_fornecedor` e `fk_orphan_pct` com
+   `severity: warn` — ADR-022.3a).
+3. Opção C fica registrada como alternativa avaliada e descartada nesta
+   sprint — **não** como item de backlog para POC. Reabertura futura
+   exige novo ADR de superseding com justificativa própria.
+
+Consequências:
+- Preserva ADR-018 (dbt como single-writer do Gold) e RF-07 (lineage
+  completo em `dbt docs`) sem exceção.
+- Introduz um hop Python→DuckDB→dbt por tabela — custo aceitável em troca
+  de testabilidade dbt-nativa.
+- Treino e serialização de modelo (Isolation Forest, KMeans/DBSCAN,
+  PageRank/NetworkX) permanecem em Python puro, fora do grafo de lineage
+  do dbt — apenas o *output* tabular entra no lineage.
+- `ml_staging` exige contrato de schema próprio (mínimo: chaves para join
+  com dimensões Gold) — detalhado nos ADRs de features/scores desta mesma
+  sprint.
+- A entrada `ml_staging` no `sources.yml` do dbt passa a existir (hoje
+  inexistente).
+
+---
+
+ADR-027
+Título: Fórmulas explícitas dos 5 scores individuais de risco (§9)
+
+Status:
+Aceito
+
+Contexto:
+ADR-003 formalizou o `risk_index` composto (média ponderada, pesos 0.2
+uniformes) mas remeteu os 5 scores individuais a §9/PROJECT_CONTEXT.md
+sem fórmula fechada. Cada índice deve ser documentado matematicamente no
+`ADR.md` (§9). A Sprint 5 implementa `risk_scores` — sem fórmula por score,
+o mesmo score pode ser calculado com semânticas diferentes entre Onda 3
+(rede) e Onda 4 (scores), gerando quebra silenciosa de consistência.
+Também fecha o ciclo de rastreabilidade do §9: os scores são features
+registráveis na Feature Store (ADR-028) e alimentam o `risk_index`.
+
+Nomenclatura adotada:
+- `p`: parlamentar; `P`: conjunto de todos os parlamentares.
+- `f`: fornecedor; `F_p`: fornecedores do parlamentar `p` no período.
+- `v_{p,f}`: valor gasto por `p` com `f` no período; `V_p = Σ_{f∈F_p} v_{p,f}`.
+- Normalização Min-Max: `norm(x) = (x − min_X(x)) / (max_X(x) − min_X(x))`
+  no universo `X` do período — refeita por execução da Sprint 5
+  (estado transitório para `risk_index` de produção, revisada no ADR-029).
+
+Decisão:
+1. **`supplier_concentration_score`** = `hhi_p` já formalizado na Onda 3
+   (ADR-021, `supplier_concentration`):
+   `hhi_p = Σ_{f∈F_p} (v_{p,f} / V_p)²`.
+   Score = `norm(hhi_p)` sobre todos os parlamentares do período.
+2. **`political_exposure_score`** mede exposição a fornecedores
+   compartilhados: para cada fornecedor `f`, `n_f = |{p ∈ P : v_{p,f} > 0}|`
+   (número de parlamentares que usam o fornecedor). Para `p`:
+   `exposure_p = média_{f∈F_p} (n_f − 1)`. Score = `norm(exposure_p)`.
+   (Fornecedor usado por 1 parlamentar → contribuição 0; quanto mais
+   compartilhado, maior a exposição.)
+3. **`supplier_dependency_score`** mede o quão dependente o fornecedor é
+   de poucos parlamentares (concentração por fornecedor — HHI do lado do
+   fornecedor, granularidade pendente no BACKLOG item 173):
+   `dep_f = Σ_{p∈P} (v_{p,f} / (Σ_{p'∈P} v_{p',f}))²`.
+   Para `p`: `dependency_p = média_{f∈F_p} dep_f`. Score = `norm(dependency_p)`.
+4. **`expense_anomaly_score`** usa a definição formal de anomalia (§10,
+   ADR-002 — ≥2 dos 6 critérios): `a_p = |{despesas d de p : anomalia(d)}| /
+   |{despesas de p}|`. Score = `norm(a_p)`.
+   O Isolation Forest entra como um dos 6 critérios (score < −0.1,
+   contamination = 0.05), não como score isolado — coerente com ADR-002.
+5. **`network_influence_score`** = PageRank no grafo bipartido
+   parlamentar↔fornecedor (arestas = valor gasto): `pr_p` = valor de
+   PageRank do nó parlamentar (NetworkX, Onda 3). Score = `norm(pr_p)`.
+
+Score agregado final (ver ADR-003):
+`risk_index_p = Σ_{i=1..5} w_i · score_i(p)`, `w_i = 0.2` (baseline,
+revisão na Sprint 5 — ADR-029).
+
+Consequências:
+- `risk_scores` (tabela) tem como grão `(período, id_parlamentar)` e as 5
+  colunas `{score}_{tipo}` + `risk_index` — fecham §7/§9.
+- Cada score vira feature registrável na Feature Store (ADR-028) com
+  `fórmula` apontando para esta seção.
+- O `expense_anomaly_score` depende da Onda 2 (Isolation Forest) e o
+  `network_influence_score` da Onda 3 (PageRank) — ordem de ondas
+  coerente com a Onda 4 (scores) consumindo as anteriores.
+- Min-Max por período é dependente do universo de dados de cada carga;
+  a estabilização dos pesos/controles é responsabilidade do ADR-029.
+
+---
+
+ADR-028
+Título: Contrato da Feature Store — `ml_feature` e `registry.yaml` validável
+
+Status:
+Aceito
+
+Contexto:
+PROJECT_CONTEXT.md §9 documenta que a normalização Min-Max dos scores
+e as features associadas devem registrar-se na Feature Store
+(`docs/data/ml_feature.md`). Hoje `feature_store/registry.yaml` é um
+scaffold vazio (`features: []`), e `ml_feature.md` apenas lista os
+campos (nome, descrição, fórmula, origem, tipo, última atualização,
+consumidores) sem contrato validável. Sem schema, o primeiro score
+calculado na Sprint 5 (Onda 4) nasceria sem features rastreáveis —
+violando o propósito do registro (que feature alimenta qual score e de
+onde veio).
+
+A Sprint 5 produz features de natureza variada: agregados puros
+(`supplier_concentration.hhi`), derivados de ML (Isolation Forest score,
+PageRank), composições (`risk_index`) e funções de normalização
+(`norm(x)` Min-Max). O contrato precisa distinguir `feature` (valor cujo
+grão não persiste em `ml_staging`/Gold) da `função derivada` (fórmula
+reutilizada que produz features).
+
+Decisão:
+1. **Schema validável em Pydantic** (`pipeline/features.py` —
+   `Feature`, `FeatureRegistry`), validando `feature_store/registry.yaml`
+   na carga e em testes; os metadados passam a ter fonte única e
+   validável (o YAML é a fonte de verdade, não texto livre do md).
+2. **Campo `categoria` obrigatório** — enum `FeatureCategoria`:
+   `agregado`, `ml`, `composicao`, `funcao`. O registro aceita os 4;
+   só `funcao` não persiste em tabela Gold (fórmula reutilizável, ex:
+   `minmax`, `regra_anomalia`) — as demais exigem `tabela` de origem.
+3. **Campos mínimos por feature** (fecham `ml_feature.md`):
+   - `nome` (snake_case, único no registry).
+   - `descricao` (português).
+   - `formula` (referência a ADR/seção ou expressão).
+   - `origem` (camada/tabela fonte — convenção `bronze_*`, `silver_*`,
+     `ml_staging.*`, `fact_*`, `calculado`).
+   - `tipo` (tipo Python/duckdb).
+   - `categoria` (enum acima).
+   - `ultima_atualizacao` (data ISO; `null` até ser calculada).
+   - `consumidores` (lista de tabelas/models/features que consomem —
+     ex: `risk_scores`, `risk_index`).
+4. **`registry.yaml` reescrito em formato policial** — parse YAML→Pydantic
+   sem transformação manual (o scaffold `features: []` preservará a
+   estrutura flat com lista).
+5. **Teste obrigatório** (`tests/pipeline/test_features.py`): o registry
+   do repo valida no Pydantic e toda feature de `categoria != funcao`
+   possui `tabela` não vazia — evita feature órfã.
+
+Consequências:
+- Feature Store vira infraestrutura ativa a partir da Onda 1 —
+  `pipeline/features.py` + teste; nada de "registro após o cálculo".
+- As 5 fórmulas do ADR-027 e o `norm(x)` entram como primeiras entradas
+  do registry (`risk_index` como `composicao`, `norm`/`regra_anomalia`
+  como `funcao`).
+- O contrato reutiliza o padrão Pydantic do projeto (schemas Bronze/
+  Silver/Gold) e valida o YAML também em CI.
+- `ml_feature.md` passa a referenciar o contrato em vez de ser a fonte
+  dos campos.
+
+---
+
+ADR-029
+Título: Revisão dos pesos do `risk_index` — quando ocorre e com quais critérios
+
+Status:
+Aceito
+
+Contexto:
+ADR-003 fixou pesos uniformes w_i = 0.2 (baseline da Sprint 0B) com
+revisão prevista para a Sprint 5 "com base em validação empírica". A
+Sprint 5 agora está aberta (ADR-026/027/028), mas os dados reais de
+despesa/emendas (Sprint 6.5 — validação end-to-end) ainda **não existem
+no ambiente**: o DuckDB de produção nunca foi populado. Revisar pesos "na
+sprint 5" literalmente significaria calibrar com dados sintéticos/fixture,
+cujo sinal não reflete a população real de parlamentares/fornecedores.
+
+Este ADR decide **quando** a revisão ocorre e **quais critérios** ela usa,
+antecipando que uma revisão indisciplinada entre as ondas 3 e 4 mudaria a
+escala de cada score sem documentação.
+
+Decisão:
+1. **Os pesos 0.2 permanecem o baseline durante toda a Sprint 5.**
+   `risk_index` é implementado com pesos configuráveis
+   (`config/analytics.yaml` → `risk.pesos`, fonte única ADR-008) — a
+   composição usa os pesos de config, não constantes no código.
+2. **A revisão de pesos (superseding/amendment do ADR-003-029) é um
+   evento pós-Sprint 6.5**, não da Sprint 5: efetiva quando existir
+   histórico real de pelo menos 1 ciclo completo de carga (período
+   ≥ 12 meses com fact_despesa publicado) no DuckDB Gold. Documentado em
+   ADR próprio (amendment de ADR-003) com:
+   - distribuições empíricas de cada score (norm Min-Max, §9/ADR-027);
+   - análise de sensibilidade: variação do `risk_index` per-parlamentar
+     por peso (lado robustez);
+   - feedback da persona Analista de Controle (validação de face, ranking
+     de risco qualitativo contra casos conhecidos).
+3. **Regras de transição de peso registradas no ADR**: pesos só mudam por
+   ADR de amendment; uma mudança exige (a) nova normalização Min-Max
+   recalculara no mesmo período e (b) dataset de scores versionado —
+   reprodução de ranking histórico `risk_index` antes/depois para medir o
+   impacto na comparação de perfil de risco ao longo do tempo.
+4. Enquanto houver pesos configuráveis, **nenhum peso pode ser alterado
+   por operação manual** em produção sem ADR aprovado (mesmo princípio de
+   ADR-003 "não reajustar contamination sem ADR"; ADR-002).
+
+Consequências:
+- Semanticamente, `w_i = 0.2` deixa de ser "temporário até a Sprint 5" e
+  passa a ser "baseline vigente até consolidação pós-Sprint 6.5".
+- `config/analytics.yaml` ganha a chave `risk.pesos` (validation Pydantic
+  vira checklist de DQ); o teste da Onda 4 garante que `sum(pesos) == 1`.
+- A Sprint 5 (Onda 4) entrega `risk_scores` completo e estável com o
+  baseline — sem risco de rework por calibração prematura.
+- A revisão empírica fica amarrada a dado real (não fixture), em linha com
+  o fluxo de ADRs que mitigou o erro do ADR-023 (fechamento sem dado real).
+
+---
+
+ADR-030
+Título: Materialização e atualização do grafo NetworkX —
+`network_edges`/`network_nodes` (Onda 3)
+
+Status:
+Aceito
+
+Contexto:
+A Onda 3 da Sprint 5 constrói o grafo bipartido parlamentar↔fornecedor
+(aresta = valor gasto; nós = parlamentares e fornecedores, com `PageRank`
+e centralidade como features). O output alimenta `network_influence_score`
+(ADR-027.5) e `politician_similarity` (§7). Conforme ADR-026, o produto do
+ML/rede é escrito em Python em `ml_staging` e materializado como models
+dbt Gold (`network_edges`, `network_nodes`). Falta decidir a estratégia de
+atualização: **recálculo total por execução** vs. **atualização
+incremental**.
+
+Características que constrangem a decisão:
+- O grafo é **global**: listas/centralidades/PageRank dependem do grafo
+  completo do período — não há subgrafo incremental com semântica idêntica
+  sem aproximação (PageRank é computado sobre o grafo inteiro).
+- DuckDB embarcado (ADR-001): volume da carga parlamentar+fornecedor é
+  pequeno (CD ~594 deputados + SF ~81 senadores + fornecedores; arestas na
+  ordem de milhares a dezenas de milhares por período) — recálculo total
+  tem custo trivial nessa escala.
+- Reprodutibilidade RF-12 exige `run_id` por carga; um recálculo total
+  chaveado por `run_id` é deterministicamente reproduzível; incremental
+  exigiria versionar quantas arestas mudaram e re-convergir centrais
+  globais sem garantia de idempotência simples.
+
+Decisão:
+1. **Recálculo total do grafo por execução do pipeline**, chaveado por
+   `(run_id, periodo)` nas tabelas `ml_staging.network_edges`/
+   `ml_staging.network_nodes` — sem estado incremental persistido entre
+   execuções. A DAG da Sprint 5 ganha task Python `executar_ml_rede`
+   (após `executar_silver`), que re-le o Gold (`fact_despesa`,
+   `dim_parlamentar`, `dim_fornecedor`), reconstrói o grafo completo e
+   escreve as duas tabelas de staging.
+2. **Models dbt** `network_edges`/`network_nodes` (Gold) fazem clean-slate
+   sobre `ml_staging` do run id da execução, sem incrementar — consistentes
+   com ADR-026 e com o materializado `table` das demais analytics (§7,
+   ADR-021). O build Gold é `dbt build` do run corrente.
+3. **Volume como gate futuro**: o parâmetro de corte para reavaliar
+   incremental é quando o custo de um recálculo (ou o tempo da DAG) exceder
+   limite definido empiricamente — registrado em `config/analytics.yaml`
+   (`rede.limite_ares_tas_recorte` — arestas acima do qual o recálculo
+   dispara alerta de custo no DQ Report, sem bloquear). Passou do limite
+   com notificação → ADR de superseding reavalia incremental (não é
+   decisão às cegas).
+4. **Sem persistência entre execuções de grafo em memória**: cada execução
+   reconstrói em memória exclusivamente no processo da task; nenhuma
+   versão anterior de `network_*` é "atualizada" — substituição íntegra via
+   `run_id` mais recente.
+5. **`politician_similarity`** deriva do mesmo grafo do run corrente
+   (comunidades/similaridade), compartilhando o staging — mesmo ciclo de
+   vida (recálculo total).
+
+Consequências:
+- `network_influence_score` (ADR-027.5) fica deterministicamente
+  reproduzível por `run_id` — alinhado à RF-12 e ao padrão idempotente que
+  já adotamos no SCD2 e na aggregation (ADR-020, ADR-021).
+- Custo por execução aceito: a escala atual torna incremental um
+  desperdício de complexidade sem ganho de correção semântica (PageRank
+  global); o limite de arestas oferece disjuntor futuro dirigido por dado.
+- Tabelas `network_edges`/`network_nodes` entram no lineage do dbt docs
+  (RF-07) via ADR-026 — staging Python fora do lineage, resultado dentro.
+- A nota de custo no DQ Report serve de insumo objetivo ao futuro ADR de
+  superseding (evita a repetição do padrão de fechamento sem dado real —
+  lição do ADR-023).
+
+---
+
 <!-- Continue with further ADRs -->

@@ -758,4 +758,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.6 — Sprint 4 em curso: trilhas A e B do Gold concluídas (ADRs 018-023; `transform.py` das 3 fontes, task Silver no DAG, dim_fornecedor/dim_categoria_despesa/pipeline_runs, HMAC via plugin dbt; `dbt build` 35/35 verde); Onda 2 (dim_parlamentar SCD2/ADR-017) e Onda 3 (fatos) em aberto; ADRs 001-023.*
+*Versão atual: 1.7 — Sprint 5 em curso: **Onda 0 (Arquitetura) completa** — ADR-026 (fronteira dbt↔Python/ML via `ml_staging` + source dbt), ADR-027 (fórmulas dos 5 scores), ADR-028 (contrato Feature Store), ADR-029 (pesos — baseline vigente, revisão pós-Sprint 6.5), ADR-030 (grafo recalculado total por execução). Ondas 1–4 (Feature Store/estatística, anomalias Isolation Forest, rede+clusterização, scores+risk_index) pendentes. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025; 129 testes verdes); ADRs 001-030.*
