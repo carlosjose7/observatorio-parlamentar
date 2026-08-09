@@ -104,6 +104,18 @@ def _seed(db: Path) -> None:
             " valor_glosa double, run_id varchar, pipeline_version varchar,"
             " execution_timestamp timestamp, source_version varchar)"
         )
+        # `silver_cartao` VAZIA: fonte de dim_unidade_gestora (ADR-010/ADR-025),
+        # que agora é modelo Gold e tem testes de FK agendados junto com
+        # dim_orgao/dim_data nos builds selecionados aqui; sem linhas, passam.
+        con.execute(
+            "create table silver_cartao (id bigint, data_transacao date,"
+            " valor_transacao double, estabelecimento_cnpj_valor varchar,"
+            " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
+            " portador_nome varchar, portador_cpf_mascarado varchar,"
+            " unidade_gestora_codigo varchar, unidade_gestora_nome varchar,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
     finally:
         con.close()
 
@@ -146,9 +158,11 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
 
 _SELECAO_FATO = (
-    "dim_orgao dim_data dim_parlamentar emenda_autor emenda_autor_quarantine"
+    "dim_orgao dim_data dim_parlamentar dim_unidade_gestora"
+    " emenda_autor emenda_autor_quarantine"
     " fact_emenda fact_emenda_quarantine"
     " +fact_despesa +fact_despesa_quarantine"
+    " +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
 )
 
 
@@ -273,7 +287,7 @@ def test_fact_emenda_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     try:
         assert con.execute(
             "select sigla, id_orgao from main.dim_orgao order by id_orgao"
-        ).fetchall() == [("CD", 1), ("SF", 2)]
+        ).fetchall() == [("CD", 1), ("SF", 2), ("EX", 3)]
         con.execute("delete from main.dim_orgao where sigla = 'CD'")
     finally:
         con.close()

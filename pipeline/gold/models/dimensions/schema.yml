@@ -71,6 +71,47 @@ models:
         tests:
           - not_null
 
+  - name: dim_unidade_gestora
+    description: >
+      Unidades Gestoras observadas na fonte CGU (ADR-010), materializada a
+      partir do grão de silver_cartao (ADR-025). Chave natural (fonte_origem, codigo).
+      id_orgao sempre o Poder Executivo genérico (dim_orgao.sigla = EX).
+    columns:
+      - name: id_unidade_gestora
+        description: PK surrogate determinística (row_number).
+        tests:
+          - unique
+          - not_null
+      - name: codigo
+        description: Código da UG na fonte de origem (CGU).
+        tests:
+          - not_null
+      - name: nome
+        tests:
+          - not_null
+      - name: id_orgao
+        description: dim_orgao do órgão — Poder Executivo genérico (sigla EX).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_orgao')
+                field: id_orgao
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_orgao')
+                field: id_orgao
+              config:
+                severity: warn
+      - name: fonte_origem
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CGU']
+
 seeds:
   - name: dim_orgao
     description: Órgãos institucionais (Câmara, Senado) — seed de referência (ADR-010).

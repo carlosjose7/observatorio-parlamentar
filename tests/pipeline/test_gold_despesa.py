@@ -85,6 +85,18 @@ def _seed(db: Path) -> None:
             " pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        # `silver_cartao` VAZIA: fonte de dim_unidade_gestora (ADR-010/ADR-025),
+        # que agora é modelo Gold e tem testes de FK agendados junto com
+        # dim_orgao/dim_data nos builds selecionados aqui; sem linhas, passam.
+        con.execute(
+            "create table silver_cartao (id bigint, data_transacao date,"
+            " valor_transacao double, estabelecimento_cnpj_valor varchar,"
+            " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
+            " portador_nome varchar, portador_cpf_mascarado varchar,"
+            " unidade_gestora_codigo varchar, unidade_gestora_nome varchar,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
         con.executemany(
             "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
             [
@@ -163,7 +175,8 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 _SELECAO_FATO = (
     "+desp_parlamento +desp_parlamento_quarantine"
     " +fact_despesa +fact_despesa_quarantine"
-    " +fact_emenda"
+    " +fact_emenda + dim_unidade_gestora"
+    " +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
 )
 
 
@@ -267,7 +280,7 @@ def test_despesa_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     try:
         assert con.execute(
             "select sigla, id_orgao from main.dim_orgao order by id_orgao"
-        ).fetchall() == [("CD", 1), ("SF", 2)]
+        ).fetchall() == [("CD", 1), ("SF", 2), ("EX", 3)]
         con.execute("delete from main.dim_orgao where sigla = 'CD'")
     finally:
         con.close()

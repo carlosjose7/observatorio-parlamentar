@@ -1462,3 +1462,75 @@ Consequências:
 ---
 
 <!-- Continue with further ADRs -->
+
+ADR-025
+Título: Poder Executivo genérico como órgão do portador CPGF e materialização
+inaugural de `dim_unidade_gestora`
+
+Status:
+Aceito
+
+Contexto:
+O `fact_cartao_cpgf` (ADR-012) exige `id_orgao` e `id_unidade_gestora` NOT
+NULL no contrato (gold.py:183). Ao implementarmos a Onda 3 do Gold, dois vazios
+de projeto vieram à tona:
+
+1. **A CGU não expõe órgão no grão de cartão.** Cada transação nasce com
+   `unidadeGestora.codigo`/`nome` (ADR-010/012), mas não há vínculo direto
+   órgão→transação; o portador do CPGF é, por natureza, servidor público
+   federal do **Poder Executivo**. Não existe "órgão" no grão para casar por
+   chave natural — a `dim_orgao` (seed) só tem CD/SF como casos institucionais.
+   A tentação de literal `id_orgao = 3` viola o ADR-022.1
+   (resolução por sigla, nunca literal de id).
+2. **`dim_unidade_gestor` era schema-only (BACKLOG, Onda 2).** Sem requisito
+   funcional, nenhuma fonte tinha sido materializada. Com o fato, a fonte
+   existe no grão (a própria CGU) e o contrato exige a FK NOT NULL — a dimensão
+   passa a ser necessária e populada pelas UGs observadas.
+
+Decisão:
+1. **Poder Executivo genérico por construção (ADR-022.1-compliant).** O seed
+   `dim_orgao` ganha `3,Executivo,Poder Executivo,EX,,`. A ponte efêmera
+   `cartao_unidade` resolve `id_orgao` por JOIN em `dim_orgao.sigla = 'EX'`
+   (mesmo padrão do `desp_orgao`/`emenda_autor_orgao` — sem literal de id).
+   Se a sigla `EX` sumir da dimensão (lag/dessincronização), `id_orgao` sai
+   NULL na ponte e a transação vai à quarentena `orgao_nao_resolvido`
+   (ADR-018/022) — nunca NULL silencioso.
+2. **Materialização inaugural de `dim_unidade_gestor`** a partir do grão de
+   `silver_cartao` (CGU): distinct por `unidade_gestora_codigo`, chave natural
+   composta `(fonte_origem='CGU', codigo)` (ADR-010.3 — nunca codigo isolado),
+   `gestao` permanece NULL (campo específico do SIAFI) e o `nome` é consolidado
+   por `max`. O `id_orgao` da UG resolve pelo mesmo JOIN `EX`. A dimensão
+   passa de schema-only para ativa (BACKLOG Onda 2 → Onda 3).
+3. **Contrato e quarentena.** `FactCartaoCpgf` (gold.py) já requer
+   `id_unidade_gestora` NOT NULL e `id_fornecedor` nullable. A quarentena por
+   construção (ADR-018) cobre `orgao_nao_resolvido`,
+   `unidade_gestora_nao_resolvida` e `data_nao_resolvida` (fora do horizonte
+   de `dim_data`); fornecedor NULL NÃO gera quarentena — o lag fica observado
+   pelos `fk_orphan_pct`/`relationships` do fato (ADR-022.3a).
+
+Consideração rejeitada:
+- **Literal `id_orgao = 3` na resolução** (ex.: por `WHERE` na ponte ou
+  `join` com valor fixo): viola o ADR-022.1 e cria um cabo de dependência
+  invisível entre o SQL e a seed. A resolução por sigla `EX` mantém a paridade
+  com `desp_orgao`/`emenda_autor_orgao` e degrada graciosamente para a
+  quarentena quando a dimensão regride.
+
+Consequências:
+- `dim_unidade_gestor` deixa de ser schema-only e vira modelo Gold executado;
+  os builds das demais suítes agora criam uma `silver_cartao` vazia e
+  selecionam a dimensão (atualizado nos testes `test_gold_despesa.py` e
+  `test_gold_scd2_adr017.py`).
+- O seed `dim_orgao` passa a ter três linhas; os testes de regressão dos fatos
+  existentes observam `[("CD",1),("SF",2),("EX",3)]`.
+- Como a UG da transação alimenta a própria dimensão,
+  `unidade_gestora_nao_resolvida` só é alcançada em dessincronização entre
+  builds (lag da dimensão), não por ausência na fonte — exatamente o cenário
+  de ADR-022.1 coberto por teste.
+- `id_fornecedor` NULL é comportamento legal do contrato (ADR-012); quando o
+  estabelecimento não tem CNPJ/CPF resolúvel na dim, o fato registra NULL e o
+  volume/razão é quantificado pelos testes percentuais `fk_orphan_pct`
+  (ADR-022.3a).
+
+---
+
+<!-- Continue with further ADRs -->
