@@ -561,7 +561,7 @@ referência nos ADRs 027 e 003).
 
 | Índice | Descrição | Fórmula (ADR-027) |
 |---|---|---|
-| `supplier_concentration_score` | Concentração de gastos em poucos fornecedores | `norm(hhi_p)`, `hhi_p = Σ_{f∈F_p} (v_{p,f}/V_p)²` (IRC-021) |
+| `supplier_concentration_score` | Concentração de gastos em poucos fornecedores | `norm(hhi_p)`, `hhi_p = Σ_{f∈F_p} (v_{p,f}/V_p)²` (ADR-021) |
 | `political_exposure_score` | Exposição a fornecedores compartilhados com muitos parlamentares | `norm(média_{f∈F_p} (n_f − 1))`, `n_f = nº de parlamentares que usam f` |
 | `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares | `norm(média_{f∈F_p} dep_f)`, HHI por fornecedor `dep_f = Σ_p (v_{p,f}/Σ_{p'}v_{p',f})²` |
 | `expense_anomaly_score` | Proporção de despesas anômalas do parlamentar | `norm(a_p)`, `a_p = |despesas anômalas de p| / |despesas de p|`; anomalia = ≥2 dos 6 critérios (§10/ADR-002) |

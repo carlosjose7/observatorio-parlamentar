@@ -292,4 +292,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.4 — Sprint 4: planejamento ADRs 018–023 + trilhas A e B concluídas (Gold dimensional, HMAC via plugin dbt, `dbt build` 35/35 verde); Onda 3 (fatos) em aberto. Onda 2 concluída: `dim_parlamentar` SCD2 (ADR-020) + mecanismo ADR-017 (`emenda_autor`/`emenda_autor_quarantine`), 114 testes verdes.*
+*Versão atual: 0.5 — Sprint 5 em curso: Onda 0 completa (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total); Ondas 1–4 pendentes. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
