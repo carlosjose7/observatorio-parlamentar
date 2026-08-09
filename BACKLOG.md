@@ -169,7 +169,7 @@
 ☑ `dim_fornecedor` — de `silver_despesa` com HMAC-SHA256 no Gold (CPF via UDF do plugin `hmac_udf.py`; CNPJ claro) + `tipo_documento` (ADR-011) + quarentena por construção.
 ☑ `dim_categoria_despesa` — de `silver_despesa.tipo_despesa` + quarentena.
 ☑ `pipeline_runs` dbt incremental operante (glob no Bronze Parquet + dummy quando vazio); pendente o `scripts/backfill_pipeline_runs.py` para migrar o histórico das Sprints 2/3 (ADR-019).
-☐ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021) — Onda 3.
+☑ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021) — Onda 3 (`models/analytics/`, HHI por parlamentar/ano + crescimento YoY por fornecedor/ano; contratos em `gold.py`).
 
 ### Onda 2 — `dim_parlamentar` SCD2 + mecanismo ADR-017
 

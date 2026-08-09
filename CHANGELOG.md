@@ -26,6 +26,11 @@ Histórico das alterações, organizado por sprint (ver
   `pipeline/transparencia/transform.py` — caminho de carga Silver das 3
   fontes (ADR-023), incluindo `normalizar_nome_proprio` em `normalize.py`.
 - Task `executar_silver` no `pipeline_dag.py` — conecta Bronze→Silver.
+- Agregados analíticos puros do ADR-021 (Onda 3) — `pipeline/gold/models/analytics/`
+  (`supplier_concentration` HHI por parlamentar/ano, `supplier_growth`
+  crescimento YoY por fornecedor/ano) com contrato em `pipeline/gold.py`
+  (`SupplierConcentration`, `SupplierGrowth`) e testes
+  `tests/pipeline/test_gold_analytics.py`.
 
 ### Corrigido
 - `sources.yml` do Gold sem `database:` explícito — catálogo DuckDB é o

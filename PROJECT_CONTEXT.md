@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 4 em curso — trilhas A e B do Gold concluídas (dbt Core com quarentena por construção, HMAC-SHA256 via plugin dbt, `pipeline_runs` DuckDB, `transform.py` das 3 fontes e task Silver no DAG / ADR-023); Onda 2 (SCD2 dim_parlamentar / ADR-017) e Onda 3 (fatos) em aberto. ADRs 001-023
+> Última atualização: Sprint 4 em curso — trilhas A e B do Gold concluídas (dbt Core com quarentena por construção, HMAC-SHA256 via plugin dbt, `pipeline_runs` DuckDB, `transform.py` das 3 fontes e task Silver no DAG / ADR-023); Onda 2 (SCD2 dim_parlamentar / ADR-017) concluída e Onda 3 (fatos + agregados analíticos: `fact_cartao_cpgf`, `fact_despesa`, `fact_emenda`; `supplier_concentration`, `supplier_growth` — ADR-021) em andamento. ADRs 001-025
  
 ---
  

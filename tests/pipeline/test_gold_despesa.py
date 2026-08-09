@@ -177,6 +177,7 @@ _SELECAO_FATO = (
     " +fact_despesa +fact_despesa_quarantine"
     " +fact_emenda + dim_unidade_gestora"
     " +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
+    " +supplier_concentration +supplier_growth"
 )
 
 
