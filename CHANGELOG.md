@@ -8,6 +8,37 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 5 — Analytics + ML + Redes (Onda 0 — Arquitetura)
+
+### Adicionado
+- ADR-026 — Fronteira de escrita dbt ↔ Python/ML no Gold: Python
+  (`pipeline/analytics/`) escreve exclusivamente em schema `ml_staging`
+  (DuckDB, single-writer); dbt consome como `source()` e materializa
+  `risk_scores`, `expense_outliers`, `network_edges`, `network_nodes`,
+  `politician_similarity` como models Gold regulares (`schema.yml` +
+  `relationships` + `fk_orphan_pct` ADR-022.3a). Opção C (models dbt
+  `language: python`) avaliada e descartada.
+- ADR-027 — Fórmulas explícitas dos 5 scores individuais (§9):
+  `supplier_concentration_score` (norm(hhi), ADR-021),
+  `political_exposure_score`, `supplier_dependency_score`,
+  `expense_anomaly_score` (proporção de anomalias §10; Isolation Forest
+  é um dos 6 critérios, não o score isolado), `network_influence_score`
+  (PageRank). Fecha o ciclo do ADR-003.
+- ADR-028 — Contrato da Feature Store: `pipeline/features.py` (Pydantic
+  `Feature`/`FeatureRegistry`, enum `FeatureCategoria`) validando
+  `feature_store/registry.yaml`; campos obrigatórios fecham
+  `ml_feature.md`; `test_features.py` garante registry válido e feature
+  não-órfã.
+- ADR-029 — Revisão de pesos do `risk_index`: baseline 0.2 vigente
+  durante a Sprint 5 (configurável via `config/analytics.yaml`); a
+  revisão empírica ocorre **após a Sprint 6.5** (≥12 meses de
+  `fact_despesa` real), via ADR de amendment do ADR-003.
+- ADR-030 — Materialização do grafo NetworkX: recálculo **total por
+  execução** (`run_id, periodo`) em `ml_staging`, models dbt Gold
+  clean-slate; limite de arestas como disjuntor com alerta no DQ Report.
+
+---
+
 ## Sprint 4 — Camada Gold (trilhas A e B)
 
 ### Adicionado

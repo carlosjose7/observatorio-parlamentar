@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 4 em curso — trilhas A e B do Gold concluídas (dbt Core com quarentena por construção, HMAC-SHA256 via plugin dbt, `pipeline_runs` DuckDB, `transform.py` das 3 fontes e task Silver no DAG / ADR-023); Onda 2 (SCD2 dim_parlamentar / ADR-017) concluída e Onda 3 (fatos + agregados analíticos: `fact_cartao_cpgf`, `fact_despesa`, `fact_emenda`; `supplier_concentration`, `supplier_growth` — ADR-021) em andamento. ADRs 001-025
+> Última atualização: Sprint 5 em curso — **Onda 0 (Arquitetura) completa**: ADR-026 (fronteira dbt↔Python/ML via `ml_staging` + source dbt), ADR-027 (fórmulas dos 5 scores §§9/10), ADR-028 (contrato Feature Store via `pipeline/features.py` + `registry.yaml`), ADR-029 (pesos 0.2 vigentes, revisão pós-Sprint 6.5), ADR-030 (grafo recalculado total por execução). Ondas 1–4 (Feature Store/estatística, anomalias Isolation Forest, rede+clusterização, scores+`risk_index`) pendentes. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025; 129 testes verdes). ADRs 001-030
  
 ---
  
@@ -555,24 +555,33 @@ Todas as visualizações devem consumir essas definições. Nunca recalcular inl
 ---
  
 ## 9. Índices de Risco
+  
+Cada índice é documentado matematicamente no `ADR.md` (fórmulas de
+referência nos ADRs 027 e 003).
+
+| Índice | Descrição | Fórmula (ADR-027) |
+|---|---|---|
+| `supplier_concentration_score` | Concentração de gastos em poucos fornecedores | `norm(hhi_p)`, `hhi_p = Σ_{f∈F_p} (v_{p,f}/V_p)²` (IRC-021) |
+| `political_exposure_score` | Exposição a fornecedores compartilhados com muitos parlamentares | `norm(média_{f∈F_p} (n_f − 1))`, `n_f = nº de parlamentares que usam f` |
+| `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares | `norm(média_{f∈F_p} dep_f)`, HHI por fornecedor `dep_f = Σ_p (v_{p,f}/Σ_{p'}v_{p',f})²` |
+| `expense_anomaly_score` | Proporção de despesas anômalas do parlamentar | `norm(a_p)`, `a_p = |despesas anômalas de p| / |despesas de p|`; anomalia = ≥2 dos 6 critérios (§10/ADR-002) |
+| `network_influence_score` | PageRank no grafo parlamentar-fornecedor | `norm(pr_p)`, PageRank bipartido (Onda 3, ADR-030) |
+| `risk_index` | Média ponderada normalizada dos 5 scores acima (ver ADR-003) | `Σ_i w_i · score_i(p)`, `w_i = 0.2` |
+
+> **Nota (ADR-029 — Aceito):** `expense_anomaly_score` é definido pela
+> proporção de despesas que satisfazem a regra de anomalia (§10), na qual
+> o Isolation Forest é **um dos 6 critérios** (score < −0.1), não o score
+> em si — coerente com ADR-002.
  
-Cada índice deve ser documentado matematicamente no `ADR.md`.
- 
-| Índice | Descrição |
-|---|---|
-| `supplier_concentration_score` | Concentração de gastos em poucos fornecedores |
-| `political_exposure_score` | Exposição a fornecedores compartilhados com muitos parlamentares |
-| `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares |
-| `expense_anomaly_score` | Z-score normalizado das despesas individuais |
-| `network_influence_score` | PageRank no grafo parlamentar-fornecedor |
-| `risk_index` | Média ponderada normalizada dos 5 scores acima (ver ADR-003) |
- 
-### Fórmula do Risk Index (ADR-003 — Aceito)
- 
+### Fórmula do Risk Index (ADR-003 — Aceito, revisado pelo ADR-029)
+
 Todos os scores individuais são normalizados via Min-Max para o
 intervalo [0,1] antes da ponderação. Pesos uniformes (0.2 cada) são
-o baseline da Sprint 0B — não definitivos, sujeitos a revisão na
-Sprint 5 com base em validação empírica.
+o **baseline vigente** — configuraveis em `config/analytics.yaml`
+(`risk.pesos`, fonte única ADR-008); a revisão não ocorre na Sprint 5,
+mas após a Sprint 6.5, quando existir ≥12 meses de `fact_despesa` real
+no Gold (ADR-029). Pesos só mudam por ADR de amendment do ADR-003,
+nunca por operação manual.
  
 ```
 risk_index = 0.2 * norm(supplier_concentration_score)
