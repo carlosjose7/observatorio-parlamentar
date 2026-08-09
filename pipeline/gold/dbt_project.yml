@@ -44,6 +44,8 @@ models:
       +materialized: table
     despesa:
       +materialized: table
+    cartao:
+      +materialized: table
 
 seeds:
   observatorio_gold:

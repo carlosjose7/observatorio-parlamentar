@@ -1,0 +1,119 @@
+version: 2
+
+# Contrato de qualidade do fato de cartão CPGF (ADR-022/ADR-025).
+#
+# Mesma DUAS camadas de integridade referencial dos demais fatos (não remover
+# uma como "redundante"):
+#
+#   1. `relationships` (genérico, `severity: warn`): binário — flag até UM
+#      órfão, sintoma de erro estrutural de modelagem.
+#   2. `fk_orphan_pct` (genérico custom, `severity: warn`): razão órfãos/total
+#      do fato, SÓ dispara acima do threshold `fk_orfas_threshold_pct`
+#      (fonte única `config/pipeline.yaml`, via `get_dbt_vars()` — ADR-008).
+#
+# `id_fornecedor` é a única FK nullable (ADR-012): relationships/fk_orphan_pct
+# aqui só avaliam linhas com o valor preenchido (a macro conta `where column is
+# not null`); lag de fornecedor não bloqueia o build (ADR-022.3a).
+
+models:
+  - name: fact_cartao_cpgf
+    description: >
+      Fato de transações CPGF (ADR-012). Grão: uma transação de cartão.
+      Promovidas as transações cujas FKs institucionais (órgão/UG, NOT NULL por
+      contrato) e de calendário resolvem; o restante fica em
+      fact_cartao_cpgf_quarantine (ADR-018), nunca descartado em silêncio.
+      Não referencia dim_parlamentar (ADR-012.3) — portador é do Executivo.
+    columns:
+      - name: id_transacao
+        description: >-
+          Surrogate determinístico do fato (row_number sobre a resolução ordenada).
+          Chave de referência externa: o `id` nativo da CGU.
+        tests:
+          - unique
+          - not_null
+      - name: id_orgao
+        description: dim_orgao — Poder Executivo genérico (dim_orgao.sigla = EX, ADR-025), via JOIN por sigla, sem literal de id.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_orgao')
+                field: id_orgao
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_orgao')
+                field: id_orgao
+              config:
+                severity: warn
+      - name: id_unidade_gestora
+        description: dim_unidade_gestora (CGU) — a CGU entrega a UG nativamente; NOT NULL no contrato (ADR-012).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_unidade_gestora')
+                field: id_unidade_gestora
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_unidade_gestora')
+                field: id_unidade_gestora
+              config:
+                severity: warn
+      - name: id_fornecedor
+        description: dim_fornecedor do estabelecimento (nullable por contrato — ADR-012; só preenchido quando CNPJ/CPF da fonte resolve na dimensão).
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+      - name: data_sk
+        description: dim_data — YYYYMMDD de data_transacao.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_data')
+                field: data_sk
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_data')
+                field: data_sk
+              config:
+                severity: warn
+      - name: portador_nome
+        tests:
+          - not_null
+      - name: portador_cpf_mascarado
+        description: Já mascarado pela fonte CGU, armazenado como está (gold.py).
+        tests:
+          - not_null
+      - name: valor_transacao
+        tests:
+          - not_null
+
+  - name: fact_cartao_cpgf_quarantine
+    description: Transações não promovidas (ADR-018), com motivo explícito (FK de órgão/UG/data não resolveu). Fornecedor NULL não quarentena (contrato nullable).
+    columns:
+      - name: motivo_quarentena
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - 'orgao_nao_resolvido'
+                  - 'unidade_gestora_nao_resolvida'
+                  - 'data_nao_resolvida'

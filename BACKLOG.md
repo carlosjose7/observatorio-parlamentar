@@ -192,14 +192,27 @@
 - ☑ **ADR-024 — paridade semântica `silver_parlamentar` (Câmara×Senado)**: `id_legislatura` derivada de calendário (`pipeline/parlamento.py`, nunca da API) + `gt(0)` no gate (fim do bug do `0` do Senado); `situacao_bruta` + `situacao_normalizada` (de-para versionado, sentinela `nao_mapeado`).
 - ☐ **Catálogo real de `situacao` (ação de seguimento do ADR-024)**: na primeira captura real, verificar vocabulários de `DescricaoParticipacao` (Senado) e `ultimoStatus.situacao` (Câmara) e adicionar ao de-para com teste.
 - ☐ **Manutenção periódica do calendário `LEGISLATURAS` (ação de seguimento do ADR-024)**: a derivação de `id_legislatura` cobre as legislaturas 54ª–58ª (fim exclusivo em 2031-02-01); snapshots além da janela caem no gate `gt(0)` → quarentena. **Gatilho**: ampliar `pipeline/parlamento.py::LEGISLATURAS` a cada início de legislatura (ex.: 59ª a partir de 2031-02-01, cobre a janela 2035 do `dim_data` Gold). **Dono**: owner do pipeline.
-- ☐ **`dim_unidade_gestora` permanece schema-only nesta sprint** — o seed `dim_orgao` (Trilha A) carrega Câmara/Senado com UG SIAFI onde disponível, mas a tabela `dim_unidade_gestora` (ADR-010) não é materializada nem populada agora (sem requisito funcional que justifique o grão; registro explícito para não parecer "coberto" por proximidade com `dim_orgao`).
+- ☐ **`dim_unidade_gestora` ATIVADA na Onda 3 (substitui o item schema-only
+  acima, ADR-025)**: com o `fact_cartao_cpgf` a fonte existe no grão (a própria
+  CGU entrega `unidadeGestora.codigo`) e o contrato exige a FK NOT NULL — a
+  dimensão foi materializada a partir de `silver_cartao` (chave natural
+  `(fonte_origem='CGU', codigo)`) e o seed `dim_orgao` ganhou o Poder
+  Executivo genérico (sigla `EX`, JOIN por sigla — ADR-022.1, sem literal).
 
 ### Onda 3 — Fatos
 
-☐ `fact_despesa` (Câmara/Senado) — promoção da Silver + checks `relationships` (ADR-022).
-☐ `fact_cartao_cpgf` (CGU) — promoção da Silver + `unidade_gestora` NOT NULL.
-☑ `fact_emenda` (CGU) — promoção via `emenda_autor` (ADR-017): somente autoria individual resolvida sem ambiguidade; `fact_emenda_quarantine` com `motivo_quarentena` (`autor_colegiado`/`autor_ambiguo`/`autor_fora_cobertura`/`autor_nao_resolvido`/`orgao_nao_resolvido`); `id_orgao` derivado por JOIN de `dim_orgao` via `sigla` (CD/SF) da `fonte` da versão casada (`emenda_autor_orgao`) — sem literal hardcoded (ADR-022.1), não-match → quarentena `orgao_nao_resolvido`; `data_sk` em 31/12/ano; checks `relationships` + `not_null` + test custom `fk_orphan_pct` com threshold percentual >5% (var `fk_orfas_threshold_pct`, fonte única `data_quality.fk_orfa_threshold_pct` em `config/pipeline.yaml` injetada via `get_dbt_vars()`) e severidade `warn` (ADR-022.3a).
-☐ `schema.yml` + singular tests de cada fato (referencial/órfãos `warn`, estrutura `error`).
+☑ `fact_despesa` (Câmara/Senado) — promoção da Silver + checks `relationships` (ADR-022).
+☑ **`fact_cartao_cpgf` (CGU — ADR-012/ADR-025)**: promoção da Silver com
+   `id_unidade_gestora` NOT NULL (dimensão ativada na Onda 3, ver item acima) e
+   `id_orgao` = EX por construção; `cartao_unidade` (efêmero) resolve UG+órgão,
+   `cartao_fornecedor` resolve `id_fornecedor` nullable (ADR-011); quarentena
+   `fact_cartao_cpgf_quarantine` com `motivo_quarentena` (`orgao_nao_resolvido`/
+   `unidade_gestora_nao_resolvida`/`data_nao_resolvida`); checks `relationships`
+   + `not_null` + test custom `fk_orphan_pct` (ADR-022.3a). Teste de integração
+   `tests/pipeline/test_gold_cartao.py` (promoção, lag EX→quarentena, órfãos
+   acima/abaixo do limiar).
+☑ `fact_emenda` (CGU) — promoção via `emenda_autor` (ADR-017): somente autoria individual resolvida sem ambiguidade; `fact_emenda_quarantine` com `motivo_quarentena` (`autor_colegiado`/`autor_ambiguo`/`autor_fora_cobertura`/`autor_nao_resolvido`/`orgao_nao_resolvido`); `id_orgao` derivado por JOIN de `dim_orgao` via `sigla` (CD/SF) da `fonte` da versão casada (`emenda_autor_orgao`) — sem literal hardcoded (ADR-022.1), não-match → quarentena `orgao_nao_resolvido`; `data_sk` em 31/12/ano; checks `relationships` + `not_null` + test custom `fk_orphan_pct` com threshold percentual >5% (var `fk_orfas_threshold_pct`, fonte única `data_quality.fk_orfas_threshold_pct` em `config/pipeline.yaml` injetada via `get_dbt_vars()`) e severidade `warn` (ADR-022.3a).
+☑ `schema.yml` + singular tests de cada fato (referencial/órfãos `warn`, estrutura `error`).
 ☐ Placeholder das tabelas de ML (ADR-021) como schema vazio.
 
 ---
