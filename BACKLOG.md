@@ -168,7 +168,7 @@
 ☑ `pipeline_dag.py` — task `executar_silver` conectando Bronze→Silver (ADR-023), agregando os 4 `carregar_silver_*` com XCom.
 ☑ `dim_fornecedor` — de `silver_despesa` com HMAC-SHA256 no Gold (CPF via UDF do plugin `hmac_udf.py`; CNPJ claro) + `tipo_documento` (ADR-011) + quarentena por construção.
 ☑ `dim_categoria_despesa` — de `silver_despesa.tipo_despesa` + quarentena.
-☑ `pipeline_runs` dbt incremental operante (glob no Bronze Parquet + dummy quando vazio); pendente o `scripts/backfill_pipeline_runs.py` para migrar o histórico das Sprints 2/3 (ADR-019).
+☑ `pipeline_runs` dbt incremental operante (glob no Bronze Parquet; sem arquivos → **zero linhas**, nunca linha fictícia — `where false` com schema compatível); pendente o `scripts/backfill_pipeline_runs.py` para migrar o histórico das Sprints 2/3 (ADR-019).
 ☑ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021) — Onda 3 (`models/analytics/`, HHI por parlamentar/ano + crescimento YoY por fornecedor/ano; contratos em `gold.py`).
 ☐ `supplier_concentration` cobre granularidade por-parlamentar (HHI do gasto do parlamentar em fornecedores). Granularidade complementar por-fornecedor (HHI da dependência do fornecedor em parlamentares) **não foi modelada** — pré-requisito de `supplier_dependency_score` (§9, ADR-003) na Sprint 5.
 
