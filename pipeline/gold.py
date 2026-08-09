@@ -1,9 +1,9 @@
 """Contratos da camada Gold (Star Schema / Fact Constellation).
 
 Reflete PROJECT_CONTEXT.md §7, ADR-010 (dimensões institucionais),
-ADR-011 (dim_fornecedor) e ADR-012 (constelação de fatos). Ver
-docs/architecture/arch_er.md para o diagrama entidade-relacionamento
-completo.
+ADR-011 (dim_fornecedor), ADR-012 (constelação de fatos) e ADR-021
+(agregados analíticos puros). Ver docs/architecture/arch_er.md para o
+diagrama entidade-relacionamento completo.
 """
 
 from __future__ import annotations
@@ -197,3 +197,34 @@ class FactCartaoCpgf(BaseModel):
     pipeline_version: str
     execution_timestamp: str
     source_version: str
+
+
+class SupplierConcentration(BaseModel):
+    """Agregado analítico puro (ADR-021) — concentração de gasto do parlamentar.
+
+    HHI = `SUM(participacao^2)` sobre as despesas do parlamentar por
+    ano (PROJECT_CONTEXT §7 métrica `hhi`); `participacao` = total do fornecedor
+    dividido pelo total do parlamentar no ano. Grão: (ano, id_parlamentar).
+    """
+
+    ano: int
+    id_parlamentar: int
+    num_fornecedores: int
+    total_valor: Decimal
+    hhi: float
+
+
+class SupplierGrowth(BaseModel):
+    """Agregado analítico puro (ADR-021) — crescimento de receita por fornecedor.
+
+    Receita pública anual recebida por fornecedor, com variação YoY contra o
+    ano anterior (null no primeiro período). Grão: (ano, id_fornecedor).
+    """
+
+    ano: int
+    id_fornecedor: int
+    valor_recebido: Decimal
+    valor_ano_anterior: Decimal | None = Field(
+        default=None, description="NULL no primeiro período do fornecedor (sem ano anterior)"
+    )
+    variacao_pct: float | None

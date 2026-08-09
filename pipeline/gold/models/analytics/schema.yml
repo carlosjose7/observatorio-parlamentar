@@ -1,0 +1,74 @@
+version: 2
+
+# Contrato de qualidade dos agregados analíticos puros (ADR-021, Onda 3).
+# Tabelas puramente agregadas de `fact_despesa` (schema + dados), sem ML — por
+# isso o contrato aqui é de agregados: FKs referenciais (parlamentar/fornecedor)
+# e não-nulidade dos agregados, no mesmo padrão das demais camadas Gold.
+# (As tabelas placeholder de ML/rede ficam fora deste arquivo — Sprint 5.)
+
+models:
+  - name: supplier_concentration
+    description: >
+      Índice HHI por parlamentar/ano (métrica `hhi` de PROJECT_CONTEXT §7):
+      concentração do gasto do parlamentar em poucos fornecedores. Grão
+      (ano, id_parlamentar). HHI = SUM(participacao^2), onde participacao =
+      total do fornecedor / total do parlamentar no ano — ∈ (0, 1], 1 = gasto
+      em um único fornecedor.
+    columns:
+      - name: ano
+        tests:
+          - not_null
+      - name: id_parlamentar
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+      - name: num_fornecedores
+        tests:
+          - not_null
+      - name: total_valor
+        tests:
+          - not_null
+      - name: hhi
+        tests:
+          - not_null
+
+  - name: supplier_growth
+    description: >
+      Crescimento de receita pública por fornecedor/ano (YoY contra o ano
+      anterior). Grão (ano, id_fornecedor); `valor_ano_anterior`/`variacao_pct`
+      nulos no primeiro período do fornecedor.
+    columns:
+      - name: ano
+        tests:
+          - not_null
+      - name: id_fornecedor
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+      - name: valor_recebido
+        tests:
+          - not_null
+      - name: valor_ano_anterior
+      - name: variacao_pct

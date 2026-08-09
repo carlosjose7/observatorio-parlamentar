@@ -154,6 +154,30 @@ referência versionada em Git.
 > gera quarentena — o contrato é nullable (ADR-012) e o lag observado pelos
 > testes `fk_orphan_pct`/`relationships` (ADR-022.3a).
 
+### 2.7 supplier_concentration (ADR-021 — agregado analítico puro)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `ano` | INT | 0% | Ano fiscal (de `dim_data.ano`) |
+| `id_parlamentar` | BIGINT (FK) | 0% | `dim_parlamentar` — chave natural do parlamentar |
+| `num_fornecedores` | BIGINT | 0% | nº de fornecedores distintos do parlamentar no ano |
+| `total_valor` | DECIMAL | 0% | `SUM(valor_liquido)` do parlamentar no ano |
+| `hhi` | DOUBLE | 0% | Índice HHI: `SUM(participacao^2)`, `participacao` = total do fornecedor / total do parlamentar no ano — ∈ (0, 1] |
+
+> Grão: **um parlamentar por ano**. Fonte `fact_despesa` (agregado puro, sem ML — ADR-021); única tabela com a métrica `hhi` isolada para `supplier_concentration_score` (§9).
+
+### 2.8 supplier_growth (ADR-021 — agregado analítico puro)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `ano` | INT | 0% | Ano fiscal (de `dim_data.ano`) |
+| `id_fornecedor` | BIGINT (FK) | 0% | `dim_fornecedor` — id do fornecedor |
+| `valor_recebido` | DECIMAL | 0% | `SUM(valor_liquido)` do fornecedor no ano |
+| `valor_ano_anterior` | DECIMAL | **nulo no 1º período** | receita do fornecedor no ano anterior (YoY) |
+| `variacao_pct` | DOUBLE | **nulo no 1º período** | `(valor_recebido - valor_ano_anterior) / valor_ano_anterior` |
+
+> Grão: ``(ano, id_fornecedor)``. Fonte `fact_despesa` (agregado puro, sem ML — ADR-021).
+
 ---
 
 ## 3. Schemas das Fontes (Sprint 0B — Exploração Empírica)
