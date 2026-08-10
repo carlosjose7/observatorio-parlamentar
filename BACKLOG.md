@@ -315,6 +315,39 @@
 
 ---
 
+## Sprint 6 — API (FastAPI)
+
+> **Onda 1 concluída** — infra da API + contratos de resposta sobre o Gold +
+> primeiros endpoints de negócio do `PROJECT_CONTEXT.md §11`. Fronteira de
+> leitura exclusiva do Gold (DuckDB read-only via `DUCKDB_DATABASE_PATH`,
+> ADR-026); falhas de esquema degradam como HTTP 503 (Gold indisponível).
+
+### Onda 1 (implementada)
+
+☑ **Onda 1 — Infra da API + contratos + `/parlamentares` e
+   `/parlamentares/{id}/gastos`** (`61968f6`): `config/api.yaml` +
+   `ApiSettings` (ADR-008 — identificação, host/porta, paginação e
+   `ano_minimo_consulta`; nada hardcoded); `api/repo.py` read-only sobre o
+   Gold com `GoldIndisponivel` → 503; contratos de resposta
+   `api/schemas/parlamentares.py` (`extra="forbid"`) espelhando as colunas
+   emitidas pelos modelos dbt (SCD2 `is_current`); endpoints paginados com
+   filtros nome/uf/partido e gastos com dimensões resolvidas
+   (fornecedor/categoria/`dim_data`), 404/422/503; `api/main.py` usa a config
+   e preserva `/` e `/health`. Testes `tests/api/test_parlamentares.py` (16)
+   com DuckDB determinístico + TestClient. Suíte completa
+   `tests` — **228 passed**.
+
+### Ondas (pendentes — Sprint 6 em curso)
+
+☐ Onda 2 — `/parlamentares/{id}` (perfil completo), `/parlamentares/{id}/rede`,
+   `/fornecedores`, `/fornecedores/{cnpj}`, `/fornecedores/{cnpj}/parlamentares`
+☐ Onda 3 — `/anomalias?threshold=`, `/rede/comunidades`, `/qualidade/relatorio`,
+   `/pipeline/status`
+☐ Onda 4 — endpoints agent-ready (RF-05): `/agent/parlamentar/{id}`,
+   `/agent/fornecedor/{cnpj}`, `/agent/anomalias`, `/agent/context`
+
+---
+
 ## Sprint 6.5 — Validação End-to-End
 
 > **Resíduo registrado no fechamento da Sprint 4/Trilha B** (não bloqueante):
@@ -329,4 +362,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.7 — Sprint 5 em curso: Ondas 0–4 completas (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total; Feature Store + Analytics estatística; anomalias `expense_outliers`; grafo bipartido + centralidades + similaridade; `risk_scores` + `risk_index` — 212 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
+*Versão atual: 0.8 — Sprint 6 em curso: **Onda 1 completa** — infra da API (config ADR-008 + `api/repo.py` read-only sobre o Gold, ADR-026), contratos de resposta `api/schemas/parlamentares.py`, endpoints `/parlamentares` e `/parlamentares/{id}/gastos` paginados com filtros e dimensões resolvidas, degradação Gold→503, smoke `/` e `/health` preservados — 228 testes verdes (212 pipeline + 16 API). Sprint 5 fechada (Ondas 0–4, metrics Feature Store + anomalias + rede + `risk_scores`; ADRs 026–030; 212 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*

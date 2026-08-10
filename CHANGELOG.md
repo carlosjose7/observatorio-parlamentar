@@ -8,6 +8,36 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 6 — API (FastAPI / Onda 1 — infra + parlamentares)
+
+### Adicionado
+- **Onda 1 — Infra da API + contratos + endpoints `/parlamentares` e
+  `/parlamentares/{id}/gastos`** (`61968f6`):
+  `config/api.yaml` + `ApiSettings` em `pipeline/config.py` (ADR-008 —
+  identificação da API, host/porta, paginação e `ano_minimo_consulta` como
+  régua de recurso; nenhum limite hardcoded). Camada read-only `api/repo.py`
+  com fronteira de leitura exclusiva do Gold via `DUCKDB_DATABASE_PATH`
+  (ADR-026 — nunca Bronze/Silver/`ml_staging`); falhas de driver/esquema
+  degradam como `GoldIndisponivel` → HTTP 503 (schema Gold desatualizado não
+  vaza 500 ao cliente). Contratos de resposta em `api/schemas/parlamentares.
+  py` (`extra="forbid"`, selo de contrato) espelhando as colunas REALMENTE
+  emitidas pelos modelos dbt — ex.: `dim_parlamentar.sql` emite
+  `sigla_partido`/`sigla_uf`/`situacao_normalizada`, divergente do contrato
+  estrutural `gold.py:DimParlamentar` (registro consciente do descompasso
+  schema-declarado vs. schema-emitido). Endpoints paginados no router
+  `parlamentares.py`: lista de vigentes do SCD2 (`is_current`, ADR-020) com
+  filtros nome (`nome_normalizado` ILIKE, accent/case insensitive) / uf /
+  partido; gastos com dimensões resolvidas (`dim_data`, `dim_categoria_
+  despesa`, `dim_fornecedor`), filtro por ano, ordenação por data desc,
+  404 de parlamentar inexistente e 422 de validação de query. `api/main.py`
+  consome a config (título/versão) e preserva `/` e `/health` (sem regressão
+  do scaffold v0.1). Testes `tests/api/test_parlamentares.py` (16, fixture com
+  DuckDB determinístico de schema real do Gold + TestClient) cobrindo SCD2,
+  filtros, paginação, dimensões de gastos, 404/422/503. Suíte completa
+  `tests` — **228 passed** (212 pipeline + 16 API).
+
+---
+
 ## Sprint 5 — Analytics + ML + Redes (Onda 4 — `risk_scores`)
 
 ### Adicionado
