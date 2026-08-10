@@ -209,7 +209,7 @@ def listar_gastos(
             f"""
             select
                 f.id_despesa,
-                d.data_completa as data,
+                d.data,
                 d.ano,
                 d.mes,
                 c.descricao as tipo_despesa,

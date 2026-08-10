@@ -66,7 +66,7 @@ _DDL = {
     "dim_data": """
         create table dim_data (
             data_sk bigint,
-            data_completa date,
+            data date,
             ano integer,
             mes integer,
             dia integer,
