@@ -262,17 +262,38 @@
    disjuntor com alerta no DQ Report para ADR de superseding futuro;
    `politician_similarity` compartilha o mesmo staging.
 
-### Ondas 1–4 (para o roadmap)
+### Ondas 1–3 (implementadas)
 
-- **Onda 1 — Feature Store + Analytics estatística**: `pipeline/features.py`,
-  `pipeline/analytics.py`, correlações/estatística descritiva insumo de
-  `dim_data`, primeiras features registradas no registry.
-- **Onda 2 — Detecção de anomalias**: Isolation Forest conforme §10/ADR-002
-  (contamination 0.05, threshold score < −0.1, ≥2 dos 6 critérios),
-  `expense_outliers`.
-- **Onda 3 — Rede + clusterização**: `pipeline/network.py`, NetworkX
-  (PageRank, comunidades), `network_edges`/`network_nodes`,
-  `politician_similarity`.
+☑ **Onda 1 — Feature Store + Analytics estatística** (`84de54d`,
+   lineage corrigida em `a6b239e`): `pipeline/features.py` (ADR-028) —
+   contrato Pydantic `Feature`/`FeatureRegistry` + `FeatureCategoria`
+   (`agregado|ml|composicao|funcao`) validando `feature_store/registry.
+   yaml`; features registradas (5 fórmulas de score do ADR-027,
+   `risk_index`, funções `minmax`/`regra_anomalia`); `pipeline/analytics.
+   py` — estatística descritiva + correlações determinísticas; testes
+   `test_features.py`/`test_analytics.py`.
+☑ **Onda 2 — Detecção de anomalias** (`6a2e957`): `pipeline/anomalies.py`
+   conforme §10/ADR-002 — `is_anomalia = num_criterios >= 2` dos 6
+   critérios (Z-score > 2.5, Isolation Forest contra `0.05`/threshold
+   `< −0.1` com distinção treino×inferência preservada, fornecedor < 3
+   clientes, empresa < 12 meses, valores idênticos ≥ 3 no mês, dia sem
+   sessão); reuso da feature `regra_anomalia` (ADR-028);
+   `ml_staging.expense_outliers` (ADR-026) + Gold `expense_outliers`
+   (inner join `fact_despesa`, ADR-018) com contrato em `gold.py`;
+   testes `test_anomalies.py`/`test_gold_expense_outliers.py`.
+☑ **Onda 3 — Rede + clusterização** (`76ce55b`): `pipeline/network.py` —
+   grafo **bipartido** parlamentar↔fornecedor de `fact_despesa`
+   (PageRank global do período — never subgrafo, ADR-030.1; centralidade
+   de grau; comunidades determinísticas RF-12; similaridade de cosseno
+   `politician_similarity` CU-08/§7); `ml_staging.network_edges|
+   network_nodes|politician_similarity` (ADR-026/030) + Gold com `exists`
+   condicionado por `tipo_no`/dimensões (SCD2-safe); disjuntor
+   `rede.limite_arestas_recorte=50000` (ADR-030.3); contratos em
+   `gold.py`/`schema.yml`; testes `test_network.py` (18) +
+   `test_gold_network.py` (2). Suíte `tests/pipeline` — 189 passed.
+
+### Onda 4 (pendentes)
+
 - **Onda 4 — Scores + risk_index**: os 5 scores individuais (fórmulas
   ADR-027), composição final e `risk_scores`.
 
@@ -292,4 +313,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.5 — Sprint 5 em curso: Onda 0 completa (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total); Ondas 1–4 pendentes. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
+*Versão atual: 0.6 — Sprint 5 em curso: Ondas 0–3 completas (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total; Feature Store + Analytics estatística; anomalias `expense_outliers`; grafo bipartido + centralidades + similaridade — 189 testes verdes). Onda 4 (`risk_scores`) pendente. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*

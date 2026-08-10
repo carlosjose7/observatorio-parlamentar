@@ -8,6 +8,65 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 5 — Analytics + ML + Redes (Ondas 1–3 — implementação)
+
+### Adicionado
+- **Onda 1 — Feature Store + Analytics estatística** (`84de54d`):
+  `pipeline/features.py` (ADR-028) — modelo Pydantic `Feature`/
+  `FeatureRegistry` + enum `FeatureCategoria` (`agregado|ml|composicao|
+  funcao`), validação do `feature_store/registry.yaml` (campos
+  obrigatórios: nome, descricao, formula, origem, tipo, categoria,
+  ultima_atualizacao, consumidores; só `funcao` dispensa `tabela`);
+  primeiras features registradas (as 5 fórmulas de score do ADR-027,
+  `risk_index` como composição, funções derivadas `minmax`/`regra_anomalia`
+  — ADR-002/§10). `pipeline/analytics.py` — estatística descritiva
+  (ResumoEstatistico: média, mediana, desvio padrão, percentil 95 etc.)
+  e correlações, puras e determinísticas, consumindo fatos Gold no grão
+  correto e correspondendo a features do registry. Testes:
+  `test_features.py` (registry válido + feature não-órfã, ADR-028.5)
+  e `test_analytics.py`.
+- **Correção de lineage no Feature Registry** (`a6b239e`): `supplier_
+  concentration_score` ajustado no `registry.yaml` — `origem:
+  supplier_concentration` (não `fact_despesa`), alinhando com ADR-021.
+- **Onda 2 — Detecção de anomalias `expense_outliers`** (`6a2e957`):
+  `pipeline/anomalies.py` — definição formal de anomalia do §10/ADR-002:
+  despesa é **anomalia** quando satisfaz **pelo menos 2 dos 6 critérios**
+  (`is_anomalia = num_criterios >= 2`); critérios: Z-score > 2.5 vs.
+  histórico do parlamentar, Isolation Forest score < −0.1 (contamination
+  0.05 — hiperparâmetro de **treino**; threshold é regra de **decisão em
+  inferência**, distinção ADR-002 preservada), fornecedor < 3 clientes,
+  empresa < 12 meses, valores idênticos ≥ 3 no mês, dia sem sessão; reusa
+  a feature `regra_anomalia` do registry (ADR-028). Escrita exclusiva em
+  `ml_staging.expense_outliers` (ADR-026). Model dbt Gold
+  `expense_outliers.sql` (só `is_anomalia=true` promovido, inner join com
+  `fact_despesa` — ADR-018) + contrato `ExpenseOutliers` em `gold.py` +
+  `sources.yml`/`schema.yml`. Testes: `test_anomalies.py` +
+  `test_gold_expense_outliers.py`.
+- **Onda 3 — Rede + clusterização** (`76ce55b`): `pipeline/network.py` —
+  grafo **bipartido** parlamentar↔fornecedor a partir de `fact_despesa`
+  (nós `p:`/`f:`, aresta `v_{p,f}` agregada no período = peso); por
+  período (grão ano) calcula PageRank **global** (ADR-030.1 — `network_
+  influence_score` cru, ADR-027.5), centralidade de grau, comunidades
+  (`greedy_modularity`, determinísticas — RF-12) e similaridade de
+  cosseno entre parlamentares por sobreposição de fornecedores
+  (`politician_similarity`, §7/CU-08, ordem canônica a<b); escrita
+  exclusiva em `ml_staging.network_edges|network_nodes|politician_
+  similarity` (ADR-026/030); disjuntor `rede.limite_arestas_recorte`
+  (50000, `config/analytics.yaml` → `get_analytics()`, ADR-008/030.3).
+  `pipeline/config.py` ganhou `AnalyticsSettings`/`RedeSettings` +
+  `load_analytics_settings()`. Models dbt Gold `network_edges.sql`/
+  `network_nodes.sql`/`politician_similarity.sql` — `exists` contra as
+  dimensões (SCD2 `dim_parlamentar`, never inner join);
+  `network_nodes.id_no` polimórfico condicionado a `tipo_no`. Contratos
+  `NetworkEdges`/`NetworkNodes`/`PoliticianSimilarity` em `gold.py` +
+  `sources.yml`/`schema.yml` (`accepted_values` para `tipo_no`, FK
+  `fk_orphan_pct` warn). Testes: `test_network.py` (18) +
+  `test_gold_network.py` (2, fluxo dbt em 2 fases com cenário de
+  fornecedor compartilhado). Suíte completa `tests/pipeline` — **189
+  passed**.
+
+---
+
 ## Sprint 5 — Analytics + ML + Redes (Onda 0 — Arquitetura)
 
 ### Adicionado
