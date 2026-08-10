@@ -11,7 +11,7 @@ Histórico das alterações, organizado por sprint (ver
 ## Sprint 6 — API (FastAPI / Onda 2 — perfil, rede e fornecedores)
 
 ### Adicionado
-- **Onda 2 — endpoints de negócio sobre o Gold materializado** (`XXX`):
+- **Onda 2 — endpoints de negócio sobre o Gold materializado** (`9e3cb43`):
   `GET /parlamentares/{id}` (perfil vigente do SCD2, ADR-020 — resolve as
   colunas `sigla_partido`/`sigla_uf`/`situacao_normalizada` emitidas pelo
   `dim_parlamentar.sql`); `GET /parlamentares/{id}/rede` (consome

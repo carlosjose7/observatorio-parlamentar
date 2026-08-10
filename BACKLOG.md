@@ -349,7 +349,7 @@
 
 ### Onda 2 (implementada)
 
-☑ **Onda 2 — Perfil completo, rede e fornecedores** (`XXX`): 
+☑ **Onda 2 — Perfil completo, rede e fornecedores** (`9e3cb43`): 
    `GET /parlamentares/{id}` — perfil vigente do SCD2 (ADR-020) resolvendo
    `sigla_partido`/`sigla_uf`/`situacao_normalizada` emitidas pelo dbt;
    `GET /parlamentares/{id}/rede` — consome **o Gold materializado**
