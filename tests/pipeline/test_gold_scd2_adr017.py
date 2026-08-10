@@ -116,11 +116,31 @@ def _seed(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
-        # ml_staging.expense_outliers VAZIA (contrato ADR-026): o build de
-        # `+fact_despesa`/`+supplier_*` agenda junto os testes de FK da Onda 2
-        # que apontam para a source — o schema/tabela precisam existir mesmo
-        # quando o lote Python ainda não gravou.
+        # ml_staging VAZIA (contrato ADR-026/030): o build de
+        # `+fact_despesa`/`+supplier_*` agenda junto os testes de FK das
+        # Onda 2/3 que apontam para as sources — o schema/tabelas precisam
+        # existir mesmo quando o lote Python ainda não gravou.
         con.execute("create schema if not exists ml_staging")
+        con.execute(
+            "create table if not exists ml_staging.network_edges ("
+            " id_parlamentar bigint, id_fornecedor bigint, periodo bigint,"
+            " valor_total double, run_id varchar, pipeline_version varchar,"
+            " execution_timestamp varchar, source_version varchar)"
+        )
+        con.execute(
+            "create table if not exists ml_staging.network_nodes ("
+            " id_no bigint, tipo_no varchar, periodo bigint, pagerank double,"
+            " degree_centrality double, comunidade_id bigint, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp varchar,"
+            " source_version varchar)"
+        )
+        con.execute(
+            "create table if not exists ml_staging.politician_similarity ("
+            " id_parlamentar_a bigint, id_parlamentar_b bigint, periodo bigint,"
+            " num_fornecedores_compartilhados bigint, similaridade double,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp varchar,"
+            " source_version varchar)"
+        )
         con.execute(
             "create table if not exists ml_staging.expense_outliers ("
             " id_despesa bigint, id_parlamentar bigint, id_fornecedor bigint,"
@@ -180,6 +200,7 @@ _SELECAO_FATO = (
     " +fact_despesa +fact_despesa_quarantine"
     " +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
     " +supplier_concentration +supplier_growth +expense_outliers"
+    " +network_edges +network_nodes +politician_similarity"
 )
 
 

@@ -119,13 +119,34 @@ def _seed(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
-        # ml_staging.expense_outliers VAZIA: desde a Onda 2 (Sprint 5) o model
-        # analytics `expense_outliers` dispara testes de FK que apontam para
+        # ml_staging VAZIA: desde a Onda 2/3 (Sprint 5) os models analytics
+        # (`expense_outliers`, `network_edges`, `network_nodes`,
+        # `politician_similarity`) disparam testes de FK que apontam para
         # fact_despesa/dimensões — o build destes agregados agenda junto esses
-        # testes, exigindo que a source `ml_staging` exista no DuckDB (schema
-        # próprio + tabela, contrato ADR-026). Vazia aqui porque este teste
+        # testes, exigindo que as sources `ml_staging` existam no DuckDB (schema
+        # próprio + tabelas, contrato ADR-026/030). Vazias aqui porque este teste
         # exercita apenas agregados puros; a fonte real é escrita pelo Python.
         con.execute("create schema if not exists ml_staging")
+        con.execute(
+            "create table if not exists ml_staging.network_edges ("
+            " id_parlamentar bigint, id_fornecedor bigint, periodo bigint,"
+            " valor_total double, run_id varchar, pipeline_version varchar,"
+            " execution_timestamp varchar, source_version varchar)"
+        )
+        con.execute(
+            "create table if not exists ml_staging.network_nodes ("
+            " id_no bigint, tipo_no varchar, periodo bigint, pagerank double,"
+            " degree_centrality double, comunidade_id bigint, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp varchar,"
+            " source_version varchar)"
+        )
+        con.execute(
+            "create table if not exists ml_staging.politician_similarity ("
+            " id_parlamentar_a bigint, id_parlamentar_b bigint, periodo bigint,"
+            " num_fornecedores_compartilhados bigint, similaridade double,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp varchar,"
+            " source_version varchar)"
+        )
         con.execute(
             "create table if not exists ml_staging.expense_outliers ("
             " id_despesa bigint, id_parlamentar bigint, id_fornecedor bigint,"
@@ -172,6 +193,7 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
 _SELECAO = (
     "+supplier_concentration +supplier_growth +expense_outliers"
+    " +network_edges +network_nodes +politician_similarity"
     " +fact_emenda +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
 )
 

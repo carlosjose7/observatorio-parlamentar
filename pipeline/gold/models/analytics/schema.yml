@@ -174,3 +174,183 @@ models:
       - name: source_version
         tests:
           - not_null
+
+  - name: network_edges
+    description: >
+      Arestas do grafo bipartido parlamentar↔fornecedor (ADR-030, Onda 3):
+      `valor_total` = peso `v_{p,f}` agregado do período. Grão
+      (id_parlamentar, id_fornecedor, periodo) por run; recálculo total por
+      execução (ADR-030.1). Materializada a partir de
+      `ml_staging.network_edges` (ADR-026, Opção A — Python single-writer no
+      staging; dbt só materializa o Gold, com `exists` contra as dimensões —
+      sem inner join porque dim_parlamentar é SCD2, ADR-020).
+    columns:
+      - name: id_parlamentar
+        description: Extremidade parlamentar da aresta — FK dim_parlamentar.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+      - name: id_fornecedor
+        description: Extremidade fornecedor da aresta — FK dim_fornecedor.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+      - name: periodo
+        description: Ano do período do grafo (grão ano, §7/ADR-021).
+        tests:
+          - not_null
+      - name: valor_total
+        description: Peso da aresta (valor agregado do período).
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null
+
+  - name: network_nodes
+    description: >
+      Nós do grafo bipartido com métricas de centralidade (ADR-030, Onda 3).
+      Grão (id_no, tipo_no, periodo) por run. `pagerank` = network_influence_score
+      cru (ADR-027.5); `degree_centrality` e `comunidade_id` complementam a
+      análise. `id_no` é NÓ POLIMÓRFICO — `tipo_no` discrimina se referencia
+      dim_parlamentar ou dim_fornecedor (sem FK única; existência garantida no
+      SQL por tipo). Materializada a partir de `ml_staging.network_nodes`
+      (ADR-026, Opção A).
+    columns:
+      - name: id_no
+        description: >
+          Chave numérica do nó (sem prefixo) — referencia dim_parlamentar
+          quando tipo_no = 'parlamentar', dim_fornecedor quando 'fornecedor'.
+        tests:
+          - not_null
+      - name: tipo_no
+        description: parlamentar | fornecedor — discrimina a referência de id_no.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['parlamentar', 'fornecedor']
+      - name: periodo
+        description: Ano do período do grafo.
+        tests:
+          - not_null
+      - name: pagerank
+        description: PageRank do nó no grafo global do período (ADR-027.5/030.1).
+        tests:
+          - not_null
+      - name: degree_centrality
+        description: Degree centrality do nó.
+        tests:
+          - not_null
+      - name: comunidade_id
+        description: Comunidade da detecção (greedy modularity, determinística).
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null
+
+  - name: politician_similarity
+    description: >
+      Similaridade de cosseno entre parlamentares por sobreposição de
+      fornecedores (CU-08, ADR-030.5, Onda 3). Grão (id_parlamentar_a,
+      id_parlamentar_b, periodo) por run, ordem canônica a < b; pares sem
+      sobreposição (similaridade 0) não são persistidos. Materializada a
+      partir de `ml_staging.politician_similarity` (ADR-026, Opção A), com
+      `exists` contra dim_parlamentar (sem inner join por SCD2 do
+      dim_parlamentar, ADR-020).
+    columns:
+      - name: id_parlamentar_a
+        description: Primeiro parlamentar do par (menor id, ordem canônica).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+      - name: id_parlamentar_b
+        description: Segundo parlamentar do par (maior id, ordem canônica).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+      - name: periodo
+        description: Ano do período do grafo (similaridade derivada do mesmo grafo).
+        tests:
+          - not_null
+      - name: num_fornecedores_compartilhados
+        description: Quantidade de fornecedores que os dois parlamentares compartilham.
+        tests:
+          - not_null
+      - name: similaridade
+        description: Cosseno entre os vetores de gasto por fornecedor (0, 1].
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null

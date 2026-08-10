@@ -42,3 +42,23 @@ sources:
           e `is_anomalia` (≥2 critérios). Populado por pipeline/anomalies.py
           (Onda 2). Insumo da Gold `expense_outliers` (anomalias) e do
           `expense_anomaly_score` (ADR-027).
+      - name: network_edges
+        description: >
+          Arestas do grafo bipartido parlamentar↔fornecedor — peso
+          `valor_total` (v_{p,f} agregado do período, ADR-030). Chaveada por
+          `(run_id, periodo)`; recálculo total por execução (ADR-030.1).
+          Populado por pipeline/network.py (Onda 3). Insumo da Gold
+          `network_edges`.
+      - name: network_nodes
+        description: >
+          Nós do grafo bipartido com métricas de centralidade — `pagerank`
+          (network_influence_score cru, ADR-027.5), `degree_centrality` e
+          `comunidade_id`. Chaveada por `(run_id, periodo)` (ADR-030.1).
+          Populado por pipeline/network.py (Onda 3). Insumo da Gold
+          `network_nodes`.
+      - name: politician_similarity
+        description: >
+          Pares de parlamentares com similaridade de cosseno por sobreposição
+          de fornecedores (CU-08, ADR-030.5). Chaveada por
+          `(run_id, periodo)` (ADR-030.1). Populado por pipeline/network.py
+          (Onda 3). Insumo da Gold `politician_similarity`.

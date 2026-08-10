@@ -1,24 +1,26 @@
-# tests/pipeline/test_gold_expense_outliers.py
-"""Integração dbt Gold — anomalias de despesa (ADR-026, Onda 2).
+# tests/pipeline/test_gold_network.py
+"""Integração dbt Gold — grafo parlamentar↔fornecedor (ADR-030, Onda 3).
 
-Regressão da tabela Gold `expense_outliers` — materializada a partir do
-source `ml_staging` (ADR-026, Opção A: Python single-writer no staging, o
-dbt consome como `source()` e materializa o Gold via `inner join` com
-`fact_despesa`).
+Regressão das Gold `network_edges`/`network_nodes`/`politician_similarity` —
+materializadas a partir do source `ml_staging` (ADR-026, Opção A: Python
+single-writer no staging, o dbt consome como `source()` e materializa o Gold
+com `exists` contra as dimensões).
 
 Fluxo realista de duas fases (espelha a DAG):
 1. Dbt build resolve `silver_*` → Gold `fact_despesa` (dimensões + pontes).
-2. Python lê o `fact_despesa` DO DUCKDB (ids de verdade), calcula `ml_staging`
-   (`escrever_expense_outliers_duckdb`, ADR-026 single-writer) e o dbt
-   materializa `expense_outliers` a partir de `source('ml_staging', ...)`.
+2. Python lê o `fact_despesa` DO DUCKDB (ids de verdade), reconstrói o grafo
+   bipartido por período e grava `ml_staging.network_*`
+   (`executar_carga_ml_rede`, ADR-026 single-writer / ADR-030.1 recálculo
+   total por `(run_id, periodo)`); o dbt então materializa as três Gold.
 
 Coberto aqui:
-- Só despesas ANÔMALAS (is_anomalia = true) entram na Gold; o avaliado
-  completo fica em `ml_staging`.
-- `inner join` com `fact_despesa`: anomalia com id que não resolve NON aparece
-  (lança fora, mesmo princípio ADR-018).
-- Contrato do schema.yml: `not_null`/`unique` de `id_despesa` e
-  integridade referencial (warn) contra fato/dimensões.
+- Arestas/nós/similaridades nascem só de parlamentar/fornecedor PROMOVIDOS em
+  `fact_despesa` (quarentena não contamina; `exists` no model = ADR-018).
+- Grão correto: edges `(id_parlamentar, id_fornecedor, periodo)`, nodes
+  `(id_no, tipo_no, periodo)` com `pagerank`/`degree_centrality`/
+  `comunidade_id`, similarity `(a, b, periodo)` com ordem canônica a < b.
+- Contrato do schema.yml: `not_null`, `accepted_values` de `tipo_no` e
+  integridade referencial (warn) contra dimensões.
 """
 
 from __future__ import annotations
@@ -47,15 +49,19 @@ def _chave_hmac(monkeypatch):
     O `dim_fornecedor` (requisito do fact_despesa) exige a chave quando há
     fornecedores CPF — mesma garantia dos demais testes Gold.
     """
-    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-expense-outliers-2026")
+    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-network-2026")
 
 
 def _seed_silver(db: Path) -> None:
     """Popula Silver suficiente para materializar fact_despesa (molde analytics).
 
-    Mesmo seed do `test_gold_analytics.py`: 2 parlamentares (camara/senado),
-    6 despesas (5 resolvíveis + 1 fantasma que vai à quarentena) e as tabelas
-    Silver vazias exigidas pelo build das demais pontes.
+    Mesmo seed do `test_gold_analytics.py`/`test_gold_expense_outliers.py`:
+    2 parlamentares (camara/senado), 6 despesas (5 resolvíveis + 1 fantasma
+    que vai à quarentena) e as tabelas Silver vazias exigidas pelo build das
+    demais pontes. Acrescenta as tabelas VAZIAS de `ml_staging.network_*`
+    (contrato ADR-026/030 — a Fase 1 builda os analytics com o staging ainda
+    sem dados e os testes de FK/built-in do schema.yml agendam junto as
+    dimensões; o schema/tabela precisam existir).
     """
     con = duckdb.connect(str(db))
     try:
@@ -93,6 +99,10 @@ def _seed_silver(db: Path) -> None:
                    "11111111000100", "CNPJ", "HOTEL A", 60, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 ("senado", None, "MARIA SANTOS", 2019, 4, "D5", "2019-04-10", "HOSPEDAGEM",
                    "22222222000100", "CNPJ", "HOTEL B", 140, 0, "r", "p", "2026-01-01 00:00:00", "s"),
+                # D7: MARIA usa o MESMO CNPJ de JOSE (12345678000190) em 2019 —
+                # cria sobreposição de fornecedor entre os dois (politician_similarity).
+                ("senado", None, "MARIA SANTOS", 2019, 5, "D7", "2019-05-20", "HOSPEDAGEM",
+                   "12345678000190", "CNPJ", "COMERCIO X", 30, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 ("senado", None, "ZONA FANTASMA", 2019, 5, "D6", "2019-05-11", "CORREIOS",
                    "33333333000100", "CNPJ", "EMPRESA X", 100, 0, "r", "p", "2026-01-01 00:00:00", "s"),
             ],
@@ -114,11 +124,11 @@ def _seed_silver(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
-        # ml_staging.expense_outliers VAZIA: a Fase 1 builda os analytics com o
-        # staging ainda sem dados (contrato ADR-026) e o build de
-        # `+fact_despesa`/`+supplier_*` agenda junto os testes de FK que apontam
-        # para a source. O schema/tabela precisam existir (mesmo molde
-        # test_gold_analytics); o conteúdo real chega via `executar_carga_outliers`.
+        # ml_staging VAZIA (contrato ADR-026/030): a Fase 1 builda os analytics
+        # com o staging ainda sem dados e o build de `+fact_despesa`/`+supplier_*`
+        # agenda junto os testes de FK/built-in das Onda 2/3 que apontam para as
+        # sources — o schema/tabelas precisam existir mesmo quando o lote Python
+        # ainda não gravou. O conteúdo real chega via `executar_carga_ml_rede`.
         con.execute("create schema if not exists ml_staging")
         con.execute(
             "create table if not exists ml_staging.network_edges ("
@@ -182,11 +192,11 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
 
 # FASE 1 — materializar a malha dimensional + fatos + analytics com o
 # `ml_staging` VAZIO (mesmo seed/molde de test_gold_analytics): resolve ids
-# reais de fact_despesa e valida os models. `expense_outliers` Gold nasce
-# vazia (sem dados no staging).
+# reais de fact_despesa e valida os models. As Gold network nascem vazias
+# (sem dados no staging) — os testes de contrato passam no vazio.
 _SELECAO_FATO = (
-    "+supplier_concentration +supplier_growth +expense_outliers"
-    " +network_edges +network_nodes +politician_similarity"
+    "+network_edges +network_nodes +politician_similarity"
+    " +supplier_concentration +supplier_growth +expense_outliers"
     " +fact_emenda +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
 )
 
@@ -204,115 +214,123 @@ def _fact_despesa(db: Path) -> pd.DataFrame:
         con.close()
 
 
-def _dim_data_para_fatos(fatos: pd.DataFrame) -> pd.DataFrame:
-    """Constrói `dim_data` a partir das datas do fato (dia útil = seg-sex).
-
-    Mantém `is_dia_util` realista pelo dia da semana — datas de fim de semana
-    (ex.: 2019-06-15 sábado, 2019-03-10 domingo) ficam não úteis, o que
-    dispara o critério 6 (dia sem sessão) de forma determinística no seed.
-    """
-    linhas = []
-    for ts in sorted(fatos["data_sk"].unique()):
-        data = pd.Timestamp(str(int(ts)))
-        linhas.append(
-            {
-                "data_sk": ts,
-                "data": data.date(),
-                "ano": int(str(int(ts))[:4]),
-                "mes": int(str(int(ts))[4:6]),
-                "is_dia_util": data.weekday() < 5,
-            }
-        )
-    return pd.DataFrame(linhas)
-
-
 def _escrever_ml_staging(db: Path, fatos: pd.DataFrame) -> None:
-    """Calcula a regra de anomalia e grava `ml_staging` (ADR-026 single-writer)."""
-    from pipeline.anomalies import executar_carga_outliers
+    """Reconstrói o grafo do run corrente e grava `ml_staging` (ADR-030.1)."""
+    from pipeline.network import executar_carga_ml_rede
 
-    datas = _dim_data_para_fatos(fatos)
-    executar_carga_outliers(
+    executar_carga_ml_rede(
         fatos,
         run_id=_FATO_RUN_ID,
-        dim_data=datas,
         db_path=str(db),
         source_version="v1",
     )
 
 
 _DB = "gold.duckdb"
-_FATO_RUN_ID = "r-gold-expense-outliers"
+_FATO_RUN_ID = "r-gold-network"
 
 
-def test_expense_outliers_gold(tmp_path, monkeypatch):
-    """Gold `expense_outliers` = anomalias resolvidas em `fact_despesa`."""
-    db = tmp_path / _DB
-    _seed_silver(db)
-    _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
+def test_network_gold_fluxo_duas_fases(tmp_path, monkeypatch):
+    """Gold `network_*` nasce do fato promovido, por período e run.
 
-    fatos = _fact_despesa(db)
-    assert not fatos.empty
-    _escrever_ml_staging(db, fatos)
-
-    # FASE 2 — com o staging populado, rebuild da Gold expense_outliers.
-    _build_selecao(tmp_path, monkeypatch, "expense_outliers")
-
-    con = duckdb.connect(str(db))
-    try:
-        linhas = con.execute(
-            "select id_despesa, num_criterios, run_id"
-            " from main.expense_outliers"
-        ).fetchall()
-        # Só anomalias (num_criterios >= 2) materializadas, com run_id do lote.
-        assert linhas
-        assert all(r[1] >= 2 for r in linhas)
-        assert all(r[2] == _FATO_RUN_ID for r in linhas)
-        # Toda anomalia Gold é uma despesa REAL do fato (inner join ADR-018).
-        ids_fato = {int(r[0]) for r in con.execute(
-            "select id_despesa from main.fact_despesa"
-        ).fetchall()}
-        for r in linhas:
-            assert int(r[0]) in ids_fato
-    finally:
-        con.close()
-
-
-def test_expense_outliers_ignora_nao_anomalia(tmp_path, monkeypatch):
-    """Despesa que não é anomalia (avaliada como tal) NÃO entra na Gold.
-
-    A Gold `expense_outliers` filtra `is_anomalia`; o staging guarda o
-    avaliado completo (para o expense_anomaly_score, ADR-027).
+    Após a Fase 2 (staging populado), as três Gold têm dados chaveados por
+    `(run_id, periodo)`; toda aresta/nó/similaridade referencia parlamentar e
+    fornecedor REAIS do `fact_despesa` (quarentena não contamina).
     """
     db = tmp_path / _DB
     _seed_silver(db)
     _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
 
+    # FASE 1 — staging vazio → Gold network vazias (contrato ADR-026).
+    con = duckdb.connect(str(db))
+    try:
+        for tabela in ["network_edges", "network_nodes", "politician_similarity"]:
+            assert con.execute(
+                f"select count(*) from main.{tabela}"
+            ).fetchone()[0] == 0
+    finally:
+        con.close()
+
     fatos = _fact_despesa(db)
-    from pipeline.anomalies import avaliar_criterios
-
-    datas = _dim_data_para_fatos(fatos)
-    resultado = avaliar_criterios(fatos, datas)
-    n_avaliadas = len(resultado)
-    n_anomalias = int((resultado["is_anomalia"]).sum())
-    assert n_anomalias < n_avaliadas
-
+    assert not fatos.empty
     _escrever_ml_staging(db, fatos)
-    _build_selecao(tmp_path, monkeypatch, "expense_outliers")
+
+    # FASE 2 — com o staging populado, rebuild das drei Gold de rede.
+    _build_selecao(tmp_path, monkeypatch, "+network_edges +network_nodes +politician_similarity")
 
     con = duckdb.connect(str(db))
     try:
-        n_materializadas = con.execute(
-            "select count(*) from main.expense_outliers"
-        ).fetchone()[0]
-        n_staging_sem_anomalia = con.execute(
-            "select count(*) from ml_staging.expense_outliers where not is_anomalia"
-        ).fetchone()[0]
-        # Staging guarda o avaliado completo; Gold só as anomalias. Como o seed
-        # (5 despesas de 2 foras de padrão) tende a ter poucas/nenhuma anomalia,
-        # o invariante forte é: Gold ⊆ staging com is_anomalia = true.
-        assert n_materializadas <= con.execute(
-            "select count(*) from ml_staging.expense_outliers where is_anomalia"
-        ).fetchone()[0]
-        assert n_staging_sem_anomalia >= 0
+        arestas = con.execute(
+            "select id_parlamentar, id_fornecedor, periodo, run_id"
+            " from main.network_edges"
+        ).fetchall()
+        nos = con.execute(
+            "select id_no, tipo_no, periodo, pagerank, degree_centrality, comunidade_id"
+            " from main.network_nodes"
+        ).fetchall()
+        sim = con.execute(
+            "select id_parlamentar_a, id_parlamentar_b, periodo,"
+            " num_fornecedores_compartilhados"
+            " from main.politician_similarity order by id_parlamentar_a, id_parlamentar_b"
+        ).fetchall()
+
+        assert arestas
+        assert all(r[2] in {2019, 2020} and r[3] == _FATO_RUN_ID for r in arestas)
+        assert nos
+        assert {r[1] for r in nos} == {"parlamentar", "fornecedor"}
+        assert all(r[0] > 0 and r[3] >= 0 for r in nos)
+        assert sim
+        assert all(r[0] < r[1] and r[2] == 2019 for r in sim)  # ordem canônica
+
+        # Todo id de aresta/nó pertence a fact_despesa / dimensões reais.
+        pares_fato = {
+            (r[0], r[1], int(str(r[2])[:4]))
+            for r in con.execute(
+                "select id_parlamentar, id_fornecedor, data_sk from main.fact_despesa"
+            ).fetchall()
+        }
+        for a, f, periodo, _ in arestas:
+            assert (a, f, periodo) in pares_fato
+    finally:
+        con.close()
+
+
+def test_network_gold_edges_lado_duplo_dimensionado(tmp_path, monkeypatch):
+    """Aresta une parlamentar E fornecedor — ambos existem nas dimensões.
+
+    O model `network_edges` usa `exists` contra `dim_parlamentar` e
+    `dim_fornecedor` (sem inner join: dim_parlamentar é SCD2, ADR-020).
+    Verificamos que cada ponta da aresta resolve em sua dimensão e que o
+    peso `valor_total` é a soma real do fato no par/periodo.
+    """
+    db = tmp_path / _DB
+    _seed_silver(db)
+    _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
+    _escrever_ml_staging(db, _fact_despesa(db))
+    _build_selecao(tmp_path, monkeypatch, "+network_edges")
+
+    con = duckdb.connect(str(db))
+    try:
+        arestas = con.execute(
+            "select id_parlamentar, id_fornecedor, periodo, valor_total"
+            " from main.network_edges"
+        ).fetchall()
+        dim_parlam = {r[0] for r in con.execute(
+            "select id_parlamentar from main.dim_parlamentar"
+        ).fetchall()}
+        dim_fornecedor = {r[0] for r in con.execute(
+            "select id_fornecedor from main.dim_fornecedor"
+        ).fetchall()}
+        assert arestas
+        for a, f, periodo, valor in arestas:
+            assert a in dim_parlam and f in dim_fornecedor
+            # `data_sk` é YYYYMMDD: soma do fato valida pelo ano = periodo.
+            soma_fato = con.execute(
+                "select sum(valor_liquido) from main.fact_despesa"
+                " where id_parlamentar = ? and id_fornecedor = ?"
+                " and cast(substr(cast(data_sk as varchar), 1, 4) as integer) = ?",
+                [a, f, periodo],
+            ).fetchone()[0]
+            assert float(valor) == pytest.approx(float(soma_fato))
     finally:
         con.close()

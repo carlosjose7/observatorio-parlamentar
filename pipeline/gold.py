@@ -268,3 +268,69 @@ class ExpenseOutliers(BaseModel):
     pipeline_version: str
     execution_timestamp: str
     source_version: str
+
+
+class NetworkEdges(BaseModel):
+    """Aresta do grafo bipartido parlamentar↔fornecedor (ADR-030, Onda 3).
+
+    Grão: (id_parlamentar, id_fornecedor, periodo) por run. `valor_total`
+    é o peso da aresta `v_{p,f}` (valor agregado do período, ADR-030/030.1).
+    Materializada a partir de `ml_staging.network_edges` (ADR-026, Opção A —
+    Python single-writer no staging; dbt só materializa o Gold).
+    """
+
+    id_parlamentar: int
+    id_fornecedor: int
+    periodo: int
+    valor_total: Decimal
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str
+
+
+class NetworkNodes(BaseModel):
+    """Nó do grafo bipartido com métricas de centralidade (ADR-030, Onda 3).
+
+    Grão: (id_no, tipo_no, periodo) por run. `pagerank` é o
+    `network_influence_score` cru (ADR-027.5 — normalizado no consumo);
+    `degree_centrality` e `comunidade_id` complementam a análise de rede.
+    `id_no` não é FK para uma única dimensão — o `tipo_no` discrimina se a
+    chave referencia `dim_parlamentar` ou `dim_fornecedor` (nó polimórfico).
+    """
+
+    id_no: int
+    tipo_no: str = Field(..., description="parlamentar | fornecedor")
+    periodo: int
+    pagerank: float
+    degree_centrality: float
+    comunidade_id: int | None = Field(
+        default=None, description="Comunidade da detecção (greedy modularity)"
+    )
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str
+
+
+class PoliticianSimilarity(BaseModel):
+    """Similaridade de cosseno entre parlamentares (ADR-030.5, Onda 3).
+
+    Grão: (id_parlamentar_a, id_parlamentar_b, periodo) por run — ordem
+    canônica a < b. Pares sem sobreposição de fornecedor (similaridade 0)
+    não são persistidos; o registro representa relacionamento efetivo de
+    padrão de gasto (CU-08).
+    """
+
+    id_parlamentar_a: int
+    id_parlamentar_b: int
+    periodo: int
+    num_fornecedores_compartilhados: int
+    similaridade: float
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str

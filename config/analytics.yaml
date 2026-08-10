@@ -1,2 +1,10 @@
-# Approved analytical parameters will be added in Sprint 5.
-analytics: {}
+# Parâmetros dos produtos analíticos/ML da Sprint 5 (fonte única ADR-008).
+# Nenhum módulo deve ler este arquivo diretamente — sempre via
+# pipeline.config.load_analytics_settings()/get_analytics() (ADR-008).
+analytics:
+  rede:
+    # Disjuntor de custo do grafo (ADR-030.3): número de arestas por período
+    # acima do qual o recálculo total dispara alerta no DQ Report — SEM
+    # bloquear a execução. Guarda o gate futuro para reavaliar incremental
+    # via ADR de superseding (aumento → reabrir decisão, não ajuste cego).
+    limite_arestas_recorte: 50000

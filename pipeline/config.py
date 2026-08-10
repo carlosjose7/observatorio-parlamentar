@@ -222,6 +222,32 @@ class SourcesSettings(_StrictModel):
     transparencia: TransparenciaSettings
 
 
+# ── config/analytics.yaml ────────────────────────────────────────
+
+
+class RedeSettings(_StrictModel):
+    """Parâmetros do grafo parlamentar↔fornecedor (ADR-030.3).
+
+    `limite_arestas_recorte` é o disjuntor de custo do recálculo total do
+    grafo: acima de N arestas por período, o pipeline dispara alerta no
+    DQ Report (sem bloquear) para reavaliar estratégia incremental via ADR
+    de superseding. Fonte única ADR-008 — nunca hardcoded no código.
+    """
+
+    limite_arestas_recorte: int = Field(default=50000, gt=0)
+
+
+class AnalyticsSettings(_StrictModel):
+    """Configuração da camada analítica/ML da Sprint 5.
+
+    Topos consumidos por `pipeline/analytics.py` (Onda 1),
+    `pipeline/anomalies.py` (Onda 2) e `pipeline/network.py` (Onda 3).
+    `risk.pesos` entra na Onda 4 (ADR-029).
+    """
+
+    rede: RedeSettings = Field(default_factory=RedeSettings)
+
+
 # ── config/pipeline.yaml ─────────────────────────────────────────
 
 
@@ -387,6 +413,12 @@ def load_env_settings() -> EnvSettings:
     return EnvSettings()
 
 
+@lru_cache(maxsize=1)
+def load_analytics_settings() -> AnalyticsSettings:
+    """Carrega `config/analytics.yaml` (schema `analytics:`)."""
+    return AnalyticsSettings.model_validate(_load_yaml("analytics.yaml")["analytics"])
+
+
 def get_sources() -> SourcesSettings:
     """Acesso conveniente a `SourcesSettings` (cacheado)."""
     return load_sources_settings()
@@ -395,6 +427,11 @@ def get_sources() -> SourcesSettings:
 def get_pipeline() -> PipelineSettings:
     """Acesso conveniente a `PipelineSettings` (cacheado)."""
     return load_pipeline_settings()
+
+
+def get_analytics() -> AnalyticsSettings:
+    """Acesso conveniente a `AnalyticsSettings` (cacheado)."""
+    return load_analytics_settings()
 
 
 def get_dbt_vars() -> dict[str, str]:
