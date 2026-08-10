@@ -8,6 +8,51 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 6 — API (FastAPI / Onda 3 — anomalias, comunidades, qualidade e status)
+
+### Adicionado
+- **Onda 3 — os 4 endpoints restantes do §11** (`XXX`):
+  `GET /anomalias?threshold=` (despesas sinalizadas da Gold `expense_outliers`,
+  ADR-002/§10 — leitura de resultado, nunca re-execução de inferência; o
+  `threshold` foi fixado na revisão desta Onda 3 como **piso de `zscore`**
+  sobre o conjunto já sinalizado, coerente com o exemplo `?threshold=2.5` do
+  §11; negativo/não-numérico → 422, mesmo contrato de erro da Onda 2);
+  `GET /rede/comunidades` (agrupamento por `comunidade_id` dos nós já
+  materializados em `network_nodes`, ADR-030 — nome resolvido das dimensões,
+  parlamentar na versão vigente do SCD2, ADR-020);
+  `GET /qualidade/relatorio` (Data Quality Report através de **ADR-031** —
+  ver abaixo; `regras_violadas` desserializada em `list[str]`, filtro
+  `tabela` + paginação);
+  `GET /pipeline/status` (controle `pipeline_runs`, ADR-019 — execuções mais
+  recentes primeiro, API observadora passiva do orquestrador). Schemas
+  `api/schemas/anomalias.py`/`rede.py`/`qualidade.py`/`pipeline.py`
+  (`extra="forbid"`), routers em `api/routers/` (mesmo padrão `_erro_gold`
+  →503), quatro arquivos de teste em `tests/api` (19 testes). Suíte
+  completa `tests` — **276 passed** (212 pipeline + 50 API + 14 integração).
+- **Selo de contrato estendido à Onda 3** (`tests/integration/
+  test_api_gold_contrato.py`, 10→14): valida contra o **dbt real** o bind das
+  colunas de `expense_outliers` e `network_nodes` (200 honesto com staging
+  vazio, ADR-030) e a promoção de `data_quality_report` + `control.pipeline_runs`
+  (linha da Silver atravessa o model Gold e chega à API desserializada).
+- **ADR-031** (`pipeline/gold/models/control/data_quality_report.sql` + novo
+  registro no `ADR.md`): `data_quality_report` da Silver (ADR-015) promovida à
+  Gold pelo mecanismo da Opção A do ADR-026 (dbt consome source → materializa
+  Gold; precedente `pipeline_runs`). Reconcilia a leitura "direta" do ADR-015
+  (pré-ADR-026) com a fronteira Gold-only do ADR-026 (posterior), superseding
+  a interpretação literal. `schema.yml` do model declara `not_null` de
+  `run_id`/`tabela`/totais.
+
+### Corrigido
+- **Materialização `table` para `data_quality_report`** (achado do próprio
+  selo, `XXX`): `control` configura `incremental` e a tabela Silver de mesmo
+  nome no schema `main` já existia — o dbt fazia `INSERT INTO` na existente
+  (append: duplicava linhas e mantinha `execution_timestamp` VARCHAR em vez
+  do TIMESTAMP do `try_cast`). Ao materializar como `table` (full replace,
+  cria a Gold a partir da silver a cada build), a Gold emite 1 linha e
+  coluna TIMESTAMP — o endpoint desserializa corretamente.
+
+---
+
 ## Sprint 6 — API (FastAPI / Onda 2 — perfil, rede e fornecedores)
 
 ### Adicionado

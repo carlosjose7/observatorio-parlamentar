@@ -116,6 +116,54 @@ _DDL = {
             source_version varchar
         )
     """,
+    "expense_outliers": """
+        create table expense_outliers (
+            id_despesa bigint,
+            id_parlamentar bigint,
+            id_fornecedor bigint,
+            data_sk bigint,
+            valor_liquido decimal(18, 2),
+            zscore double,
+            if_score double,
+            criterio_zscore boolean,
+            criterio_if boolean,
+            criterio_fornecedor_poucos_clientes boolean,
+            criterio_empresa_nova boolean,
+            criterio_valores_identicos boolean,
+            criterio_dia_sem_sessao boolean,
+            num_criterios bigint,
+            run_id varchar,
+            pipeline_version varchar,
+            execution_timestamp varchar,
+            source_version varchar
+        )
+    """,
+    "data_quality_report": """
+        create table data_quality_report (
+            run_id varchar,
+            tabela varchar,
+            total_registros bigint,
+            registros_validos bigint,
+            registros_quarentena bigint,
+            registros_deduplicados bigint,
+            regras_violadas varchar,
+            percentual_nulos_criticos double,
+            execution_timestamp timestamp
+        )
+    """,
+    "pipeline_runs": """
+        create table pipeline_runs (
+            run_id varchar,
+            pipeline_version varchar,
+            execution_timestamp timestamp,
+            status varchar,
+            fontes_com_erro varchar,
+            watermark_camara varchar,
+            watermark_senado varchar,
+            watermark_cgu_emenda varchar,
+            watermark_cgu_cartao varchar
+        )
+    """,
 }
 
 
@@ -174,19 +222,53 @@ def sembrar_gold(caminho) -> None:
         ],
     )
     con.executemany(
-        "insert into network_nodes values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (1, "parlamentar", 2022, 0.30, 2.0, 4, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
-            (1, "parlamentar", 2023, 0.55, 3.0, 7, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
-        ],
-    )
-    con.executemany(
         "insert into network_edges values (?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (1, 10, 2023, 1500.0, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
             (1, 11, 2023, 300.5, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
             (1, 10, 2022, 700.0, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
             (2, 10, 2023, 900.0, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+        ],
+    )
+    con.executemany(
+        "insert into network_nodes values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (1, "parlamentar", 2022, 0.30, 2.0, 4, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+            (1, "parlamentar", 2023, 0.55, 3.0, 7, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+            (10, "fornecedor", 2023, 0.20, 2.0, 7, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+        ],
+    )
+    con.executemany(
+        "insert into expense_outliers values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (1, 1, 10, 20230310, Decimal("1500.00"), 3.10, -0.20, True, True,
+             False, False, False, False, 2, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+            (3, 1, 10, 20221120, Decimal("700.00"), 1.20, -0.30, False, True,
+             True, False, False, False, 2, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+            (4, 2, 10, 20230310, Decimal("900.00"), 2.60, -0.10, True, False,
+             False, True, False, False, 2, "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
+        ],
+    )
+    con.executemany(
+        "insert into data_quality_report values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("run-2026-01-10", "silver_despesa", 1000, 990, 10, 5,
+             '["fk_nao_resolvida", "coluna_x_nula"]', 0.05, "2026-01-10 03:30:00"),
+            ("run-2026-01-10", "silver_parlamentar", 200, 190, 10, 0,
+             "[]", 0.02, "2026-01-10 03:30:00"),
+            ("run-2025-12-01", "silver_despesa", 950, 940, 10, 2,
+             '["valor_negativo"]', 0.03, "2025-12-01 01:00:00"),
+        ],
+    )
+    con.executemany(
+        "insert into pipeline_runs values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("run-2026-01-10", "0.1.0", "2026-01-10 03:30:00", "success", None,
+             "2026-01-09", "2026-01-10", "2026-01-09", "2026-01-10"),
+            ("run-2026-01-05", "0.1.0", "2026-01-05 12:00:00", "partial", "camara",
+             "2026-01-04", None, None, None),
+            ("run-2025-12-01", "0.0.9", "2025-12-01 01:00:00", "failed", "senado,cgu_emenda",
+             "2025-11-30", None, None, None),
         ],
     )
     con.close()

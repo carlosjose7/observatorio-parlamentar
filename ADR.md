@@ -1842,8 +1842,57 @@ Consequências:
 - Tabelas `network_edges`/`network_nodes` entram no lineage do dbt docs
   (RF-07) via ADR-026 — staging Python fora do lineage, resultado dentro.
 - A nota de custo no DQ Report serve de insumo objetivo ao futuro ADR de
-  superseding (evita a repetição do padrão de fechamento sem dado real —
-  lição do ADR-023).
+   superseding (evita a repetição do padrão de fechamento sem dado real —
+   lição do ADR-023).
+
+---
+
+ADR-031
+Título: Promoção de `data_quality_report` (Silver) à Gold para o
+`GET /qualidade/relatorio`
+
+Status:
+Aceito
+
+Contexto:
+`ADR-015` (Sprint 3) persistiu o Data Quality Report em tabela estruturada
+`data_quality_report` na Silver e previu que `GET /qualidade/relatorio`
+(Sprint 6) consumiria a tabela "diretamente". `ADR-026` (Sprint 5),
+posterior, fixou a fronteira de leitura da API: **read-only sobre o Gold**,
+nunca Bronze/Silver/`ml_staging`. Ao abrir a Onda 3 da Sprint 6, constatamos
+um buraco: `data_quality_report` não têm model Gold — é apenas source
+declarada em `sources.yml` — e o endpoint previsto não teria Gold para ler.
+Havia, portanto, tensão entre dois ADRs aceitos: "consumir diretamente"
+(ADR-015) vs. "Gold-only" (ADR-026).
+
+Decisão:
+1. **Promover `data_quality_report` à Gold** com model dbt regular
+   (`pipeline/gold/models/control/data_quality_report.sql`) que consome a
+   source `silver.data_quality_report` e a materializa como Gold — o mesmo
+   mecanismo da Opção A do ADR-026 (dbt consome source e materializa o Gold;
+   precedente forte: `pipeline_runs` já é Gold e lê Bronze parquet no build,
+   ADR-019). Nenhuma métrica nova: as colunas do relatório já são
+   formalizadas pelo ADR-015 (contagem válidos/quarentena/dedup, regras
+   violadas, percentual de nulos críticos, timestamp).
+2. **`GET /qualidade/relatorio` lê a Gold**, como todo endpoint da Sprint 6.
+   A API continua incapaz de ler a Silver (ADR-026 inalterado).
+3. Esta decisão **supersede a interpretação literal de "consumir
+   diretamente"** do ADR-015: "diretamente" passa a significar "diretamente
+   da Gold promovida, sem reprocessamento nem parsing de HTML" — a fronteira
+   de camada é a do ADR-026, mais recente.
+
+Consequências:
+- `data_quality_report` entra no lineage do `dbt docs` (RF-07) como os demais
+  models Gold; a Silver continua sendo o produtor do relatório
+  (`pipeline/silver.py`, single-writer).
+- O contrato do endpoint herda as colunas do ADR-015; `regras_violadas`
+  (lista serializada em JSON string na Silver) é desserializada no consumo.
+- `schema.yml` do novo model declara `not_null` de `run_id`/`tabela`/
+  totais; o selo de contrato pipeline→Gold→API (`tests/integration`) passa a
+  construir o model no dbt real.
+- Silver mantém-se inacessível à API; qualquer outro endpoint futuro que
+  precise de dado Silver deve repetir o mesmo padrão de promoção, não
+  estreitar a fronteira.
 
 ---
 

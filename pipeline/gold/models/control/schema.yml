@@ -17,3 +17,26 @@ models:
           - accepted_values:
               arguments:
                 values: ['success', 'failed', 'partial']
+  - name: data_quality_report
+    description: >
+      Data Quality Report da Silver (ADR-015) promovido à Gold (ADR-031) —
+      coloca o relatório atrás da fronteira de leitura da API (ADR-026),
+      no mesmo mecanismo da Opção A: dbt consome a source e materializa o
+      Gold. Colunas em conformidade com `LinhaQualidadeReport`
+      (pipeline/quality.py) e ADR-015.
+    columns:
+      - name: run_id
+        tests:
+          - not_null
+      - name: tabela
+        tests:
+          - not_null
+      - name: total_registros
+        tests:
+          - not_null
+      - name: registros_validos
+        tests:
+          - not_null
+      - name: registros_quarentena
+        tests:
+          - not_null

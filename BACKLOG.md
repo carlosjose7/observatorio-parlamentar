@@ -323,7 +323,8 @@
 > ADR-026); falhas de esquema degradam como HTTP 503 (Gold indisponível).
 > **Onda 2 concluída** — perfil completa, rede materializada e fornecedores com
 > agregados (Gold consultado diretamente; nenhuma análise é recalculada por
-> request — ADR-030).
+> request — ADR-030). **Onda 3 concluída** — anomalias (threshold = piso de
+> zscore), comunidades, qualidade/relatório (ADR-031) e pipeline/status.
 
 ### Onda 1 (implementada)
 
@@ -372,10 +373,36 @@
    vazio, nunca reanálise). Suíte completa `tests` — **253 passed**
    (212 pipeline + 31 API + 10 integração).
 
+### Onda 3 (implementada)
+
+☑ **Onda 3 — Anomalias, comunidades, qualidade e status** (`XXX`):
+   `GET /anomalias?threshold=` — despesas sinalizadas da Gold
+   `expense_outliers` (ADR-002/§10); `threshold` é **piso de `zscore`**
+   sobre o conjunto já sinalizado (decisão fixada na revisão desta Onda 3 —
+   a API não reabre o `-0.1` do Isolation Forest nem os `>= 2` critérios,
+   ADR-026/ADR-030), negativo/não-numérico → 422 (mesmo contrato de erro da
+   Onda 2). `GET /rede/comunidades` — agrupamento por `comunidade_id` dos
+   nós já materializados (`network_nodes`, ADR-030) com nome resolvido das
+   dimensões. `GET /qualidade/relatorio` — **ADR-031**: `data_quality_report`
+   (Silver, ADR-015) promovida à Gold por model dbt (mecanismo da Opção A do
+   ADR-026) para a API continuar read-only sobre o Gold; `regras_violadas`
+   desserializada em `list[str]`; filtro `tabela` + paginação.
+   `GET /pipeline/status` — controle `pipeline_runs` (ADR-019), mais
+   recentes primeiro, observadora passiva do orquestrador. Schemas
+   `anomalias.py`/`rede.py`/`qualidade.py`/`pipeline.py` (`extra="forbid"`).
+   Testes: 4 arquivos novos em `tests/api` (19 testes — **50 API**); selo de
+   contrato estendido (10→14) validando o bind das colunas de
+   `expense_outliers`/`network_nodes` (200 honesto com staging vazio) e a
+   promoção de `data_quality_report` + `control.pipeline_runs` no dbt real.
+   **Achado de implementação corrigido no selo**: `control` é `incremental`
+   e a tabela Silver de mesmo nome já existia → o dbt fazia `INSERT INTO`
+   (append = duplica + VARCHAR em vez de TIMESTAMP); materializado como
+   `table` (full replace) — a Gold passa a emitir `execution_timestamp`
+   TIMESTAMP e 1 linha. Suíte completa `tests` — **276 passed**
+   (212 pipeline + 50 API + 14 integração).
+
 ### Ondas (pendentes — Sprint 6 em curso)
 
-☐ Onda 3 — `/anomalias?threshold=`, `/rede/comunidades`, `/qualidade/relatorio`,
-   `/pipeline/status`
 ☐ Onda 4 — endpoints agent-ready (RF-05): `/agent/parlamentar/{id}`,
    `/agent/fornecedor/{cnpj}`, `/agent/anomalias`, `/agent/context`
 
@@ -403,4 +430,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.9 — Sprint 6 em curso: **Onda 2 completa** — perfil completo de parlamentar (`/parlamentares/{id}`), rede materializada (`/parlamentares/{id}/rede`, lê o Gold, ADR-030 — nada de reanálise por request) e fornecedores (`/fornecedores` com filtros nome/tipo_documento, `/fornecedores/{cnpj_cpf_valor}` com agregados de `fact_despesa`, `/fornecedores/{cnpj_cpf_valor}/parlamentares`; CPF só por HMAC, ADR-011) — 253 testes verdes (212 pipeline + 31 API + 10 integração). Onda 1 completa (infra ADR-008/ADR-026 + contratos + `/parlamentares` e gastos + selo pipeline→Gold→API com drift `dim_data.data` corrigido). Dívida técnica registrada (Sprint 6/6.5): paridade automatizada dbt→schema.yml→Pydantic→API. Sprint 5 fechada (212 testes verdes). Sprint 4 fechada (129 testes verdes).*
+*Versão atual: 1.0 — Sprint 6 em curso: **Onda 3 completa** — `/anomalias?threshold=` (piso de z-score sobre o conjunto sinalizado — decisão fixada na revisão desta Onda 3; 422 para negativo/não-numérico), `/rede/comunidades` (nós materializados por comunidades, leitura de resultado ADR-030), `/qualidade/relatorio` (**ADR-031**: `data_quality_report` da Silver promovida à Gold — a API segue read-only sobre o Gold, ADR-026; correção no selo: materialização `table` em vez de incremental para parar o append/duplicação) e `/pipeline/status` (`pipeline_runs`, ADR-019) — 276 testes verdes (212 pipeline + 50 API + 14 integração). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API). ADRs 001-031. Sprint 5 fechada (212). Sprint 4 fechada (129).*

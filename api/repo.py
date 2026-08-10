@@ -15,6 +15,7 @@ não estoura stack de driver ao cliente.
 from __future__ import annotations
 
 import functools
+import json
 
 import duckdb
 import structlog
@@ -23,6 +24,18 @@ from pathlib import Path
 from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 
+from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
+from api.schemas.qualidade import LinhaQualidade, RelatorioQualidade
+from api.schemas.rede import ComunidadeItem, ListaComunidades
+from api.schemas.fornecedores import (
+    FornecedorContexto,
+    FornecedorResumo,
+    ListaFornecedores,
+    ListaParlamentaresFornecedor,
+    ParlamentarFornecedor,
+    PerfilFornecedor,
+)
+from api.schemas.pipeline import ExecucaoPipeline, PipelineStatus
 from api.schemas.parlamentares import (
     ArestaRede,
     GastoItem,
@@ -33,14 +46,6 @@ from api.schemas.parlamentares import (
     ParlamentarResumo,
     PerfilParlamentar,
     RedeParlamentar,
-)
-from api.schemas.fornecedores import (
-    FornecedorContexto,
-    FornecedorResumo,
-    ListaFornecedores,
-    ListaParlamentaresFornecedor,
-    ParlamentarFornecedor,
-    PerfilFornecedor,
 )
 
 logger = structlog.get_logger()
@@ -460,3 +465,175 @@ def listar_parlamentares_fornecedor(
     return ListaParlamentaresFornecedor(
         fornecedor=contexto, pagina=pagina, limite=limite, total=total, itens=itens
     )
+
+
+# ── Onda 3: anomalias, comunidades, qualidade e pipeline ─────────
+
+
+@_tratar_erro_gold
+def listar_anomalias(
+    *,
+    threshold: float | None,
+    pagina: int,
+    limite: int,
+) -> ListaAnomalias:
+    """Lista despesas sinalizadas na Gold (Onda 3, ADR-002/§10).
+
+    Lê `expense_outliers` materializada — nunca recalcula a regra. O filtro
+    `threshold` é piso sobre `zscore` do conjunto JÁ sinalizado (decisão de
+    Onda 3): reabrir o `-0.1` do Isolation Forest ou os `>= 2` critérios
+    seria re-execução de inferência, proibida pela fronteira (ADR-026/ADR-030).
+    """
+    condicao = " where zscore >= ?" if threshold is not None else ""
+    parametros: list[object] = [threshold] if threshold is not None else []
+    offset = (pagina - 1) * limite
+
+    with _conexao() as con:
+        total = con.execute(
+            f"select count(*) from expense_outliers{condicao}", parametros
+        ).fetchone()[0]
+        linhas = con.execute(
+            "select id_despesa, id_parlamentar, id_fornecedor, data_sk, valor_liquido,"
+            " zscore, if_score, criterio_zscore, criterio_if,"
+            " criterio_fornecedor_poucos_clientes, criterio_empresa_nova,"
+            " criterio_valores_identicos, criterio_dia_sem_sessao, num_criterios"
+            f" from expense_outliers{condicao}"
+            " order by zscore desc limit ? offset ?",
+            [*parametros, limite, offset],
+        ).fetchall()
+
+    colunas = [
+        "id_despesa", "id_parlamentar", "id_fornecedor", "data_sk", "valor_liquido",
+        "zscore", "if_score", "criterio_zscore", "criterio_if",
+        "criterio_fornecedor_poucos_clientes", "criterio_empresa_nova",
+        "criterio_valores_identicos", "criterio_dia_sem_sessao", "num_criterios",
+    ]
+    itens = [AnomaliaItem.model_validate(dict(zip(colunas, linha))) for linha in linhas]
+    return ListaAnomalias(
+        pagina=pagina, limite=limite, total=total, threshold=threshold, itens=itens
+    )
+
+
+@_tratar_erro_gold
+def listar_comunidades() -> ListaComunidades:
+    """Comunidades do grafo materializado (`network_nodes`, ADR-030) + nomes.
+
+    Agrupa os nós por `(comunidade_id, periodo)` obtidos da Gold e resolve o
+    nome por join com as dimensões (parlamentar na versão vigente do SCD2,
+    ADR-020; fornecedor direto). Leitura de resultado — o particionamento já
+    foi calculado pela Sprint 5 (Onda 3), não recalculado aqui.
+    """
+    with _conexao() as con:
+        linhas = con.execute(
+            """
+            select nn.comunidade_id, nn.periodo, nn.id_no, nn.tipo_no,
+                   nn.pagerank, nn.degree_centrality,
+                   coalesce(dp.nome, df.nome_fornecedor) as nome
+            from network_nodes nn
+            left join dim_parlamentar dp
+                on nn.tipo_no = 'parlamentar' and dp.id_parlamentar = nn.id_no and dp.is_current
+            left join dim_fornecedor df
+                on nn.tipo_no = 'fornecedor' and df.id_fornecedor = nn.id_no
+            order by nn.periodo desc, nn.comunidade_id, nn.tipo_no, nn.id_no
+            """
+        ).fetchall()
+
+    grupos: dict[tuple[int, int], dict] = {}
+    for comunidade_id, periodo, id_no, tipo_no, pagerank, degree, nome in linhas:
+        chave = (comunidade_id, periodo)
+        grupo = grupos.setdefault(
+            chave, {"comunidade_id": comunidade_id, "periodo": periodo, "nos": []}
+        )
+        grupo["nos"].append(
+            {
+                "id_no": id_no,
+                "tipo_no": tipo_no,
+                "nome": nome,
+                "pagerank": pagerank,
+                "degree_centrality": degree,
+            }
+        )
+
+    itens = [
+        ComunidadeItem.model_validate(
+            {"comunidade_id": c, "periodo": p, "tamanho": len(g["nos"]), "nos": g["nos"]}
+        )
+        for (c, p), g in grupos.items()
+    ]
+    return ListaComunidades(total=len(itens), itens=itens)
+
+
+@_tratar_erro_gold
+def listar_relatorio_qualidade(
+    *,
+    tabela: str | None,
+    pagina: int,
+    limite: int,
+) -> RelatorioQualidade:
+    """Data Quality Report da Gold (ADR-031), da execução mais recente.
+
+    `regras_violadas` é lista serializada como JSON string na Silver; na Gold
+    vira coluna varchar e é desserializada aqui para o contrato `list[str]`.
+    """
+    condicao = " where tabela = ?" if tabela else ""
+    parametros: list[object] = [tabela] if tabela else []
+    offset = (pagina - 1) * limite
+
+    with _conexao() as con:
+        total = con.execute(
+            f"select count(*) from data_quality_report{condicao}", parametros
+        ).fetchone()[0]
+        linhas = con.execute(
+            "select run_id, tabela, total_registros, registros_validos,"
+            " registros_quarentena, registros_deduplicados, regras_violadas,"
+            " percentual_nulos_criticos, execution_timestamp"
+            f" from data_quality_report{condicao}"
+            " order by execution_timestamp desc limit ? offset ?",
+            [*parametros, limite, offset],
+        ).fetchall()
+
+    colunas = [
+        "run_id", "tabela", "total_registros", "registros_validos",
+        "registros_quarentena", "registros_deduplicados", "regras_violadas",
+        "percentual_nulos_criticos", "execution_timestamp",
+    ]
+    itens = []
+    for linha in linhas:
+        bruto = dict(zip(colunas, linha))
+        bruto["regras_violadas"] = json.loads(bruto["regras_violadas"] or "[]")
+        bruto["execution_timestamp"] = (
+            bruto["execution_timestamp"].isoformat()
+            if bruto["execution_timestamp"] is not None
+            else None
+        )
+        itens.append(LinhaQualidade.model_validate(bruto))
+    return RelatorioQualidade(pagina=pagina, limite=limite, total=total, itens=itens)
+
+
+@_tratar_erro_gold
+def listar_execucoes(*, limite: int) -> PipelineStatus:
+    """Execuções do pipeline consolidadas na Gold (ADR-019), mais recentes primeiro."""
+    with _conexao() as con:
+        linhas = con.execute(
+            "select run_id, pipeline_version, execution_timestamp, status,"
+            " fontes_com_erro, watermark_camara, watermark_senado,"
+            " watermark_cgu_emenda, watermark_cgu_cartao"
+            " from pipeline_runs order by execution_timestamp desc limit ?",
+            [limite],
+        ).fetchall()
+
+    colunas = [
+        "run_id", "pipeline_version", "execution_timestamp", "status",
+        "fontes_com_erro", "watermark_camara", "watermark_senado",
+        "watermark_cgu_emenda", "watermark_cgu_cartao",
+    ]
+    itens = []
+    for linha in linhas:
+        bruto = dict(zip(colunas, linha))
+        bruto["execution_timestamp"] = (
+            bruto["execution_timestamp"].isoformat()
+            if bruto["execution_timestamp"] is not None
+            else None
+        )
+        itens.append(ExecucaoPipeline.model_validate(bruto))
+    return PipelineStatus(total=len(itens), itens=itens)

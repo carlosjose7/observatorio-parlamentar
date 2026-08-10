@@ -78,6 +78,21 @@ def _seed(db: Path) -> None:
             " pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        # data_quality_report (Silver, ADR-015/031) — promovido à Gold pelo dbt
+        con.execute(
+            "create table data_quality_report (run_id varchar, tabela varchar,"
+            " total_registros bigint, registros_validos bigint,"
+            " registros_quarentena bigint, registros_deduplicados bigint,"
+            " regras_violadas varchar, percentual_nulos_criticos double,"
+            " execution_timestamp varchar)"
+        )
+        con.executemany(
+            "insert into data_quality_report values (?,?,?,?,?,?,?,?,?)",
+            [
+                ("run-integ-2026", "silver_despesa", 100, 98, 2, 0,
+                 '["regra_violada_integ"]', 0.25, "2026-02-01 05:00:00"),
+            ],
+        )
         con.execute(
             "create table silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
@@ -163,6 +178,7 @@ _SELECAO_FATO = (
     " +supplier_concentration +supplier_growth +expense_outliers"
     " +network_edges +network_nodes +politician_similarity"
     " +risk_scores"
+    " +data_quality_report +pipeline_runs"
 )
 
 
@@ -343,3 +359,56 @@ def test_rede_endpoint_liga_schema_de_rede_da_gold(_cliente_gold):
     assert corpo["parlamentar"]["id_parlamentar"] == 1
     assert corpo["nos"] == []
     assert corpo["arestas"] == []
+
+
+# ── Onda 3: anomalias, comunidades, qualidade e pipeline ─────────
+
+
+def test_anomalias_endpoint_liga_schema_de_outliers_da_gold(_cliente_gold):
+    """`/anomalias` liga as colunas de `expense_outliers` emitidas pelo dbt.
+
+    `ml_staging.expense_outliers` vazio → Gold vazia (schema ainda validado
+    no bind de zscore/if_score/num_criterios, ADR-002). 200 honesto — a API
+    não recalcula a regra.
+    """
+    corpo = _cliente_gold.get("/anomalias").json()
+    assert corpo["total"] == 0
+    assert corpo["itens"] == []
+
+
+def test_comunidades_liga_schema_de_rede_da_gold(_cliente_gold):
+    """`/rede/comunidades` liga `comunidade_id`/pagerank/degree do dbt (ADR-030)."""
+    corpo = _cliente_gold.get("/rede/comunidades").json()
+    assert corpo["total"] == 0
+    assert corpo["itens"] == []
+
+
+def test_qualidade_relatorio_vem_da_gold_dbt(_cliente_gold):
+    """`/qualidade/relatorio` lê `data_quality_report` promovida à Gold (ADR-031).
+
+    A linha semeada na Silver atravessa o model dbt (cast de
+    `execution_timestamp`) e chega à API desserializada — se o model
+    renomeasse/derrubasse colunas, o contrato quebra.
+    """
+    corpo = _cliente_gold.get("/qualidade/relatorio").json()
+    assert corpo["total"] == 1
+    linha = corpo["itens"][0]
+    assert linha["run_id"] == "run-integ-2026"
+    assert linha["tabela"] == "silver_despesa"
+    assert linha["total_registros"] == 100
+    assert linha["registros_validos"] == 98
+    assert linha["registros_quarentena"] == 2
+    assert linha["regras_violadas"] == ["regra_violada_integ"]
+    assert linha["percentual_nulos_criticos"] == 0.25
+    assert linha["execution_timestamp"] is not None
+
+
+def test_pipeline_status_liga_schema_de_controle_da_gold(_cliente_gold):
+    """`/pipeline/status` liga as colunas de `pipeline_runs` (ADR-019).
+
+    Sem Parquet Bronze de controle → Gold vazia (model produz schema
+    compatível, zero linhas — nunca linha fictícia); 200 honesto.
+    """
+    corpo = _cliente_gold.get("/pipeline/status").json()
+    assert corpo["total"] == 0
+    assert corpo["itens"] == []
