@@ -11,7 +11,7 @@ Histórico das alterações, organizado por sprint (ver
 ## Sprint 6 — API (FastAPI / Onda 3 — anomalias, comunidades, qualidade e status)
 
 ### Adicionado
-- **Onda 3 — os 4 endpoints restantes do §11** (`XXX`):
+- **Onda 3 — os 4 endpoints restantes do §11** (`50d7ef8`):
   `GET /anomalias?threshold=` (despesas sinalizadas da Gold `expense_outliers`,
   ADR-002/§10 — leitura de resultado, nunca re-execução de inferência; o
   `threshold` foi fixado na revisão desta Onda 3 como **piso de `zscore`**
@@ -44,7 +44,7 @@ Histórico das alterações, organizado por sprint (ver
 
 ### Corrigido
 - **Materialização `table` para `data_quality_report`** (achado do próprio
-  selo, `XXX`): `control` configura `incremental` e a tabela Silver de mesmo
+  selo, `50d7ef8`): `control` configura `incremental` e a tabela Silver de mesmo
   nome no schema `main` já existia — o dbt fazia `INSERT INTO` na existente
   (append: duplicava linhas e mantinha `execution_timestamp` VARCHAR em vez
   do TIMESTAMP do `try_cast`). Ao materializar como `table` (full replace,

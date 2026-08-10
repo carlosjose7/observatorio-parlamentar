@@ -375,7 +375,7 @@
 
 ### Onda 3 (implementada)
 
-☑ **Onda 3 — Anomalias, comunidades, qualidade e status** (`XXX`):
+☑ **Onda 3 — Anomalias, comunidades, qualidade e status** (`50d7ef8`):
    `GET /anomalias?threshold=` — despesas sinalizadas da Gold
    `expense_outliers` (ADR-002/§10); `threshold` é **piso de `zscore`**
    sobre o conjunto já sinalizado (decisão fixada na revisão desta Onda 3 —
