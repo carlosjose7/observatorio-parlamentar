@@ -35,6 +35,25 @@ Histórico das alterações, organizado por sprint (ver
   com o staging populado, risco = 0.2×Σ scores). Suíte completa
   `tests/pipeline` — **210 passed**.
 
+### Corrigido
+- **Granularidade da média do `political_exposure_score`** (`9ab951b`):
+  `_df_exposure()` mediava no grão da DESPESA, mas o ADR-027 define
+  `média_{f∈F_p} (n_f − 1)` — média sobre o conjunto `F_p` de fornecedores
+  DISTINTOS de p no período. A versão antiga dava peso proporcional ao nº de
+  lançamentos do fornecedor (P1: F1 com 1 despesa e F2 com 3 → 1,75 em vez
+  de 1,5). Corrigido reduzindo o fato a `(periodo, id_parlamentar,
+  id_fornecedor)` distinto antes da média; teste de contrato
+  `test_df_exposure_media_sobre_fornecedores_distintos` prova que a média
+  por fornecedor difere da média por despesa.
+- **Contrato de não-negatividade do `valor_liquido` para o HHI**:
+  `supplier_dependency_score` (e `supplier_concentration`) pressupõem
+  `v_{p,f} >= 0` (share ∈ [0,1], `dep_f ∈ [1/n, 1]`). Essa premissa já era
+  garantida pelo gate Silver Pandera (`quality.py`, `Check.ge(0)`, ADR-013 —
+  negativos vão à quarentena) e agora é reafirmada no Gold com o test
+  genérico `nao_negativo` em `fact_despesa.valor_liquido` (`warn`, ADR-022.3a)
+  + invariante executável `test_df_dependency_invariante_hhi_nao_negativo`.
+  **212 passed**.
+
 ---
 
 ## Sprint 5 — Analytics + ML + Redes (Ondas 1–3 — implementação)

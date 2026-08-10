@@ -306,8 +306,12 @@
    com `risk.pesos` de `config/analytics.yaml` (0.2 uniforme, ADR-029;
    `RiskSettings` valida soma 1). `ml_staging.risk_scores` (ADR-026) + Gold
    `risk_scores.sql` (`exists` SCD2-safe) com contrato em `gold.py`/
-   `schema.yml`; testes `test_risk.py` (19) + `test_gold_risk.py` (2). Suíte
-   `tests/pipeline` — **210 passed**.
+   `schema.yml`; testes `test_risk.py` (19) + `test_gold_risk.py` (2).
+   **Correção pós-revisão** (`9ab951b`): média do `political_exposure_score`
+   agora sobre os fornecedores DISTINTOS de p (únidade de média do ADR-027,
+   não a despesa) + test genérico Gold `nao_negativo` em
+   `fact_despesa.valor_liquido` (contrato do HHI, já garantido na Silver
+   pelo Pandera `ge(0)` — ADR-013). Suíte `tests/pipeline` — **212 passed**.
 
 ---
 
@@ -325,4 +329,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.7 — Sprint 5 em curso: Ondas 0–4 completas (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total; Feature Store + Analytics estatística; anomalias `expense_outliers`; grafo bipartido + centralidades + similaridade; `risk_scores` + `risk_index` — 210 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
+*Versão atual: 0.7 — Sprint 5 em curso: Ondas 0–4 completas (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total; Feature Store + Analytics estatística; anomalias `expense_outliers`; grafo bipartido + centralidades + similaridade; `risk_scores` + `risk_index` — 212 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
