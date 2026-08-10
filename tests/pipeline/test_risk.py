@@ -91,6 +91,33 @@ def test_df_exposure_sem_fornecedor_vazio():
     assert vazio.empty and list(vazio.columns) == ["periodo", "id_parlamentar", "raw"]
 
 
+def test_df_exposure_media_sobre_fornecedores_distintos():
+    """A média é sobre o conjunto F_p de FORNECEDORES, não sobre despesas.
+
+    Contrato da fórmula do ADR-027 (`média_{f∈F_p} (n_f − 1)`): o nº de
+    despesas do parlamentar num fornecedor NÃO pode pesar no indicador —
+    um fornecedor com muitos lançamentos vale o mesmo que um com um único.
+    Regressão da granularidade indevida (média no grão da despesa).
+    """
+    fatos = pd.DataFrame(
+        {
+            # p1: F1 (1 despesa, usado por 2 parl), F2 (3 despesas, usado por 3 parl).
+            "id_parlamentar": [1, 1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "id_fornecedor": [10, 20, 20, 20, 10, 10, 20, 20, 20, 20],
+            "valor_liquido": [1.0] * 10,
+            "data_sk": [20190101] * 10,
+        }
+    )
+    df = risco._df_exposure(fatos)
+    linhas = {int(p): r for p, r in zip(df["id_parlamentar"], df["raw"])}
+    # p1: F1 n=2 → 1; F2 n=3 → 2 → (1 + 2) / 2 = 1.5. NÃO (1·1 + 3·2)/4 = 1.75.
+    assert linhas[1] == pytest.approx(1.5)
+    assert linhas[1] != pytest.approx(1.75)  # média por despesa (bug) é rejeitada
+    # p2 usa F1 e F2 (mesmos n) → 1.5; p3 só F2 (n=3 → 2) → 2.0.
+    assert linhas[2] == pytest.approx(1.5)
+    assert linhas[3] == pytest.approx(2.0)
+
+
 # ── Raw: dependência de fornecedor (ADR-027.3) ─────────────────
 
 
@@ -123,6 +150,37 @@ def test_df_dependency_fornecedor_um_cliente_é_um():
     )
     df = risco._df_dependency(fatos)
     assert df["raw"].iloc[0] == pytest.approx(1.0)
+
+
+def test_df_dependency_invariante_hhi_nao_negativo():
+    """Com valores não negativos, `dep_f` vive em [1/n, 1] (HHI clássico).
+
+    Contrato matemático do HHI (ADR-027.3, "fornecedor = Σ_p share²"):
+    para `v >= 0`, `share ∈ [0,1]`, `dep_f = Σ share² ∈ [1/n, 1]` (n =
+    parlamentares do fornecedor no período). A premissa `v >= 0` é
+    garantida pelo gate Silver (ADR-013 — quarentena) e reafirmada no Gold
+    (teste `nao_negativo` em `fact_despesa.valor_liquido`); aqui validamos
+    o invariante executável para o caso regular.
+    """
+    # F1 usado por 3 parlamentares dividido 1/3-1/3-1/3 → dep_f = 3·(1/3)² = 1/3.
+    # F2 usado por 2 parlamentares 1/2-1/2 → dep_f = 0.5. F3 só de p1 → dep_f = 1.0.
+    fatos = pd.DataFrame(
+        {
+            "id_parlamentar": [1, 2, 3, 1, 2, 1],
+            "id_fornecedor": [10, 10, 10, 20, 20, 30],
+            "valor_liquido": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "data_sk": [20190101] * 6,
+        }
+    )
+    df = risco._df_dependency(fatos)
+    linhas = {int(p): r for p, r in zip(df["id_parlamentar"], df["raw"])}
+    # p1 usa F1 (dep 1/3), F2 (dep 0.5) e F3 (dep 1.0).
+    assert linhas[1] == pytest.approx((1 / 3 + 0.5 + 1.0) / 3)
+    assert linhas[2] == pytest.approx((1 / 3 + 0.5) / 2)
+    assert linhas[3] == pytest.approx(1 / 3)
+    # Invariante global do HHI (n ≥ 1): 1/n ≤ dep_f ≤ 1 para todo o lote.
+    assert df["raw"].between(0.0, 1.0).all()
+    assert float(df["raw"].min()) >= (1 / 3) - 1e-9
 
 
 # ── Raw: anomalia de despesa (ADR-027.4) ───────────────────────

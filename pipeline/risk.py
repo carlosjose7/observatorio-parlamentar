@@ -102,12 +102,18 @@ def _df_concentracao(
 
 
 def _df_exposure(fatos: pd.DataFrame) -> pd.DataFrame:
-    """Raw `political_exposure_score` = média_{f in F_p} (n_f - 1) (ADR-027.2).
+    """Raw `political_exposure_score` = média_{f∈F_p} (n_f - 1) (ADR-027.2).
 
     Para cada fornecedor `f`: `n_f` = nº de parlamentares que o usam no
     período. Exposição do parlamentar `p` = média sobre `F_p` de `(n_f - 1)`
     (fornecedor usado por 1 parlamentar -> contribuição 0). Usa o fato
     PROMOVIDO como universo (ADR-018).
+
+    A média é sobre o CONJUNTO DE FORNECEDORES DISTINTOS de p no período
+    (`F_p`), NÃO sobre despesas — para isso o fato é reduzido a
+    `(periodo, id_parlamentar, id_fornecedor)` distinto antes da média
+    (um fornecedor com mais lançamentos não pesa mais no indicador, como
+    exigiria a leitura literal do ADR-027).
     """
     if fatos is None or fatos.empty or "id_fornecedor" not in fatos.columns:
         return pd.DataFrame(columns=["periodo", "id_parlamentar", "raw"])
@@ -123,7 +129,13 @@ def _df_exposure(fatos: pd.DataFrame) -> pd.DataFrame:
         .rename("n_f")
         .reset_index()
     )
-    com_contagem = trabalho.merge(
+    # Reduz ao grão do conjunto `F_p` (fornecedores distintos de p no
+    # período) — a unidade de média do ADR-027 é o FORNECEDOR.
+    fornecedores_parlamentar = (
+        trabalho[["periodo", "id_parlamentar", "id_fornecedor"]]
+        .drop_duplicates()
+    )
+    com_contagem = fornecedores_parlamentar.merge(
         n_fornecedor, on=["periodo", "id_fornecedor"], how="left"
     )
     com_contagem["contribuicao"] = (com_contagem["n_f"] - 1).fillna(0.0)
@@ -143,6 +155,14 @@ def _df_dependency(fatos: pd.DataFrame) -> pd.DataFrame:
     FORNECEDOR (concentração da dependência, granularidade do BACKLOG item
     173). Dependência do parlamentar = média de `dep_f` sobre seus
     fornecedores.
+
+    O HHI pressupõe `v_{p,f} >= 0` (share ∈ [0, 1] e `dep_f ∈ [1/n, 1]`).
+    Essa premissa é garantida a MONTANTE pelo gate de qualidade Silver
+    (`pipeline/quality.schema_silver_despesa` — `valor_liquido` Pandera
+    `ge(0)`, ADR-013): valores negativos/estornos vão à QUARENTENA na
+    carga Silver e nunca chegam ao `fact_despesa` que este módulo lê; o
+    mesmo contrato é reafirmado no Gold (`nao_negativo` em
+    `fact_despesa.schema.yml`). Dependência = média sobre o conjunto `F_p`.
     """
     if fatos is None or fatos.empty or "id_fornecedor" not in fatos.columns:
         return pd.DataFrame(columns=["periodo", "id_parlamentar", "raw"])

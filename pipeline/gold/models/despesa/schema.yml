@@ -167,8 +167,17 @@ models:
         tests:
           - not_null
       - name: valor_liquido
+        description: >
+          Valor líquido da despesa (≥ 0). Não-negatividade preservada do gate
+          Silver (ADR-013) e reafirmada aqui (ADR-022.3a) — é a premissa do
+          HHI em `supplier_concentration`/`supplier_dependency_score`
+          (ADR-027.3); estornos/cancelamentos não são representados como
+          valores negativos na promoção.
         tests:
           - not_null
+          - nao_negativo:
+              config:
+                severity: warn
       - name: valor_glosa
         tests:
           - not_null
