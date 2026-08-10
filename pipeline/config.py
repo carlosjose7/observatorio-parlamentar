@@ -290,6 +290,32 @@ class AnalyticsSettings(_StrictModel):
     risk: RiskSettings = Field(default_factory=RiskSettings)
 
 
+# ── config/api.yaml ──────────────────────────────────────────────
+
+
+class ApiSettings(_StrictModel):
+    """Configuração de runtime da API REST (Sprint 6, ADR-008).
+
+    Identifica a API (`titulo`/`versao`/`descricao` também servidos em
+    `/` e no OpenAPI) e define host/porta de execução. `caminho_db_env_var`
+    nomeia a variável de ambiente que aponta para o DuckDB da camada Gold —
+    a fronteira de leitura da API (ADR-026): ela NUNCA lê Bronze/Silver nem
+    `ml_staging`. Paginação (`pagina_padrao`/`limite_padrao`/`limite_maximo`)
+    é régua de recurso da API (RF-04) e vive aqui, não hardcoded.
+    """
+
+    titulo: str = "Observatório Parlamentar API"
+    versao: str = "0.1.0"
+    descricao: str = "API da Plataforma de Inteligência Parlamentar Brasileira"
+    host: str = "0.0.0.0"
+    porta: int = Field(default=8000, ge=1, le=65535)
+    caminho_db_env_var: str = "DUCKDB_DATABASE_PATH"
+    pagina_padrao: int = Field(default=1, ge=1)
+    limite_padrao: int = Field(default=20, ge=1)
+    limite_maximo: int = Field(default=100, ge=1)
+    ano_minimo_consulta: int = Field(default=2015, ge=1900)
+
+
 # ── config/pipeline.yaml ─────────────────────────────────────────
 
 
@@ -461,6 +487,12 @@ def load_analytics_settings() -> AnalyticsSettings:
     return AnalyticsSettings.model_validate(_load_yaml("analytics.yaml")["analytics"])
 
 
+@lru_cache(maxsize=1)
+def load_api_settings() -> ApiSettings:
+    """Carrega `config/api.yaml` (schema `api:`)."""
+    return ApiSettings.model_validate(_load_yaml("api.yaml")["api"])
+
+
 def get_sources() -> SourcesSettings:
     """Acesso conveniente a `SourcesSettings` (cacheado)."""
     return load_sources_settings()
@@ -474,6 +506,11 @@ def get_pipeline() -> PipelineSettings:
 def get_analytics() -> AnalyticsSettings:
     """Acesso conveniente a `AnalyticsSettings` (cacheado)."""
     return load_analytics_settings()
+
+
+def get_api() -> ApiSettings:
+    """Acesso conveniente a `ApiSettings` (cacheado)."""
+    return load_api_settings()
 
 
 def get_dbt_vars() -> dict[str, str]:
