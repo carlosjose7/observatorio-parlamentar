@@ -24,11 +24,23 @@ from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 
 from api.schemas.parlamentares import (
+    ArestaRede,
     GastoItem,
     GastosParlamentar,
     ListaParlamentares,
+    NoRede,
     ParlamentarContexto,
     ParlamentarResumo,
+    PerfilParlamentar,
+    RedeParlamentar,
+)
+from api.schemas.fornecedores import (
+    FornecedorContexto,
+    FornecedorResumo,
+    ListaFornecedores,
+    ListaParlamentaresFornecedor,
+    ParlamentarFornecedor,
+    PerfilFornecedor,
 )
 
 logger = structlog.get_logger()
@@ -242,4 +254,209 @@ def listar_gastos(
     itens = [GastoItem.model_validate(dict(zip(colunas, linha))) for linha in linhas]
     return GastosParlamentar(
         parlamentar=contexto, pagina=pagina, limite=limite, total=total, itens=itens
+    )
+
+
+@_tratar_erro_gold
+def obter_perfil_parlamentar(id_parlamentar: int) -> PerfilParlamentar | None:
+    """Perfil completo do parlamentar na versão vigente (`is_current`, ADR-020)."""
+    with _conexao() as con:
+        linha = con.execute(
+            """
+            select id_parlamentar, surrogate_key, fonte, nome, nome_normalizado,
+                   sigla_partido, sigla_uf, situacao_normalizada, id_legislatura,
+                   effective_date, end_date, is_current
+            from dim_parlamentar
+            where id_parlamentar = ? and is_current
+            """,
+            [id_parlamentar],
+        ).fetchone()
+    if linha is None:
+        return None
+    colunas = [
+        "id_parlamentar", "surrogate_key", "fonte", "nome", "nome_normalizado",
+        "sigla_partido", "sigla_uf", "situacao_normalizada", "id_legislatura",
+        "effective_date", "end_date", "is_current",
+    ]
+    return PerfilParlamentar.model_validate(dict(zip(colunas, linha)))
+
+
+@_tratar_erro_gold
+def obter_rede_parlamentar(id_parlamentar: int) -> RedeParlamentar | None:
+    """Rede do parlamentar a partir dos resultados MATERIALIZADOS da Sprint 5.
+
+    NÃO recalcula grafo/PageRank/comunidades (regra da Onda 2): lê
+    `network_nodes`/`network_edges` da Gold (ADR-030). Se a Gold não tiver
+    essas tabelas ainda (staging vazio), o banco retorna vazio — 200 honesto.
+    """
+    contexto = obter_contexto_parlamentar(id_parlamentar)
+    if contexto is None:
+        return None
+
+    with _conexao() as con:
+        nos_tuplas = con.execute(
+            """
+            select periodo, pagerank, degree_centrality, comunidade_id
+            from network_nodes
+            where tipo_no = 'parlamentar' and id_no = ?
+            order by periodo
+            """,
+            [id_parlamentar],
+        ).fetchall()
+        arestas_tuplas = con.execute(
+            """
+            select ne.id_fornecedor, df.nome_fornecedor, ne.periodo, ne.valor_total
+            from network_edges ne
+            join dim_fornecedor df on df.id_fornecedor = ne.id_fornecedor
+            where ne.id_parlamentar = ?
+            order by ne.periodo desc, ne.valor_total desc
+            """,
+            [id_parlamentar],
+        ).fetchall()
+
+    nos = [NoRede.model_validate(dict(zip(["periodo", "pagerank", "degree_centrality", "comunidade_id"], no))) for no in nos_tuplas]
+    arestas = [
+        ArestaRede.model_validate(
+            dict(zip(["id_fornecedor", "nome_fornecedor", "periodo", "valor_total"], aresta))
+        )
+        for aresta in arestas_tuplas
+    ]
+    return RedeParlamentar(parlamentar=contexto, nos=nos, arestas=arestas)
+
+
+@_tratar_erro_gold
+def listar_fornecedores(
+    *,
+    nome: str | None,
+    tipo_documento: str | None,
+    pagina: int,
+    limite: int,
+) -> ListaFornecedores:
+    """Lista fornecedores (`dim_fornecedor`), com filtros opcionais.
+
+    `nome` é filtro parcial case-insensitive sobre `nome_fornecedor`;
+    `tipo_documento` é igualdade sobre o valor do contrato (`CNPJ`/`CPF`).
+    """
+    condicoes: list[str] = []
+    parametros: list[object] = []
+
+    if nome:
+        condicoes.append("nome_fornecedor ilike ?")
+        parametros.append(f"%{nome}%")
+    if tipo_documento:
+        condicoes.append("tipo_documento = ?")
+        parametros.append(tipo_documento)
+
+    clausula_where = f" where {' and '.join(condicoes)}" if condicoes else ""
+    offset = (pagina - 1) * limite
+
+    with _conexao() as con:
+        total = con.execute(
+            f"select count(*) from dim_fornecedor{clausula_where}",
+            parametros,
+        ).fetchone()[0]
+        linhas = con.execute(
+            f"select id_fornecedor, cnpj_cpf_valor, tipo_documento, nome_fornecedor"
+            f" from dim_fornecedor{clausula_where}"
+            " order by nome_fornecedor, id_fornecedor limit ? offset ?",
+            [*parametros, limite, offset],
+        ).fetchall()
+
+    colunas = ["id_fornecedor", "cnpj_cpf_valor", "tipo_documento", "nome_fornecedor"]
+    itens = [FornecedorResumo.model_validate(dict(zip(colunas, linha))) for linha in linhas]
+    return ListaFornecedores(pagina=pagina, limite=limite, total=total, itens=itens)
+
+
+def _fornecedor_contexto(con, cnpj_cpf_valor: str) -> FornecedorContexto | None:
+    """Contexto do fornecedor por `cnpj_cpf_valor` (None se inexistente)."""
+    linha = con.execute(
+        """
+        select id_fornecedor, cnpj_cpf_valor, tipo_documento, nome_fornecedor
+        from dim_fornecedor
+        where cnpj_cpf_valor = ?
+        """,
+        [cnpj_cpf_valor],
+    ).fetchone()
+    if linha is None:
+        return None
+    colunas = ["id_fornecedor", "cnpj_cpf_valor", "tipo_documento", "nome_fornecedor"]
+    return FornecedorContexto.model_validate(dict(zip(colunas, linha)))
+
+
+@_tratar_erro_gold
+def obter_perfil_fornecedor(cnpj_cpf_valor: str) -> PerfilFornecedor | None:
+    """Perfil do fornecedor (dimensão + agregados de gasto promovido).
+
+    CNPJ casa exatamente; CPF está pseudonimizado (ADR-011) e não casa pelo
+    número cru — `None` nesse caso.
+    """
+    with _conexao() as con:
+        linha = con.execute(
+            """
+            select df.id_fornecedor, df.cnpj_cpf_valor, df.tipo_documento,
+                   df.nome_fornecedor, df.id_municipio,
+                   count(fd.id_despesa) as num_despesas,
+                   coalesce(sum(fd.valor_liquido), 0) as valor_liquido_total
+            from dim_fornecedor df
+            left join fact_despesa fd on fd.id_fornecedor = df.id_fornecedor
+            where df.cnpj_cpf_valor = ?
+            group by df.id_fornecedor, df.cnpj_cpf_valor, df.tipo_documento,
+                     df.nome_fornecedor, df.id_municipio
+            """,
+            [cnpj_cpf_valor],
+        ).fetchone()
+    if linha is None:
+        return None
+    colunas = [
+        "id_fornecedor", "cnpj_cpf_valor", "tipo_documento", "nome_fornecedor",
+        "id_municipio", "num_despesas", "valor_liquido_total",
+    ]
+    return PerfilFornecedor.model_validate(dict(zip(colunas, linha)))
+
+
+@_tratar_erro_gold
+def listar_parlamentares_fornecedor(
+    *,
+    cnpj_cpf_valor: str,
+    pagina: int,
+    limite: int,
+) -> ListaParlamentaresFornecedor | None:
+    """Parlamentares (vigentes) que gastaram com um fornecedor + agregados.
+
+    Agrega sobre `fact_despesa` ↔ `dim_parlamentar` (`is_current` — o
+    parlamentar aparece com a identidade vigente, ADR-020) e `dim_fornecedor`.
+    Retorna `None` (router responde 404) quando o fornecedor não existe.
+    """
+    with _conexao() as con:
+        contexto = _fornecedor_contexto(con, cnpj_cpf_valor)
+        if contexto is None:
+            return None
+        total = con.execute(
+            """
+            select count(distinct fd.id_parlamentar)
+            from fact_despesa fd
+            join dim_parlamentar dp on dp.id_parlamentar = fd.id_parlamentar and dp.is_current
+            where fd.id_fornecedor = ?
+            """,
+            [contexto.id_fornecedor],
+        ).fetchone()[0]
+        offset = (pagina - 1) * limite
+        linhas = con.execute(
+            """
+            select fd.id_parlamentar, dp.nome, dp.sigla_partido, dp.sigla_uf,
+                   sum(fd.valor_liquido) as total_gasto, count(*) as num_despesas
+            from fact_despesa fd
+            join dim_parlamentar dp on dp.id_parlamentar = fd.id_parlamentar and dp.is_current
+            where fd.id_fornecedor = ?
+            group by fd.id_parlamentar, dp.nome, dp.sigla_partido, dp.sigla_uf
+            order by total_gasto desc, fd.id_parlamentar
+            limit ? offset ?
+            """,
+            [contexto.id_fornecedor, limite, offset],
+        ).fetchall()
+
+    colunas = ["id_parlamentar", "nome", "sigla_partido", "sigla_uf", "total_gasto", "num_despesas"]
+    itens = [ParlamentarFornecedor.model_validate(dict(zip(colunas, linha))) for linha in linhas]
+    return ListaParlamentaresFornecedor(
+        fornecedor=contexto, pagina=pagina, limite=limite, total=total, itens=itens
     )

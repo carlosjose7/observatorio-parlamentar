@@ -285,3 +285,61 @@ def test_gastos_senado_por_nome(_cliente_gold):
 def test_gastos_404_parlamentar_inexistente_no_gold(_cliente_gold):
     """Parlamentar inexistente no Gold construído pelo dbt → 404."""
     assert _cliente_gold.get("/parlamentares/999/gastos").status_code == 404
+
+
+# ── Onda 2: perfil, fornecedores e rede contra o Gold do dbt ─────
+
+
+def test_perfil_parlamentar_do_gold_dbt(_cliente_gold):
+    """Perfil usa a versão vigente emitida pelo dbt (SCD2 → PARTIDO B)."""
+    perfil = _cliente_gold.get("/parlamentares/1").json()
+    assert perfil["id_parlamentar"] == 1
+    assert perfil["nome"] == "JOSE SILVA"
+    assert perfil["sigla_partido"] == "PARTIDO B"
+    assert perfil["fonte"] == "camara"
+    assert perfil["effective_date"] == "2023-02-01"
+    assert perfil["end_date"] is None
+    assert perfil["is_current"] is True
+
+
+def test_fornecedores_vindos_do_gold_dbt(_cliente_gold):
+    """`dim_fornecedor` emitida pelo dbt alimenta a listagem (CNPJ claro, CPF HMAC)."""
+    corpo = _cliente_gold.get("/fornecedores").json()
+    nomes = {item["nome_fornecedor"] for item in corpo["itens"]}
+    assert {"LATAM", "AUTONOMO X", "HOTEL CENTER"} <= nomes
+    latam = next(item for item in corpo["itens"] if item["nome_fornecedor"] == "LATAM")
+    assert latam["cnpj_cpf_valor"] == "12345678000190"
+    assert latam["tipo_documento"] == "CNPJ"
+
+
+def test_perfil_fornecedor_do_gold_dbt(_cliente_gold):
+    """Perfil do fornecedor = dimensão + agregados sobre `fact_despesa` do dbt."""
+    perfil = _cliente_gold.get("/fornecedores/12345678000190").json()
+    assert perfil["nome_fornecedor"] == "LATAM"
+    assert perfil["tipo_documento"] == "CNPJ"
+    assert perfil["num_despesas"] == 1
+    assert abs(float(perfil["valor_liquido_total"]) - 100.0) < 1e-9
+
+
+def test_parlamentares_do_fornecedor_do_gold_dbt(_cliente_gold):
+    """Agregado parlamentar↔fornecedor sobre fato promovido + vigente do dbt."""
+    corpo = _cliente_gold.get("/fornecedores/12345678000190/parlamentares").json()
+    assert corpo["fornecedor"]["nome_fornecedor"] == "LATAM"
+    assert corpo["total"] == 1
+    jose = corpo["itens"][0]
+    assert jose["nome"] == "JOSE SILVA"
+    assert jose["sigla_partido"] == "PARTIDO B"
+    assert abs(float(jose["total_gasto"]) - 100.0) < 1e-9
+
+
+def test_rede_endpoint_liga_schema_de_rede_da_gold(_cliente_gold):
+    """`/parlamentares/1/rede` liga as colunas de `network_nodes/edges` do dbt.
+
+    `ml_staging` vazio → tabelas Gold de rede existem vazias (schema ainda
+    assim validado no bind das colunas pagerank/degree/valor_total, ADR-030).
+    Resposta 200 honesta com listas vazias — a API não recalcula análise.
+    """
+    corpo = _cliente_gold.get("/parlamentares/1/rede").json()
+    assert corpo["parlamentar"]["id_parlamentar"] == 1
+    assert corpo["nos"] == []
+    assert corpo["arestas"] == []

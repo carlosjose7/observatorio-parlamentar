@@ -1,165 +1,24 @@
-"""tests/api/test_parlamentares.py — endpoints da Sprint 6 (Onda 1).
+"""tests/api/test_parlamentares.py — endpoints de parlamentares (Sprint 6).
 
-Espelha o padrão determinístico dos testes Gold: um DuckDB temporário com o
-schema REAL emitido pelos modelos dbt do Gold é semeado num fixture e apontado
-à API via `DUCKDB_DATABASE_PATH` (a fronteira de leitura da API, ADR-026).
-A API nunca toca bronze/silver/analytics.
+Onda 1: lista paginada com filtros (nome/uf/partido), SCD2 (só versão vigente
+aparece), gastos com dimensões resolvidas (fornecedor/categoria/dim_data),
+404/422/503. Onda 2: perfil completo do parlamentar e rede materializada do
+Gold (nós/arestas da Sprint 5 — sem recalcular análise).
 
-Cobre: listagem paginada com filtros (nome/uf/partido), SCD2 (só versão
-vigente aparece), histórico de gastos com dimensões resolvidas (fornecedor/
-categoria/dim_data), filtro por ano, 404 de parlamentar inexistente, 422 de
-validação de query, e 503 quando a camada Gold está indisponível.
+O DuckDB determinístico é semeado por `tests/api/_fixtures.py` (schema real
+do Gold) + TestClient, mantendo o padrão de reprodutibilidade do repo — o selo
+de contrato via dbt vive em `tests/integration/test_api_gold_contrato.py`.
 """
 
 from __future__ import annotations
 
-import hashlib
-from datetime import date
 from decimal import Decimal
 
-import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
 from pipeline.config import load_env_settings
 from api.main import app
-
-# ── Seed determinístico — schema dos modelos dbt do Gold ─────────
-
-
-def _cod_tipo(descricao: str) -> str:
-    return hashlib.md5(descricao.upper().encode("utf-8")).hexdigest()[:12]
-
-
-_DDL = {
-    "dim_parlamentar": """
-        create table dim_parlamentar (
-            surrogate_key bigint,
-            fonte varchar,
-            id_parlamentar bigint,
-            nome varchar,
-            nome_normalizado varchar,
-            sigla_partido varchar,
-            sigla_uf varchar,
-            situacao_normalizada varchar,
-            id_legislatura bigint,
-            effective_date date,
-            end_date date,
-            is_current boolean
-        )
-    """,
-    "dim_fornecedor": """
-        create table dim_fornecedor (
-            id_fornecedor bigint,
-            cnpj_cpf_valor varchar,
-            tipo_documento varchar,
-            nome_fornecedor varchar,
-            id_municipio bigint
-        )
-    """,
-    "dim_categoria_despesa": """
-        create table dim_categoria_despesa (
-            cod_tipo varchar,
-            descricao varchar
-        )
-    """,
-    "dim_data": """
-        create table dim_data (
-            data_sk bigint,
-            data date,
-            ano integer,
-            mes integer,
-            dia integer,
-            is_dia_util boolean
-        )
-    """,
-    "fact_despesa": """
-        create table fact_despesa (
-            id_despesa bigint,
-            id_parlamentar bigint,
-            surrogate_key bigint,
-            id_fornecedor bigint,
-            id_orgao bigint,
-            id_unidade_gestora bigint,
-            cod_tipo varchar,
-            data_sk bigint,
-            cod_documento varchar,
-            valor_liquido decimal(18, 2),
-            valor_glosa decimal(18, 2),
-            run_id varchar,
-            pipeline_version varchar,
-            execution_timestamp varchar,
-            source_version varchar
-        )
-    """,
-}
-
-
-def _sembrar_gold(caminho) -> None:
-    """Cria o DuckDB Gold de teste com o grão dos fixtures Gold determinísticos."""
-    con = duckdb.connect(str(caminho))
-    for tabela in _DDL:
-        con.execute(_DDL[tabela])
-
-    p1_v2 = 100000000000 + 1 * 1000 + 2  # camara, id 1, versão 2
-    p2_v1 = 200000000000 + 2 * 1000 + 1  # senado, id 2, versão 1
-    con.executemany(
-        "insert into dim_parlamentar values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (100000000000 + 1 * 1000 + 1, "camara", 1, "MARIA DA SILVA", "MARIA DA SILVA",
-             "PSDB", "DF", "Ativo", 55, date(2015, 1, 1), date(2018, 1, 1), False),
-            (p1_v2, "camara", 1, "MARIA DA SILVA", "MARIA DA SILVA",
-             "PSDB", "DF", "Ativo", 57, date(2018, 1, 1), None, True),
-            (p2_v1, "senado", 2, "ANA SOUZA", "ANA SOUZA",
-             "PT", "SP", "Ativo", 57, date(2019, 2, 1), None, True),
-        ],
-    )
-    con.executemany(
-        "insert into dim_fornecedor values (?, ?, ?, ?, ?)",
-        [
-            (10, "11222333000181", "CNPJ", "Transportes Brasil Ltda", None),
-            (11, "hmac-ficticio-cpf-ana", "CPF", "Ana Souza", None),
-        ],
-    )
-    con.executemany(
-        "insert into dim_categoria_despesa values (?, ?)",
-        [
-            (_cod_tipo("PASSAGEM AEREA"), "PASSAGEM AEREA"),
-            (_cod_tipo("COMBUSTIVEL"), "COMBUSTIVEL"),
-        ],
-    )
-    con.executemany(
-        "insert into dim_data values (?, ?, ?, ?, ?, ?)",
-        [
-            (20230310, date(2023, 3, 10), 2023, 3, 10, True),
-            (20230501, date(2023, 5, 1), 2023, 5, 1, True),
-            (20221120, date(2022, 11, 20), 2022, 11, 20, False),
-        ],
-    )
-    con.executemany(
-        "insert into fact_despesa values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (1, 1, p1_v2, 10, 1, None, _cod_tipo("PASSAGEM AEREA"), 20230310, "doc-1",
-             Decimal("1500.00"), Decimal("0.00"), "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
-            (2, 1, p1_v2, 11, 1, None, _cod_tipo("COMBUSTIVEL"), 20230501, "doc-2",
-             Decimal("300.50"), Decimal("0.00"), "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
-            (3, 1, p1_v2, 10, 1, None, _cod_tipo("PASSAGEM AEREA"), 20221120, "doc-3",
-             Decimal("700.00"), Decimal("0.00"), "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
-            (4, 2, p2_v1, 10, 2, None, _cod_tipo("PASSAGEM AEREA"), 20230310, "doc-4",
-             Decimal("900.00"), Decimal("0.00"), "run-test", "0.1.0", "2023-06-01T00:00:00", "s1"),
-        ],
-    )
-    con.close()
-
-
-@pytest.fixture()
-def _client(tmp_path, monkeypatch):
-    db_path = tmp_path / "gold.duckdb"
-    _sembrar_gold(db_path)
-    monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(db_path))
-    load_env_settings.cache_clear()
-    with TestClient(app) as client:
-        yield client
 
 
 def _dinheiro(valor: float) -> Decimal:
@@ -169,14 +28,14 @@ def _dinheiro(valor: float) -> Decimal:
 # ── Smoke — `/` e `/health` não regridem (scaffold original) ─────
 
 
-def test_health(_client):
-    resposta = _client.get("/health")
+def test_health(_cliente):
+    resposta = _cliente.get("/health")
     assert resposta.status_code == 200
     assert resposta.json() == {"status": "healthy"}
 
 
-def test_root(_client):
-    resposta = _client.get("/")
+def test_root(_cliente):
+    resposta = _cliente.get("/")
     assert resposta.status_code == 200
     corpo = resposta.json()
     assert corpo["version"] == "0.1.0"
@@ -186,8 +45,8 @@ def test_root(_client):
 # ── GET /parlamentares ───────────────────────────────────────────
 
 
-def test_listar_apenas_versao_vigente(_client):
-    corpo = _client.get("/parlamentares").json()
+def test_listar_apenas_versao_vigente(_cliente):
+    corpo = _cliente.get("/parlamentares").json()
     assert corpo["pagina"] == 1
     assert corpo["limite"] == 20
     assert corpo["total"] == 2
@@ -199,38 +58,38 @@ def test_listar_apenas_versao_vigente(_client):
     assert primeiro["fonte"] == "senado"
 
 
-def test_filtro_uf(_client):
-    corpo = _client.get("/parlamentares", params={"uf": "DF"}).json()
+def test_filtro_uf(_cliente):
+    corpo = _cliente.get("/parlamentares", params={"uf": "DF"}).json()
     assert corpo["total"] == 1
     assert corpo["itens"][0]["id_parlamentar"] == 1
 
 
-def test_filtro_partido(_client):
-    corpo = _client.get("/parlamentares", params={"partido": "PT"}).json()
+def test_filtro_partido(_cliente):
+    corpo = _cliente.get("/parlamentares", params={"partido": "PT"}).json()
     assert corpo["total"] == 1
     assert corpo["itens"][0]["id_parlamentar"] == 2
 
 
-def test_filtro_nome_parcial_case_accent_insensitive(_client):
-    corpo = _client.get("/parlamentares", params={"nome": "maria"}).json()
+def test_filtro_nome_parcial_case_accent_insensitive(_cliente):
+    corpo = _cliente.get("/parlamentares", params={"nome": "maria"}).json()
     assert corpo["total"] == 1
     assert corpo["itens"][0]["id_parlamentar"] == 1
 
 
-def test_paginacao(_client):
-    pagina_1 = _client.get("/parlamentares", params={"limite": 1, "pagina": 1}).json()
+def test_paginacao(_cliente):
+    pagina_1 = _cliente.get("/parlamentares", params={"limite": 1, "pagina": 1}).json()
     assert pagina_1["total"] == 2
     assert [item["id_parlamentar"] for item in pagina_1["itens"]] == [2]
 
-    pagina_2 = _client.get("/parlamentares", params={"limite": 1, "pagina": 2}).json()
+    pagina_2 = _cliente.get("/parlamentares", params={"limite": 1, "pagina": 2}).json()
     assert [item["id_parlamentar"] for item in pagina_2["itens"]] == [1]
 
 
 # ── GET /parlamentares/{id}/gastos ───────────────────────────────
 
 
-def test_gastos_com_dimensions_resolvidas(_client):
-    corpo = _client.get("/parlamentares/1/gastos").json()
+def test_gastos_com_dimensions_resolvidas(_cliente):
+    corpo = _cliente.get("/parlamentares/1/gastos").json()
     assert corpo["parlamentar"]["id_parlamentar"] == 1
     assert corpo["parlamentar"]["nome"] == "MARIA DA SILVA"
     assert corpo["parlamentar"]["situacao_normalizada"] == "Ativo"
@@ -246,25 +105,84 @@ def test_gastos_com_dimensions_resolvidas(_client):
     assert _dinheiro(primeiro["valor_glosa"]) == Decimal("0.00")
 
 
-def test_gastos_filtro_ano(_client):
-    corpo = _client.get("/parlamentares/1/gastos", params={"ano": 2023}).json()
+def test_gastos_filtro_ano(_cliente):
+    corpo = _cliente.get("/parlamentares/1/gastos", params={"ano": 2023}).json()
     assert corpo["total"] == 2
     assert {item["id_despesa"] for item in corpo["itens"]} == {1, 2}
-    corpo_2022 = _client.get("/parlamentares/1/gastos", params={"ano": 2022}).json()
+    corpo_2022 = _cliente.get("/parlamentares/1/gastos", params={"ano": 2022}).json()
     assert corpo_2022["total"] == 1
     assert corpo_2022["itens"][0]["id_despesa"] == 3
 
 
-def test_gastos_parlamentar_inexistente_404(_client):
-    resposta = _client.get("/parlamentares/999/gastos")
+def test_gastos_parlamentar_inexistente_404(_cliente):
+    resposta = _cliente.get("/parlamentares/999/gastos")
     assert resposta.status_code == 404
 
 
-def test_gastos_sem_registros_total_zero(_client):
-    corpo = _client.get("/parlamentares/2/gastos", params={"ano": 2022}).json()
+def test_gastos_sem_registros_total_zero(_cliente):
+    corpo = _cliente.get("/parlamentares/2/gastos", params={"ano": 2022}).json()
     assert corpo["parlamentar"]["id_parlamentar"] == 2
     assert corpo["total"] == 0
     assert corpo["itens"] == []
+
+
+# ── GET /parlamentares/{id} — perfil (Onda 2) ────────────────────
+
+
+def test_perfil_versao_vigente(_cliente):
+    resposta = _cliente.get("/parlamentares/1")
+    assert resposta.status_code == 200
+    perfil = resposta.json()
+    assert perfil["id_parlamentar"] == 1
+    assert perfil["nome"] == "MARIA DA SILVA"
+    assert perfil["nome_normalizado"] == "MARIA DA SILVA"
+    assert perfil["sigla_partido"] == "PSDB"
+    assert perfil["sigla_uf"] == "DF"
+    assert perfil["situacao_normalizada"] == "Ativo"
+    assert perfil["fonte"] == "camara"
+    assert perfil["id_legislatura"] == 57
+    assert perfil["effective_date"] == "2018-01-01"
+    assert perfil["end_date"] is None
+    assert perfil["is_current"] is True
+    assert perfil["surrogate_key"] == 100000001002
+
+
+def test_perfil_inexistente_404(_cliente):
+    assert _cliente.get("/parlamentares/999").status_code == 404
+
+
+# ── GET /parlamentares/{id}/rede — rede materializada (Onda 2) ───
+
+
+def test_rede_consulta_gold_materializado(_cliente):
+    """Nós/arestas vêm das tabelas da Gold (Sprint 5), sem recálculo."""
+    resposta = _cliente.get("/parlamentares/1/rede")
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["parlamentar"]["id_parlamentar"] == 1
+    # nós por período, ordenados ASC
+    assert [no["periodo"] for no in corpo["nos"]] == [2022, 2023]
+    no_2023 = corpo["nos"][1]
+    assert no_2023["pagerank"] == 0.55
+    assert no_2023["degree_centrality"] == 3.0
+    assert no_2023["comunidade_id"] == 7
+    # arestas: periodo DESC, valor DESC; periodo 2023 → valor desc (10 antes de 11)
+    assert [(a["id_fornecedor"], a["periodo"]) for a in corpo["arestas"]] == [(10, 2023), (11, 2023), (10, 2022)]
+    assert corpo["arestas"][0]["nome_fornecedor"] == "Transportes Brasil Ltda"
+    assert corpo["arestas"][0]["valor_total"] == 1500.0
+
+
+def test_rede_parlamentar_sem_nos_vetor_vazio(_cliente):
+    """Sem registros de rede materializados → 200 honesto com listas vazias."""
+    corpo = _cliente.get("/parlamentares/2/rede").json()
+    assert corpo["parlamentar"]["id_parlamentar"] == 2
+    assert corpo["nos"] == []
+    # parlamentar 2 tem aresta com fornecedor 10 em 2023 → arestas NÃO vazias
+    assert [(a["id_fornecedor"], a["periodo"]) for a in corpo["arestas"]] == [(10, 2023)]
+
+
+def test_rede_parlamentar_inexistente_404(_cliente):
+    assert _cliente.get("/parlamentares/999/rede").status_code == 404
 
 
 # ── Validação de query params ────────────────────────────────────
@@ -279,8 +197,8 @@ def test_gastos_sem_registros_total_zero(_client):
         {"ano": 2014},
     ],
 )
-def test_validacao_query_params(_client, query):
-    resposta = _client.get("/parlamentares/1/gastos", params=query)
+def test_validacao_query_params(_cliente, query):
+    resposta = _cliente.get("/parlamentares/1/gastos", params=query)
     assert resposta.status_code == 422
 
 

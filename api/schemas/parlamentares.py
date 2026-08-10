@@ -84,3 +84,55 @@ class GastosParlamentar(_ContratoResposta):
     limite: int
     total: int = Field(..., description="Total de despesas do parlamentar sob os filtros")
     itens: list[GastoItem]
+
+
+class PerfilParlamentar(_ContratoResposta):
+    """Perfil completo (`GET /parlamentares/{id}`) — versão vigente do SCD2.
+
+    Todas as colunas emitidas por `dim_parlamentar.sql` para a versão
+    `is_current`, incluindo os metadados temporais da versão (ADR-020).
+    """
+
+    id_parlamentar: int
+    surrogate_key: int
+    fonte: str
+    nome: str
+    nome_normalizado: str
+    sigla_partido: str
+    sigla_uf: str
+    situacao_normalizada: str
+    id_legislatura: int | None = Field(default=None, description="Última legislatura observada na versão")
+    effective_date: date = Field(..., description="Início da vigência da versão")
+    end_date: date | None = Field(default=None, description="Fim da vigência — None na versão corrente")
+    is_current: bool
+
+
+class NoRede(_ContratoResposta):
+    """Perfil de rede do próprio parlamentar (`network_nodes`, ADR-030)."""
+
+    periodo: int
+    pagerank: float
+    degree_centrality: float
+    comunidade_id: int | None
+
+
+class ArestaRede(_ContratoResposta):
+    """Aresta parlamentar↔fornecedor materializada (`network_edges`, ADR-030)."""
+
+    id_fornecedor: int
+    nome_fornecedor: str
+    periodo: int
+    valor_total: float = Field(..., description="Peso da aresta v_{p,f} no período (valor agregado)")
+
+
+class RedeParlamentar(_ContratoResposta):
+    """Rede do parlamentar (`GET /parlamentares/{id}/rede`).
+
+    Consulta APENAS os resultados materializados pela Sprint 5 no Gold
+    (`network_nodes`/`network_edges`) — a API NÃO recalcula PageRank/
+    comunidades (regra da Onda 2: expõe o Gold, não recria o pipeline).
+    """
+
+    parlamentar: ParlamentarContexto
+    nos: list[NoRede]
+    arestas: list[ArestaRede]

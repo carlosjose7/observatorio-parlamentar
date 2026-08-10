@@ -8,6 +8,49 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 6 — API (FastAPI / Onda 2 — perfil, rede e fornecedores)
+
+### Adicionado
+- **Onda 2 — endpoints de negócio sobre o Gold materializado** (`XXX`):
+  `GET /parlamentares/{id}` (perfil vigente do SCD2, ADR-020 — resolve as
+  colunas `sigla_partido`/`sigla_uf`/`situacao_normalizada` emitidas pelo
+  `dim_parlamentar.sql`); `GET /parlamentares/{id}/rede` (consome
+  `network_nodes`/`network_edges` **já promovidos ao Gold pelo dbt**, com join
+  em `dim_fornecedor` para o nome — nunca recalcula PageRank/comunidades por
+  request, ADR-030; staging de rede vazio ⇒ 200 honesto com listas vazias);
+  `GET /fornecedores` (paginado, filtros `nome` ILIKE + `tipo_documento`
+  validado em `^(CNPJ|CPF)$`); `GET /fornecedores/{cnpj_cpf_valor}` (dimensão
+  + agregados sobre `fact_despesa`: `num_despesas`, `valor_liquido_total`);
+  `GET /fornecedores/{cnpj_cpf_valor}/parlamentares` (parlamentares vigentes
+  que gastaram no fornecedor, `total_gasto` desc). CNPJ exposto em claro; CPF
+  **apenas pelo hash HMAC** (ADR-011) — buscar pelo número cru devolve 404
+  honesto, nunca vaza dado pseudonimizado. Contratos `api/schemas/
+  fornecedores.py` (novo) + extensão de `api/schemas/parlamentares.py`
+  (`PerfilParlamentar`, `NoRede`, `ArestaRede`, `RedeParlamentar`, todos
+  `extra="forbid"`). `api/repo.py` com `_tratar_erro_gold` centralizado sobre
+  as 8 queries; routers `fornecedores.py` (novo) e `parlamentares.py` (estendido).
+  Fixture determinística consolidada em `tests/api/conftest.py` (schema real
+  do Gold, incl. `network_nodes`/`network_edges`, ADR-009).
+- **Selo de contrato estendido à Onda 2** (`tests/integration/
+  test_api_gold_contrato.py`, 5→10): agora valida, contra o **dbt real** do
+  Gold, o perfil vigente (SCD2 → `PARTIDO B`), a listagem de fornecedores
+  (CNPJ claro × CPF HMAC), o agregado parlamentar↔fornecedor e o **bind das
+  colunas de rede** (`pagerank`/`degree_centrality`/`valor_total` do schema
+  emitido) — uma coluna renomeada em `network_*.sql` quebra a suíte.
+- Testes: `tests/api/test_parlamentares.py` 16→21; `tests/api/
+  test_fornecedores.py` 10 (novo). Suíte completa `tests` — **253 passed**
+  (212 pipeline + 31 API + 10 integração).
+
+### Registrado
+- **Dívida técnica aceita (backlog 6/6.5)** — paridade automatizada
+  dbt model → `schema.yml` → Pydantic → API: os contratos são escritos à mão
+  e já divergiram do schema emitido (`DimParlamentar` → `sigla_partido`/
+  `sigla_uf`; `DimData` → `data`). O selo de contrato é a barreira detecta-
+  falsos; a automação da paridade fica para o backlog. Não mexe no escopo da
+  Onda 2.
+
+---
+
 ## Sprint 6 — API (FastAPI / Onda 1 — infra + parlamentares)
 
 ### Adicionado

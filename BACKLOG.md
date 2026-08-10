@@ -321,6 +321,9 @@
 > primeiros endpoints de negócio do `PROJECT_CONTEXT.md §11`. Fronteira de
 > leitura exclusiva do Gold (DuckDB read-only via `DUCKDB_DATABASE_PATH`,
 > ADR-026); falhas de esquema degradam como HTTP 503 (Gold indisponível).
+> **Onda 2 concluída** — perfil completa, rede materializada e fornecedores com
+> agregados (Gold consultado diretamente; nenhuma análise é recalculada por
+> request — ADR-030).
 
 ### Onda 1 (implementada)
 
@@ -344,14 +347,45 @@
    de gastos e no fixture da API. Suíte completa `tests` — **233 passed**
    (212 pipeline + 16 API + 5 integração).
 
+### Onda 2 (implementada)
+
+☑ **Onda 2 — Perfil completo, rede e fornecedores** (`XXX`): 
+   `GET /parlamentares/{id}` — perfil vigente do SCD2 (ADR-020) resolvendo
+   `sigla_partido`/`sigla_uf`/`situacao_normalizada` emitidas pelo dbt;
+   `GET /parlamentares/{id}/rede` — consome **o Gold materializado**
+   (`ml_staging.network_nodes/edges` promovidos por `network_nodes.sql`/
+   `network_edges.sql`), nunca recalcula PageRank/comunidades por request
+   (ADR-030); `GET /fornecedores` (filtros `nome` ILIKE + `tipo_documento`,
+   422 para valor inválido); `GET /fornecedores/{cnpj_cpf_valor}` — dimensão
+   + agregados sobre `fact_despesa` (`num_despesas`, `valor_liquido_total`);
+   `GET /fornecedores/{cnpj_cpf_valor}/parlamentares` — agregado
+   parlamentar↔fornecedor (vigentes, `total_gasto` desc). CNPJ exposto claro,
+   CPF somente pelo hash HMAC (ADR-011 — buscar por CPF cru retorna 404
+   honesto). Schemas `api/schemas/fornecedores.py` + extensão de
+   `parlamentares.py` (`extra="forbid"`); repo com decorator `_tratar_erro_gold`
+   centralizado; fixture determinística `tests/api/conftest.py` (SPT).
+   Testes: `tests/api/test_parlamentares.py` estendido (16→21) +
+   `tests/api/test_fornecedores.py` (10) — **31 API**; selo de contrato
+   `tests/integration/test_api_gold_contrato.py` estendido (5→10) validando
+   perfil (SCD2 → PARTIDO B), fornecedores (CNPJ claro/HMAC), agregados e o
+   **bind das colunas de rede** contra o dbt real (200 honesto com staging
+   vazio, nunca reanálise). Suíte completa `tests` — **253 passed**
+   (212 pipeline + 31 API + 10 integração).
+
 ### Ondas (pendentes — Sprint 6 em curso)
 
-☐ Onda 2 — `/parlamentares/{id}` (perfil completo), `/parlamentares/{id}/rede`,
-   `/fornecedores`, `/fornecedores/{cnpj}`, `/fornecedores/{cnpj}/parlamentares`
 ☐ Onda 3 — `/anomalias?threshold=`, `/rede/comunidades`, `/qualidade/relatorio`,
    `/pipeline/status`
 ☐ Onda 4 — endpoints agent-ready (RF-05): `/agent/parlamentar/{id}`,
    `/agent/fornecedor/{cnpj}`, `/agent/anomalias`, `/agent/context`
+
+> **Dívida técnica aceita no fechamento da Onda 2** (backlog Sprint 6/6.5):
+> **paridade automatizada** dbt model → `schema.yml` → Pydantic → API — os
+> contratos de resposta e o `gold.py` deveriam ser **gerados a partir do
+> schema emitido** pelos modelos dbt (não escritos à mão e divergindo, como em
+> `DimParlamentar` → `sigla_partido`/`sigla_uf` e `DimData` → `data`). O selo
+> de contrato `tests/integration/test_api_gold_contrato.py` já é a barreira
+> detecta-falsos; a dívida é apenas a automação da paridade em si.
 
 ---
 
@@ -369,4 +403,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.8 — Sprint 6 em curso: **Onda 1 completa** — infra da API (config ADR-008 + `api/repo.py` read-only sobre o Gold, ADR-026), contratos de resposta `api/schemas/parlamentares.py`, endpoints `/parlamentares` e `/parlamentares/{id}/gastos` paginados com filtros e dimensões resolvidas, degradação Gold→503, smoke `/` e `/health` preservados, e **selo de contrato pipeline→Gold→API** (`tests/integration`: dbt real do Gold em subprocesso + TestClient; drift `dim_data.data_completa`→`data` corrigido) — 233 testes verdes (212 pipeline + 16 API + 5 integração). Sprint 5 fechada (Ondas 0–4, metrics Feature Store + anomalias + rede + `risk_scores`; ADRs 026–030; 212 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
+*Versão atual: 0.9 — Sprint 6 em curso: **Onda 2 completa** — perfil completo de parlamentar (`/parlamentares/{id}`), rede materializada (`/parlamentares/{id}/rede`, lê o Gold, ADR-030 — nada de reanálise por request) e fornecedores (`/fornecedores` com filtros nome/tipo_documento, `/fornecedores/{cnpj_cpf_valor}` com agregados de `fact_despesa`, `/fornecedores/{cnpj_cpf_valor}/parlamentares`; CPF só por HMAC, ADR-011) — 253 testes verdes (212 pipeline + 31 API + 10 integração). Onda 1 completa (infra ADR-008/ADR-026 + contratos + `/parlamentares` e gastos + selo pipeline→Gold→API com drift `dim_data.data` corrigido). Dívida técnica registrada (Sprint 6/6.5): paridade automatizada dbt→schema.yml→Pydantic→API. Sprint 5 fechada (212 testes verdes). Sprint 4 fechada (129 testes verdes).*

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from pipeline.config import get_api
 
 from api.routers.parlamentares import router as router_parlamentares
+from api.routers.fornecedores import router as router_fornecedores
 
 config = get_api()
 
@@ -24,3 +25,4 @@ def health():
 
 
 app.include_router(router_parlamentares)
+app.include_router(router_fornecedores)
