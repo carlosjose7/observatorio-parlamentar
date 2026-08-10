@@ -334,3 +334,30 @@ class PoliticianSimilarity(BaseModel):
     pipeline_version: str
     execution_timestamp: str
     source_version: str
+
+
+class RiskScores(BaseModel):
+    """Scores de risco por parlamentar e o `risk_index` (ADR-027/029, Onda 4).
+
+    Grão: (periodo, id_parlamentar) por run. As 5 colunas de score são os
+    scores individuais do ADR-027 JÁ normalizados Min-Max em [0, 1]
+    (feature `minmax`, ADR-028) e `risk_index` é a composição ponderada
+    `Σ_i w_i · score_i(p)` com pesos de `config/analytics.yaml → risk.pesos`
+    (ADR-029 — baseline 0.2 uniforme). Materializada a partir de
+    `ml_staging.risk_scores` (ADR-026, Opção A — Python single-writer no
+    staging; dbt só materializa o Gold).
+    """
+
+    periodo: int
+    id_parlamentar: int
+    supplier_concentration_score: float
+    political_exposure_score: float
+    supplier_dependency_score: float
+    expense_anomaly_score: float
+    network_influence_score: float
+    risk_index: float
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str

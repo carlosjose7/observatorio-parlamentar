@@ -20,7 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -237,15 +237,57 @@ class RedeSettings(_StrictModel):
     limite_arestas_recorte: int = Field(default=50000, gt=0)
 
 
+#: Scores individuais do ADR-027 (grão período × parlamentar) — as 5
+#: fórmulas do §9, na ordem do `risk_index`. Fonte única dos pesos
+#: (`config/analytics.yaml → risk.pesos`, ADR-029) e do módulo de risk.
+SCORES_RISCO = (
+    "supplier_concentration_score",
+    "political_exposure_score",
+    "supplier_dependency_score",
+    "expense_anomaly_score",
+    "network_influence_score",
+)
+
+
+class RiskSettings(_StrictModel):
+    """Pesos do `risk_index` e composição (ADR-029, Onda 4).
+
+    `pesos` define a ponderação dos 5 scores do ADR-027 no `risk_index`:
+    `risk_index_p = Σ_i w_i · score_i(p)`. Baseline vigente: 0.2 uniforme
+    (ADR-003/ADR-029) — os pesos NÃO mudam por operação manual, apenas por
+    ADR de amendment (pós-Sprint 6.5, com dado real). Validação Pydantic:
+    exatamente as 5 chaves de `SCORES_RISCO`, todas > 0 e `sum == 1`
+    (checklist de DQ — ADR-029).
+    """
+
+    pesos: dict[str, float] = Field(
+        default_factory=lambda: {score: 0.2 for score in SCORES_RISCO}
+    )
+
+    @model_validator(mode="after")
+    def _validar_pesos(self) -> "RiskSettings":
+        if set(self.pesos) != set(SCORES_RISCO):
+            raise ValueError(
+                f"risk.pesos deve conter exatamente {set(SCORES_RISCO)} — recebido {set(self.pesos)}"
+            )
+        if any(v <= 0 for v in self.pesos.values()):
+            raise ValueError("risk.pesos exige pesos > 0")
+        total = sum(self.pesos.values())
+        if not abs(total - 1.0) < 1e-9:
+            raise ValueError(f"risk.pesos deve somar 1 — recebido {total}")
+        return self
+
+
 class AnalyticsSettings(_StrictModel):
     """Configuração da camada analítica/ML da Sprint 5.
 
     Topos consumidos por `pipeline/analytics.py` (Onda 1),
-    `pipeline/anomalies.py` (Onda 2) e `pipeline/network.py` (Onda 3).
-    `risk.pesos` entra na Onda 4 (ADR-029).
+    `pipeline/anomalies.py` (Onda 2), `pipeline/network.py` (Onda 3) e
+    `pipeline/risk.py` (Onda 4 — `risk.pesos`, ADR-029).
     """
 
     rede: RedeSettings = Field(default_factory=RedeSettings)
+    risk: RiskSettings = Field(default_factory=RiskSettings)
 
 
 # ── config/pipeline.yaml ─────────────────────────────────────────

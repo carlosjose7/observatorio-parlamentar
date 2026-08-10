@@ -114,6 +114,38 @@ def correlacao_pearson(
     return resultado
 
 
+def normalizar_minmax(serie: pd.Series) -> pd.Series:
+    """Normalização Min-Max para [0, 1] — feature `minmax` (ADR-028).
+
+    Executa a função derivada `minmax` registrada na Feature Store
+    (`feature_store/registry.yaml`, ADR-028): `norm(x) = (x − min_X(x)) /
+    (max_X(x) − min_X(x))` no universo `X` do período (ADR-003/ADR-027).
+    É a implementação REUTILIZÁVEL da feature — o módulo de scores
+    (`pipeline/risk.py`) consome esta função; nada de versão solta.
+
+    Args:
+        serie: Série numérica com os valores crus de um score no universo
+            do período (nulos são ignorados no cálculo dos extremos).
+
+    Returns:
+        Série normalizada em [0, 1]. Série constante (min == max) →
+        todos os valores viram `0.0` (sem informação de escala); série
+        vazia → série vazia.
+    """
+    valores = pd.to_numeric(serie, errors="coerce").astype(float)
+    if valores.empty:
+        return serie.iloc[0:0].copy()
+    minimo, maximo = float(valores.min()), float(valores.max())
+    if maximo == minimo:
+        # Série constante (raw idêntico no universo do período): norm é
+        # 0/0 indefinida — mapear para 0.0 preserva a ordenação (todos
+        # iguais entre si) e não infla o risk_index de ninguém.
+        resultado = pd.Series(0.0, index=valores.index)
+        resultado.loc[valores.isna()] = np.nan
+        return resultado
+    return (valores - minimo) / (maximo - minimo)
+
+
 def resumo_por_parlamentar(
     fatos: pd.DataFrame,
     coluna_valor: str = "valor_liquido",

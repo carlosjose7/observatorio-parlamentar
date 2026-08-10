@@ -62,3 +62,11 @@ sources:
           de fornecedores (CU-08, ADR-030.5). Chaveada por
           `(run_id, periodo)` (ADR-030.1). Populado por pipeline/network.py
           (Onda 3). Insumo da Gold `politician_similarity`.
+      - name: risk_scores
+        description: >
+          Scores de risco por parlamentar e o `risk_index` — os 5 scores
+          individuais do ADR-027 (normalizados Min-Max em [0,1], feature
+          `minmax` ADR-028) e a composição ponderada `risk.pesos` de
+          `config/analytics.yaml` (ADR-029). Chaveada por `(run_id, periodo)`,
+          recálculo total por execução. Populado por pipeline/risk.py
+          (Onda 4). Insumo da Gold `risk_scores`.

@@ -165,6 +165,15 @@ def _seed(db: Path) -> None:
             " pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        con.execute(
+            "create table if not exists ml_staging.risk_scores ("
+            " periodo bigint, id_parlamentar bigint,"
+            " supplier_concentration_score double, political_exposure_score double,"
+            " supplier_dependency_score double, expense_anomaly_score double,"
+            " network_influence_score double, risk_index double,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
     finally:
         con.close()
 
@@ -204,6 +213,7 @@ _SELECAO_FATO = (
     " +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
     " +supplier_concentration +supplier_growth +expense_outliers"
     " +network_edges +network_nodes +politician_similarity"
+    " +risk_scores"
 )
 
 

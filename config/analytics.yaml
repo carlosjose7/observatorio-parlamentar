@@ -8,3 +8,15 @@ analytics:
     # bloquear a execução. Guarda o gate futuro para reavaliar incremental
     # via ADR de superseding (aumento → reabrir decisão, não ajuste cego).
     limite_arestas_recorte: 50000
+  risk:
+    # Pesos do `risk_index` (ADR-029): ponderação dos 5 scores do ADR-027,
+    # `risk_index_p = Σ_i w_i · score_i(p)`. Baseline 0.2 uniforme vigente
+    # (ADR-003/ADR-029) — pesos são fonte única deste YAML, validados pelo
+    # Pydantic (exatamente as 5 chaves, todas > 0, soma 1). Só mudam por ADR
+    # de amendment (pós-Sprint 6.5, com dado real), nunca por operação manual.
+    pesos:
+      supplier_concentration_score: 0.2
+      political_exposure_score: 0.2
+      supplier_dependency_score: 0.2
+      expense_anomaly_score: 0.2
+      network_influence_score: 0.2

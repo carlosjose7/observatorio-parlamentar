@@ -1,24 +1,28 @@
-# tests/pipeline/test_gold_expense_outliers.py
-"""Integração dbt Gold — anomalias de despesa (ADR-026, Onda 2).
+# tests/pipeline/test_gold_risk.py
+"""Integração dbt Gold — risk_scores (ADR-027/029, Onda 4).
 
-Regressão da tabela Gold `expense_outliers` — materializada a partir do
-source `ml_staging` (ADR-026, Opção A: Python single-writer no staging, o
-dbt consome como `source()` e materializa o Gold via `inner join` com
-`fact_despesa`).
+Regressão da tabela Gold `risk_scores` — materializada a partir do source
+`ml_staging` (ADR-026, Opção A: Python single-writer no staging, o dbt
+consome como `source()` e materializa o Gold via `exists` contra
+`dim_parlamentar`, sem inner join por SCD2, ADR-020).
 
 Fluxo realista de duas fases (espelha a DAG):
-1. Dbt build resolve `silver_*` → Gold `fact_despesa` (dimensões + pontes).
-2. Python lê o `fact_despesa` DO DUCKDB (ids de verdade), calcula `ml_staging`
-   (`escrever_expense_outliers_duckdb`, ADR-026 single-writer) e o dbt
-   materializa `expense_outliers` a partir de `source('ml_staging', ...)`.
+1. Dbt build resolve `silver_*` → Gold `fact_despesa` + `supplier_concentration`.
+2. Python lê o `fact_despesa`/`supplier_concentration` DO DUCKDB (ids de
+   verdade), roda as cargas das Ondas 2/3 (`ml_staging.expense_outliers` e
+   `ml_staging.network_nodes` — raws de anomalia e PageRank) e compõe os
+   scores + `risk_index` em `ml_staging.risk_scores`
+   (`executar_carga_ml_risco`, ADR-026/029); o dbt então materializa a Gold.
 
 Coberto aqui:
-- Só despesas ANÔMALAS (is_anomalia = true) entram na Gold; o avaliado
-  completo fica em `ml_staging`.
-- `inner join` com `fact_despesa`: anomalia com id que não resolve NON aparece
-  (lança fora, mesmo princípio ADR-018).
-- Contrato do schema.yml: `not_null`/`unique` de `id_despesa` e
-  integridade referencial (warn) contra fato/dimensões.
+- `main.risk_scores` nasce vazia com o staging vazio (contrato ADR-026) e
+  vira o split dos 5 scores com o staging populado.
+- Grão correto `(periodo, id_parlamentar)` por run e `risk_index`
+  = média das 5 scores (peso 0.2 uniforme do ADR-029).
+- `exists` contra `dim_parlamentar`: score só para parlamentar PROMOVIDO
+  no fato (ADR-018; quarentena não contamina as fontes).
+- Contrato do schema.yml: `not_null` dos scores/`risk_index` e integridade
+  referencial (warn) contra `dim_parlamentar`.
 """
 
 from __future__ import annotations
@@ -47,15 +51,18 @@ def _chave_hmac(monkeypatch):
     O `dim_fornecedor` (requisito do fact_despesa) exige a chave quando há
     fornecedores CPF — mesma garantia dos demais testes Gold.
     """
-    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-expense-outliers-2026")
+    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-risk-2026")
 
 
 def _seed_silver(db: Path) -> None:
     """Popula Silver suficiente para materializar fact_despesa (molde analytics).
 
-    Mesmo seed do `test_gold_analytics.py`: 2 parlamentares (camara/senado),
-    6 despesas (5 resolvíveis + 1 fantasma que vai à quarentena) e as tabelas
-    Silver vazias exigidas pelo build das demais pontes.
+    Mesmo seed do `test_gold_expense_outliers.py`: 2 parlamentares
+    (camara/senado), 6 despesas (5 resolvíveis + 1 fantasma que vai à
+    quarentena) e as tabelas Silver vazias exigidas pelo build das demais
+    pontes. Os raws da Onda 4 (`ml_staging.expense_outliers`,
+    `network_nodes`, `risk_scores`) são criados VAZIOS — a Fase 1 builda os
+    analytics com o staging ainda sem dados.
     """
     con = duckdb.connect(str(db))
     try:
@@ -114,11 +121,8 @@ def _seed_silver(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
-        # ml_staging.expense_outliers VAZIA: a Fase 1 builda os analytics com o
-        # staging ainda sem dados (contrato ADR-026) e o build de
-        # `+fact_despesa`/`+supplier_*` agenda junto os testes de FK que apontam
-        # para a source. O schema/tabela precisam existir (mesmo molde
-        # test_gold_analytics); o conteúdo real chega via `executar_carga_outliers`.
+        # ml_staging VAZIA (contrato ADR-026): a Fase 1 builda os analytics com
+        # o staging ainda sem dados; o conteúdo real chega nas cargas 2/3/4.
         con.execute("create schema if not exists ml_staging")
         con.execute(
             "create table if not exists ml_staging.network_edges ("
@@ -190,9 +194,9 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
 
 
 # FASE 1 — materializar a malha dimensional + fatos + analytics com o
-# `ml_staging` VAZIO (mesmo seed/molde de test_gold_analytics): resolve ids
-# reais de fact_despesa e valida os models. `expense_outliers` Gold nasce
-# vazia (sem dados no staging).
+# `ml_staging` VAZIO (mesmo seed/molde de test_gold_expense_outliers).
+# `+risk_scores` garante que a Gold seja criada e os testes de contrato do
+# schema.yml valem a partir daqui.
 _SELECAO_FATO = (
     "+supplier_concentration +supplier_growth +expense_outliers"
     " +network_edges +network_nodes +politician_similarity"
@@ -214,13 +218,19 @@ def _fact_despesa(db: Path) -> pd.DataFrame:
         con.close()
 
 
-def _dim_data_para_fatos(fatos: pd.DataFrame) -> pd.DataFrame:
-    """Constrói `dim_data` a partir das datas do fato (dia útil = seg-sex).
+def _supplier_concentration(db: Path) -> pd.DataFrame:
+    """Lê a Gold `supplier_concentration` (raw do score de concentração)."""
+    con = duckdb.connect(str(db))
+    try:
+        return con.execute(
+            "select ano, id_parlamentar, hhi from main.supplier_concentration"
+        ).fetchdf()
+    finally:
+        con.close()
 
-    Mantém `is_dia_util` realista pelo dia da semana — datas de fim de semana
-    (ex.: 2019-06-15 sábado, 2019-03-10 domingo) ficam não úteis, o que
-    dispara o critério 6 (dia sem sessão) de forma determinística no seed.
-    """
+
+def _dim_data_para_fatos(fatos: pd.DataFrame) -> pd.DataFrame:
+    """Constrói `dim_data` a partir das datas do fato (dia útil = seg-sex)."""
     linhas = []
     for ts in sorted(fatos["data_sk"].unique()):
         data = pd.Timestamp(str(int(ts)))
@@ -236,93 +246,137 @@ def _dim_data_para_fatos(fatos: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
-def _escrever_ml_staging(db: Path, fatos: pd.DataFrame) -> None:
-    """Calcula a regra de anomalia e grava `ml_staging` (ADR-026 single-writer)."""
+def _preparar_staging(db: Path, fatos: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Popula os raws das Onda 2/3 e devolve os DataFrames para a Onda 4.
+
+    Espelha a DAG: `executar_carga_outliers` grava `ml_staging.expense_outliers`
+    (raw de anomalia) e `executar_carga_ml_rede` grava `ml_staging.network_nodes`
+    (raw de PageRank); ambos são lidos de volta e entregues à
+    `executar_carga_ml_risco` com a Gold `supplier_concentration`.
+    """
     from pipeline.anomalies import executar_carga_outliers
+    from pipeline.network import executar_carga_ml_rede
 
     datas = _dim_data_para_fatos(fatos)
     executar_carga_outliers(
+        fatos, run_id=_FATO_RUN_ID, dim_data=datas, db_path=str(db), source_version="v1"
+    )
+    executar_carga_ml_rede(fatos, run_id=_FATO_RUN_ID, db_path=str(db), source_version="v1")
+
+    con = duckdb.connect(str(db))
+    try:
+        outliers = con.execute(
+            "select id_despesa, id_parlamentar, id_fornecedor, data_sk,"
+            " valor_liquido, is_anomalia from ml_staging.expense_outliers"
+        ).fetchdf()
+        nos = con.execute(
+            "select id_no, tipo_no, periodo, pagerank, degree_centrality,"
+            " comunidade_id from ml_staging.network_nodes"
+        ).fetchdf()
+    finally:
+        con.close()
+    return outliers, nos
+
+
+def _escrever_ml_staging(db: Path) -> None:
+    """Compoe scores + `risk_index` e grava `ml_staging.risk_scores` (ADR-026/029)."""
+    from pipeline.risk import executar_carga_ml_risco
+
+    fatos = _fact_despesa(db)
+    outlieres, nos = _preparar_staging(db, fatos)
+    executar_carga_ml_risco(
+        _supplier_concentration(db),
         fatos,
+        outlieres,
+        nos,
         run_id=_FATO_RUN_ID,
-        dim_data=datas,
         db_path=str(db),
         source_version="v1",
     )
 
 
 _DB = "gold.duckdb"
-_FATO_RUN_ID = "r-gold-expense-outliers"
+_FATO_RUN_ID = "r-gold-risk"
+_SCORES = [
+    "supplier_concentration_score",
+    "political_exposure_score",
+    "supplier_dependency_score",
+    "expense_anomaly_score",
+    "network_influence_score",
+]
 
 
-def test_expense_outliers_gold(tmp_path, monkeypatch):
-    """Gold `expense_outliers` = anomalias resolvidas em `fact_despesa`."""
+def test_risk_gold_fluxo_duas_fases(tmp_path, monkeypatch):
+    """Gold `risk_scores` nasce vazia e passa a ter split do staging populado."""
     db = tmp_path / _DB
     _seed_silver(db)
     _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
 
-    fatos = _fact_despesa(db)
-    assert not fatos.empty
-    _escrever_ml_staging(db, fatos)
+    # FASE 1 — staging vazio → Gold risk_scores vazia (contrato ADR-026).
+    con = duckdb.connect(str(db))
+    try:
+        assert con.execute("select count(*) from main.risk_scores").fetchone()[0] == 0
+    finally:
+        con.close()
 
-    # FASE 2 — com o staging populado, rebuild da Gold expense_outliers.
-    _build_selecao(tmp_path, monkeypatch, "expense_outliers")
+    _escrever_ml_staging(db)
+
+    # FASE 2 — com o staging populado, rebuild da Gold risk_scores.
+    _build_selecao(tmp_path, monkeypatch, "risk_scores")
 
     con = duckdb.connect(str(db))
     try:
         linhas = con.execute(
-            "select id_despesa, num_criterios, run_id"
-            " from main.expense_outliers"
+            "select periodo, id_parlamentar, "
+            + ", ".join(_SCORES)
+            + ", risk_index, run_id from main.risk_scores"
         ).fetchall()
-        # Só anomalias (num_criterios >= 2) materializadas, com run_id do lote.
         assert linhas
-        assert all(r[1] >= 2 for r in linhas)
-        assert all(r[2] == _FATO_RUN_ID for r in linhas)
-        # Toda anomalia Gold é uma despesa REAL do fato (inner join ADR-018).
-        ids_fato = {int(r[0]) for r in con.execute(
-            "select id_despesa from main.fact_despesa"
+        assert all(r[-1] == _FATO_RUN_ID for r in linhas)
+
+        ids_dim = {r[0] for r in con.execute(
+            "select id_parlamentar from main.dim_parlamentar"
         ).fetchall()}
-        for r in linhas:
-            assert int(r[0]) in ids_fato
+        for periodo, id_parlamentar, *valores, risk_index, _ in linhas:
+            # Grão (periodo, id_parlamentar) — parlamentar PROMOVIDO (ADR-018).
+            assert id_parlamentar in ids_dim
+            assert periodo in {2019, 2020}
+            # Todos os scores e o índice vivem em [0, 1] (Min-Max ADR-003).
+            assert all(0.0 <= float(v) <= 1.0 for v in valores)
+            assert 0.0 <= float(risk_index) <= 1.0
+            # ADR-029 (baseline 0.2 uniforme): risk_index = 0.2 × Σ scores.
+            assert float(risk_index) == pytest.approx(0.2 * sum(float(v) for v in valores))
     finally:
         con.close()
 
 
-def test_expense_outliers_ignora_nao_anomalia(tmp_path, monkeypatch):
-    """Despesa que não é anomalia (avaliada como tal) NÃO entra na Gold.
+def test_risk_gold_so_parlamentar_promovido(tmp_path, monkeypatch):
+    """O `exists` do model rejeita parlamentar que não resolve em dim_parlamentar.
 
-    A Gold `expense_outliers` filtra `is_anomalia`; o staging guarda o
-    avaliado completo (para o expense_anomaly_score, ADR-027).
+    Como as fontes da Onda 4 nascem só de `fact_despesa`/`ml_staging` (cujos
+    ids são os PROMOVIDOS de verdade), todo score Gold resolve na dimensão —
+    a ZONA FANTASMA nunca chega a nenhuma fonte (quarentena na Fase 1).
     """
     db = tmp_path / _DB
     _seed_silver(db)
     _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
-
-    fatos = _fact_despesa(db)
-    from pipeline.anomalies import avaliar_criterios
-
-    datas = _dim_data_para_fatos(fatos)
-    resultado = avaliar_criterios(fatos, datas)
-    n_avaliadas = len(resultado)
-    n_anomalias = int((resultado["is_anomalia"]).sum())
-    assert n_anomalias < n_avaliadas
-
-    _escrever_ml_staging(db, fatos)
-    _build_selecao(tmp_path, monkeypatch, "expense_outliers")
+    _escrever_ml_staging(db)
+    _build_selecao(tmp_path, monkeypatch, "risk_scores")
 
     con = duckdb.connect(str(db))
     try:
-        n_materializadas = con.execute(
-            "select count(*) from main.expense_outliers"
-        ).fetchone()[0]
-        n_staging_sem_anomalia = con.execute(
-            "select count(*) from ml_staging.expense_outliers where not is_anomalia"
-        ).fetchone()[0]
-        # Staging guarda o avaliado completo; Gold só as anomalias. Como o seed
-        # (5 despesas de 2 foras de padrão) tende a ter poucas/nenhuma anomalia,
-        # o invariante forte é: Gold ⊆ staging com is_anomalia = true.
-        assert n_materializadas <= con.execute(
-            "select count(*) from ml_staging.expense_outliers where is_anomalia"
-        ).fetchone()[0]
-        assert n_staging_sem_anomalia >= 0
+        ids_gold = {int(r[0]) for r in con.execute(
+            "select distinct id_parlamentar from main.risk_scores"
+        ).fetchall()}
+        ids_dim = {int(r[0]) for r in con.execute(
+            "select id_parlamentar from main.dim_parlamentar"
+        ).fetchall()}
+        assert ids_gold
+        assert ids_gold <= ids_dim
+        # ZONA FANTASMA (id 9999 se houvesse) não aparece — quarentena.
+        ids_fato = {int(r[0]) for r in con.execute(
+            "select distinct id_parlamentar from main.fact_despesa"
+        ).fetchall()}
+        assert ids_gold <= ids_fato
     finally:
         con.close()
