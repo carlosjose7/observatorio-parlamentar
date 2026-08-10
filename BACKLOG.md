@@ -336,6 +336,13 @@
    e preserva `/` e `/health`. Testes `tests/api/test_parlamentares.py` (16)
    com DuckDB determinístico + TestClient. Suíte completa
    `tests` — **228 passed**.
+   **Selo de contrato** (`5f4131f`): `tests/integration/test_api_gold_contrato.
+   py` (5) roda o **dbt real do Gold** (via subprocesso, isolando a conexão
+   read-write do adaptador — API reabre estritamente `read_only`, ADR-026) e
+   trava o contrato pipeline→Gold→API. Apanhou drift real: `dim_data` emite
+   `data` (não `data_completa` do `gold.py:DimData`) — corrigido na consulta
+   de gastos e no fixture da API. Suíte completa `tests` — **233 passed**
+   (212 pipeline + 16 API + 5 integração).
 
 ### Ondas (pendentes — Sprint 6 em curso)
 
@@ -362,4 +369,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.8 — Sprint 6 em curso: **Onda 1 completa** — infra da API (config ADR-008 + `api/repo.py` read-only sobre o Gold, ADR-026), contratos de resposta `api/schemas/parlamentares.py`, endpoints `/parlamentares` e `/parlamentares/{id}/gastos` paginados com filtros e dimensões resolvidas, degradação Gold→503, smoke `/` e `/health` preservados — 228 testes verdes (212 pipeline + 16 API). Sprint 5 fechada (Ondas 0–4, metrics Feature Store + anomalias + rede + `risk_scores`; ADRs 026–030; 212 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
+*Versão atual: 0.8 — Sprint 6 em curso: **Onda 1 completa** — infra da API (config ADR-008 + `api/repo.py` read-only sobre o Gold, ADR-026), contratos de resposta `api/schemas/parlamentares.py`, endpoints `/parlamentares` e `/parlamentares/{id}/gastos` paginados com filtros e dimensões resolvidas, degradação Gold→503, smoke `/` e `/health` preservados, e **selo de contrato pipeline→Gold→API** (`tests/integration`: dbt real do Gold em subprocesso + TestClient; drift `dim_data.data_completa`→`data` corrigido) — 233 testes verdes (212 pipeline + 16 API + 5 integração). Sprint 5 fechada (Ondas 0–4, metrics Feature Store + anomalias + rede + `risk_scores`; ADRs 026–030; 212 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*

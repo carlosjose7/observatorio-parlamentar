@@ -36,6 +36,22 @@ Histórico das alterações, organizado por sprint (ver
   filtros, paginação, dimensões de gastos, 404/422/503. Suíte completa
   `tests` — **228 passed** (212 pipeline + 16 API).
 
+### Corrigido
+- **Selo de contrato pipeline → Gold → API** (`5f4131f`): a revisão da Onda 1
+  apontou que provávamos "API × Gold" mas não "Gold produzido pelo pipeline
+  atual × API". Criado `tests/integration/test_api_gold_contrato.py` (5), que
+  roda o **dbt real do projeto Gold** (mesma seleção comprovada
+  `_SELECAO_FATO` de `test_gold_despesa.py`) via subprocesso (o adaptador
+  dbt-duckdb mantém conexão read-write por processo; isolando o build, a API
+  reabre o arquivo estritamente `read_only` — ADR-026, como em produção) e
+  direciona a API ao Gold construído. O selo **apanhou drift real**: a API
+  lia `dim_data.data_completa`, mas o modelo emite `dim_data.data` (mais um
+  caso do descompasso `gold.py:DimData.data_completa` vs. schema-emitido) — a
+  consulta de gastos foi corrigida para `d.data` e o fixture de
+  `tests/api/test_parlamentares.py` alinhado ao schema real. Agora qualquer
+  mudança de coluna/nome dos modelos Gold quebra a suíte. Suíte completa
+  `tests` — **233 passed** (212 pipeline + 16 API + 5 integração).
+
 ---
 
 ## Sprint 5 — Analytics + ML + Redes (Onda 4 — `risk_scores`)
