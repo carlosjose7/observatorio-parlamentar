@@ -116,6 +116,22 @@ def _seed(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        # ml_staging.expense_outliers VAZIA (contrato ADR-026): o build de
+        # `+fact_despesa`/`+supplier_*` agenda junto os testes de FK da Onda 2
+        # que apontam para a source — o schema/tabela precisam existir mesmo
+        # quando o lote Python ainda não gravou.
+        con.execute("create schema if not exists ml_staging")
+        con.execute(
+            "create table if not exists ml_staging.expense_outliers ("
+            " id_despesa bigint, id_parlamentar bigint, id_fornecedor bigint,"
+            " data_sk bigint, valor_liquido double, zscore double, if_score double,"
+            " criterio_zscore boolean, criterio_if boolean,"
+            " criterio_fornecedor_poucos_clientes boolean, criterio_empresa_nova boolean,"
+            " criterio_valores_identicos boolean, criterio_dia_sem_sessao boolean,"
+            " num_criterios bigint, is_anomalia boolean, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
     finally:
         con.close()
 
@@ -163,7 +179,7 @@ _SELECAO_FATO = (
     " fact_emenda fact_emenda_quarantine"
     " +fact_despesa +fact_despesa_quarantine"
     " +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
-    " +supplier_concentration +supplier_growth"
+    " +supplier_concentration +supplier_growth +expense_outliers"
 )
 
 

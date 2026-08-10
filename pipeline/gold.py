@@ -228,3 +228,43 @@ class SupplierGrowth(BaseModel):
         default=None, description="NULL no primeiro período do fornecedor (sem ano anterior)"
     )
     variacao_pct: float | None
+
+
+class ExpenseOutliers(BaseModel):
+    """Detecção de anomalias estatísticas (ADR-002/§10, Sprint 5/Onda 2).
+
+    Uma despesa anômala — satisfaz **pelo menos dois** dos seis critérios do
+    §10 (Z-score > 2.5, Isolation Forest score < -0.1, fornecedor < 3
+    clientes, empresa < 12 meses, valores idênticos >= 3 no mês, dia sem
+    sessão). Materializada a partir de `ml_staging.expense_outliers`
+    (ADR-026, Opção A — Python single-writer no staging, dbt só materializa
+    o Gold). Grão: (id_despesa). `criterio_*`/`num_criterios` documentam por
+    que cada despesa foi sinalizada; `zscore`/`if_score` preservam os scores
+    da inferência.
+    """
+
+    id_despesa: int
+    id_parlamentar: int
+    id_fornecedor: int | None = Field(
+        default=None, description="Nullable — nem toda despesa resolve fornecedor"
+    )
+    data_sk: int
+    valor_liquido: Decimal
+    zscore: float | None = Field(
+        default=None, description="Score Z do critério 1 (µ/σ do histórico do parlamentar)"
+    )
+    if_score: float | None = Field(
+        default=None, description="Score do Isolation Forest na inferência (critério 2)"
+    )
+    criterio_zscore: bool
+    criterio_if: bool
+    criterio_fornecedor_poucos_clientes: bool
+    criterio_empresa_nova: bool
+    criterio_valores_identicos: bool
+    criterio_dia_sem_sessao: bool
+    num_criterios: int = Field(..., description=">= 2 por construção (ADR-002)")
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str

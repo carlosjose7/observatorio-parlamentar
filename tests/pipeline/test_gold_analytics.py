@@ -119,6 +119,24 @@ def _seed(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        # ml_staging.expense_outliers VAZIA: desde a Onda 2 (Sprint 5) o model
+        # analytics `expense_outliers` dispara testes de FK que apontam para
+        # fact_despesa/dimensões — o build destes agregados agenda junto esses
+        # testes, exigindo que a source `ml_staging` exista no DuckDB (schema
+        # próprio + tabela, contrato ADR-026). Vazia aqui porque este teste
+        # exercita apenas agregados puros; a fonte real é escrita pelo Python.
+        con.execute("create schema if not exists ml_staging")
+        con.execute(
+            "create table if not exists ml_staging.expense_outliers ("
+            " id_despesa bigint, id_parlamentar bigint, id_fornecedor bigint,"
+            " data_sk bigint, valor_liquido double, zscore double, if_score double,"
+            " criterio_zscore boolean, criterio_if boolean,"
+            " criterio_fornecedor_poucos_clientes boolean, criterio_empresa_nova boolean,"
+            " criterio_valores_identicos boolean, criterio_dia_sem_sessao boolean,"
+            " num_criterios bigint, is_anomalia boolean, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
     finally:
         con.close()
 
@@ -153,7 +171,7 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
 
 _SELECAO = (
-    "+supplier_concentration +supplier_growth"
+    "+supplier_concentration +supplier_growth +expense_outliers"
     " +fact_emenda +fact_cartao_cpgf +fact_cartao_cpgf_quarantine"
 )
 

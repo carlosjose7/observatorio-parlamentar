@@ -1,10 +1,13 @@
 version: 2
 
-# Contrato de qualidade dos agregados analíticos puros (ADR-021, Onda 3).
-# Tabelas puramente agregadas de `fact_despesa` (schema + dados), sem ML — por
-# isso o contrato aqui é de agregados: FKs referenciais (parlamentar/fornecedor)
-# e não-nulidade dos agregados, no mesmo padrão das demais camadas Gold.
-# (As tabelas placeholder de ML/rede ficam fora deste arquivo — Sprint 5.)
+# Contrato de qualidade dos agregados analíticos (ADR-021/ADR-026, Ondas 3/2).
+# Tabelas analíticas Gold: `supplier_concentration`/`supplier_growth` são
+# agregações puras de `fact_despesa` (schema + dados, sem ML, Onda 3) e
+# `expense_outliers` é materializada a partir de `ml_staging` (ADR-026, Opção
+# A — Python single-writer; dbt apenas materializa o Gold). FKs referenciais
+# (parlamentar/fornecedor/fato) e não-nulidade no mesmo padrão das demais
+# camadas Gold; os testes de integridade referencial usam `severity: warn`
+# (ADR-022.3a).
 
 models:
   - name: supplier_concentration
@@ -72,3 +75,102 @@ models:
           - not_null
       - name: valor_ano_anterior
       - name: variacao_pct
+
+  - name: expense_outliers
+    description: >
+      Despesas classificadas como anomalia estatística (ADR-002/§10 — PELO
+      MENOS 2 dos 6 critérios). Grão: uma despesa anômala. Materializada a
+      partir de `ml_staging.expense_outliers` (ADR-026, Opção A): o staging é
+      escrito exclusivamente por pipeline/anomalies.py e o dbt só materializa
+      este Gold. `criterio_*`/`num_criterios` documentam por que cada despesa
+      foi sinalizada; `zscore`/`if_score` preservam os scores usados na
+      inferência (ADR-002: contamination 0.05 no treino, threshold < -0.1 na
+      inferência).
+    columns:
+      - name: id_despesa
+        description: Despesa anômala — FK para `fact_despesa`.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('fact_despesa')
+                field: id_despesa
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('fact_despesa')
+                field: id_despesa
+              config:
+                severity: warn
+      - name: id_parlamentar
+        description: Parlamentar responsável pela despesa.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_parlamentar')
+                field: id_parlamentar
+              config:
+                severity: warn
+      - name: id_fornecedor
+        description: Fornecedor da despesa (nullable — nem toda despesa resolve).
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              arguments:
+                to: ref('dim_fornecedor')
+                field: id_fornecedor
+              config:
+                severity: warn
+      - name: data_sk
+        description: Data da despesa (dia sem sessão é um dos critérios).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_data')
+                field: data_sk
+              config:
+                severity: warn
+      - name: valor_liquido
+        tests:
+          - not_null
+      - name: zscore
+        description: Score Z do critério 1 (µ/σ do histórico do parlamentar).
+      - name: if_score
+        description: Score do Isolation Forest na inferência (critério 2).
+      - name: criterio_zscore
+      - name: criterio_if
+      - name: criterio_fornecedor_poucos_clientes
+      - name: criterio_empresa_nova
+      - name: criterio_valores_identicos
+      - name: criterio_dia_sem_sessao
+      - name: num_criterios
+        description: Quantidade de critérios satisfeitos (>= 2 por construção).
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null

@@ -23,3 +23,22 @@ sources:
         description: Transações CPGF CGU normalizados (chave `id`, transform.py).
       - name: data_quality_report
         description: Data Quality Report da Silver (ADR-015), por run_id/tabela.
+
+  - name: ml_staging
+    description: >
+      Stage intermediário dos produtos de ML/rede — escrita EXCLUSIVA por
+      Python (`pipeline/anomalies.py`, `pipeline/network.py`), single-writer
+      (ADR-026, Opção A). Vive no MESMO arquivo DuckDB da Gold
+      (DUCKDB_DATABASE_PATH) mas em schema próprio — o `schema:` mapeia para
+      cá (sem isso o dbt buscaria em `ml_staging.ml_staging_*`). O dbt apenas
+      consome como source e materializa a Gold (ADR-021 / ADR-026.2); nunca
+      escreve neste schema.
+    schema: ml_staging
+    tables:
+      - name: expense_outliers
+        description: >
+          Despesas avaliadas pela regra de anomalia do §10/ADR-002 — os 6
+          critérios booleanos por despesa + `zscore`/`if_score`, `num_criterios`
+          e `is_anomalia` (≥2 critérios). Populado por pipeline/anomalies.py
+          (Onda 2). Insumo da Gold `expense_outliers` (anomalias) e do
+          `expense_anomaly_score` (ADR-027).
