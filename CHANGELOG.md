@@ -8,6 +8,35 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 5 — Analytics + ML + Redes (Onda 4 — `risk_scores`)
+
+### Adicionado
+- **Onda 4 — Scores de risco + `risk_index`** (`7192692`):
+  `pipeline/risk.py` — os 5 scores individuais do ADR-027 consumindo os
+  raws das Ondas anteriores no grão `(periodo, id_parlamentar)` (sem
+  redesenhar fórmula): `supplier_concentration_score` (HHI da Gold
+  `supplier_concentration`, ADR-021), `political_exposure_score`
+  (média_{f∈F_p}(n_f−1) sobre `fact_despesa` promovido, ADR-018),
+  `supplier_dependency_score` (média de `dep_f = Σ_p share²` do fornecedor,
+  BACKLOG item 173), `expense_anomaly_score` (`a_p` = anomalias/despesas de
+  p via `is_anomalia` do `ml_staging.expense_outliers`), `network_
+  influence_score` (PageRank do nó parlamentar em `ml_staging.network_nodes`).
+  Normalização **Min-Max por período** em [0,1] via feature reutilizável
+  `normalizar_minmax` (`minmax` do registry, ADR-003/028; série constante →
+  0.0; raw ausente → 0.0 sem sinal) e composição `risk_index = Σ_i w_i ·
+  score_i` com pesos de `config/analytics.yaml → risk.pesos` (ADR-029, 0.2
+  uniforme baseline; `RiskSettings` Pydantic valida chaves exatas, >0 e
+  soma 1). Escrita exclusiva em `ml_staging.risk_scores` (ADR-026, Opção A).
+  Model dbt Gold `risk_scores.sql` (`exists` contra `dim_parlamentar`, sem
+  inner join por SCD2 — ADR-020) + contrato `RiskScores` em `gold.py` +
+  `sources.yml`/`schema.yml` (not_null de scores/`risk_index`, FK
+  `fk_orphan_pct` warn). Testes: `test_risk.py` (19) + `test_gold_risk.py`
+  (2, fluxo dbt em 2 fases: Gold vazia com staging vazio → split de scores
+  com o staging populado, risco = 0.2×Σ scores). Suíte completa
+  `tests/pipeline` — **210 passed**.
+
+---
+
 ## Sprint 5 — Analytics + ML + Redes (Ondas 1–3 — implementação)
 
 ### Adicionado

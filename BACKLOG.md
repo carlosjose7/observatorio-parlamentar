@@ -292,10 +292,22 @@
    `gold.py`/`schema.yml`; testes `test_network.py` (18) +
    `test_gold_network.py` (2). Suíte `tests/pipeline` — 189 passed.
 
-### Onda 4 (pendentes)
+### Onda 4 (implementada)
 
-- **Onda 4 — Scores + risk_index**: os 5 scores individuais (fórmulas
-  ADR-027), composição final e `risk_scores`.
+☑ **Onda 4 — Scores + risk_index** (`7192692`): `pipeline/risk.py` —
+   os 5 scores individuais do ADR-027 consumindo os raws das Ondas 1–3 no
+   grão `(periodo, id_parlamentar)`: `supplier_concentration_score` (HHI
+   Gold `supplier_concentration`), `political_exposure_score` (média_{f∈F_p}
+   (n_f−1) de `fact_despesa`), `supplier_dependency_score` (`dep_f = Σ_p
+   share²` do fornecedor), `expense_anomaly_score` (`a_p` de
+   `ml_staging.expense_outliers`) e `network_influence_score` (PageRank de
+   `ml_staging.network_nodes`). Normalização Min-Max **por período** via
+   feature `normalizar_minmax` (ADR-003/028) + `risk_index = Σ w_i·score_i`
+   com `risk.pesos` de `config/analytics.yaml` (0.2 uniforme, ADR-029;
+   `RiskSettings` valida soma 1). `ml_staging.risk_scores` (ADR-026) + Gold
+   `risk_scores.sql` (`exists` SCD2-safe) com contrato em `gold.py`/
+   `schema.yml`; testes `test_risk.py` (19) + `test_gold_risk.py` (2). Suíte
+   `tests/pipeline` — **210 passed**.
 
 ---
 
@@ -313,4 +325,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 0.6 — Sprint 5 em curso: Ondas 0–3 completas (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total; Feature Store + Analytics estatística; anomalias `expense_outliers`; grafo bipartido + centralidades + similaridade — 189 testes verdes). Onda 4 (`risk_scores`) pendente. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
+*Versão atual: 0.7 — Sprint 5 em curso: Ondas 0–4 completas (ADR-026 fronteira dbt↔ML via `ml_staging`; ADR-027 fórmulas dos scores §9; ADR-028 contrato Feature Store; ADR-029 pesos baseline vigente; ADR-030 grafo recalculado total; Feature Store + Analytics estatística; anomalias `expense_outliers`; grafo bipartido + centralidades + similaridade; `risk_scores` + `risk_index` — 210 testes verdes). Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025, 129 testes verdes).*
