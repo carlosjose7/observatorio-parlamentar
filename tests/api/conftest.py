@@ -164,6 +164,31 @@ _DDL = {
             watermark_cgu_cartao varchar
         )
     """,
+    "supplier_concentration": """
+        create table supplier_concentration (
+            ano bigint,
+            id_parlamentar bigint,
+            num_fornecedores bigint,
+            total_valor decimal(18, 2),
+            hhi double
+        )
+    """,
+    "risk_scores": """
+        create table risk_scores (
+            periodo bigint,
+            id_parlamentar bigint,
+            supplier_concentration_score double,
+            political_exposure_score double,
+            supplier_dependency_score double,
+            expense_anomaly_score double,
+            network_influence_score double,
+            risk_index double,
+            run_id varchar,
+            pipeline_version varchar,
+            execution_timestamp varchar,
+            source_version varchar
+        )
+    """,
 }
 
 
@@ -269,6 +294,25 @@ def sembrar_gold(caminho) -> None:
              "2026-01-04", None, None, None),
             ("run-2025-12-01", "0.0.9", "2025-12-01 01:00:00", "failed", "senado,cgu_emenda",
              "2025-11-30", None, None, None),
+        ],
+    )
+    con.executemany(
+        "insert into supplier_concentration values (?, ?, ?, ?, ?)",
+        [
+            (2022, 1, 1, Decimal("700.00"), 1.0),
+            (2023, 1, 2, Decimal("1800.50"), 0.721918),
+            (2023, 2, 1, Decimal("900.00"), 1.0),
+        ],
+    )
+    con.executemany(
+        "insert into risk_scores values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (2023, 1, 0.8, 0.2, 0.4, 0.9, 0.6, 0.52, "run-test", "0.1.0",
+             "2023-06-01T00:00:00", "s1"),
+            (2022, 1, 0.8, 0.2, 0.4, 0.2, 0.3, 0.41, "run-test", "0.1.0",
+             "2023-06-01T00:00:00", "s1"),
+            (2023, 2, 0.5, 0.7, 0.1, 0.4, 0.8, 0.5, "run-test", "0.1.0",
+             "2023-06-01T00:00:00", "s1"),
         ],
     )
     con.close()

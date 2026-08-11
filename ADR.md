@@ -1896,4 +1896,75 @@ Consequências:
 
 ---
 
+ADR-032
+Título: Endpoints agent-ready (RF-05) — JSON semântico agregado, não espelho
+dos endpoints de negócio
+
+Status:
+Aceito
+
+Contexto:
+A RF-05/§11 exige endpoints agent-ready (`/agent/parlamentar/{id}`,
+`/agent/fornecedor/{cnpj}`, `/agent/anomalias`, `/agent/context`) que
+retornem "JSON semântico para consumo por LLMs" — e a CU-07 define
+`/agent/context` como "contexto semântico agregado". Ao abrir a Onda 4
+constatamos que **não havia decisão sobre a composição desses payloads**:
+`docs/architecture/ai_architecture.md` é um stub com as rotas; §11 não
+descreve contrato. A matéria-prima está definida em artefatos separados:
+Camada Semântica §8 (métricas com fórmula oficial, "nunca recalcular
+inline"), §9/ADR-027 (5 scores + risk_index), ADR-028 (Feature Store).
+Ondas 1–3 só leram Gold já existente; aqui a composição do payload é
+decisão nova — este ADR a formaliza antes de implementar.
+
+Decisão:
+1. **Agent-ready ≠ espelho dos endpoints de negócio.** Os 4 endpoints
+   retornam JSON aninhado, com rótulos semânticos (nomes legíveis, métricas
+   nomeadas conforme a Camada Semântica §8, datas ISO) — desenhado para um
+   LLM formular respostas, não para um componente chamar outra API.
+2. **Mesma fronteira das Ondas 1–3:** leitura read-only do Gold (ADR-026).
+   Métricas da §8 que dependem de fato são **agregados SQL sobre o Gold já
+   materializado** (`fact_despesa`, `supplier_concentration`, `risk_scores`,
+   `expense_outliers`) — mesmo padrão do `/fornecedores/{cnpj}` da Onda 2.
+   Proibido recalcular análise/ML por request (ADR-030); o vocabulário
+   segue a §8/§9/ADR-028.
+3. **Escopo das métricas:** apenas as computáveis sobre tabelas Gold que
+   existem hoje. `taxa_ausencia`/`indice_alinhamento` (§8) ficam **fora** —
+   dependem de `fact_presenca`/`fact_votacao`, ainda inexistentes no Gold.
+   `hhi` vem de `supplier_concentration` (grão ano×parlamentar); scores de
+   `risk_scores` (período mais recente do parlamentar).
+4. **Composição dos payloads** (definição exata nos schemas
+   `api/schemas/agent.py`, `extra="forbid"`):
+   - `/agent/parlamentar/{id}`: perfil vigente do SCD2 (ADR-020) +
+     métricas §8 do parlamentar (`total_gasto`, `gasto_medio`,
+     `num_transacoes`, `num_fornecedores`, `valor_maximo`, `valor_mediano`,
+     `percentil_95`) + `hhi` recente + risco (`risk_index` e os 5 scores do
+     período mais recente) + contagem de anomalias + top-5 fornecedores por
+     valor.
+   - `/agent/fornecedor/{cnpj_cpf_valor}`: perfil (`dim_fornecedor`) +
+     agregados (`total_recebido`, `gasto_medio`, `valor_maximo`,
+     `num_transacoes`, `num_parlamentares`) + top-5 parlamentares por valor.
+     CPF exposto apenas como hash HMAC (ADR-011).
+   - `/agent/anomalias`: **resumo agregado**, não a lista crua paginada —
+     total, contagem por ano, contagem por critério disparado e top-10 por
+     zscore (com nome do parlamentar).
+   - `/agent/context`: **agregação sistêmica** (CU-07): métricas globais do
+     Gold (total gasto, nº despesas/fornecedores/parlamentares/anomalias),
+     períodos com dados, resumo do último relatório de qualidade e da última
+     execução do pipeline. É o "retrato" pedido antes de investigar um caso.
+
+Consequências:
+- Payloads agent-ready e endpoints de negócio evoluem de forma
+  independente: mudar um não quebra o outro (contratos próprios
+  `extra="forbid"`).
+- Métricas §8 permanecem com fonte única na tabela oficial (§8), mesmo
+  quando re-materializadas por request como agregação sobre o Gold —
+  nenhuma fórmula é reinventada no repo.
+- `fact_presenca`/`fact_votacao` futuras podem ampliar o payload via
+  amendment deste ADR, sem mudar a fronteira.
+- Suíte: `tests/api/test_agent.py` + selo de contrato estendido validam os
+  4 payloads contra o dbt real (200 honesto com staging/agregados vazios,
+  bind das colunas de `risk_scores`/`supplier_concentration`/etc.).
+
+---
+
 <!-- Continue with further ADRs -->

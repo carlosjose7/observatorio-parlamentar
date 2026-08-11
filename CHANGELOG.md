@@ -8,6 +8,45 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 6 — API (FastAPI / Onda 4 — agent-ready ADR-032)
+
+### Adicionado
+- **Onda 4 — endpoints agent-ready RF-05** (`tests/api/test_agent.py`, 8 testes;
+  selo 14→18; suíte 276→**288**): `/agent/parlamentar/{id}` (perfil vigente do
+  SCD2 + métricas §8 `total_gasto`/`gasto_medio`/`num_transacoes`/
+  `num_fornecedores`/`valor_maximo`/`valor_mediano`/`percentil_95` +
+  `hhi_recente`/`hhi_periodo` de `supplier_concentration` + `risk_index` e 5
+  scores do período mais recente de `risk_scores` + contagem/proporção de
+  anomalias + top-5 fornecedores por valor),
+  `/agent/fornecedor/{cnpj_cpf_valor}` (perfil `dim_fornecedor` + agregados
+  `total_recebido`/`gasto_medio`/`valor_maximo`/`num_transacoes`/
+  `num_parlamentares` + top-5 parlamentares; CPF só HMAC, ADR-011),
+  `/agent/anomalias` (**resumo agregado**, não espelho paginado: total, por
+  ano, por critério disparado e top-10 por zscore com nome do parlamentar) e
+  `/agent/context` (**retrato sistêmico**, CU-07: métricas globais do Gold,
+  períodos com dados, resumo do último `data_quality_report` e da última
+  execução `pipeline_runs`). Schemas `api/schemas/agent.py`
+  (`extra="forbid"`), 4 funções em `api/repo.py` (agregações SQL read-only
+  sobre o Gold materializado — nenhuma métrica recalcula por request,
+  ADR-030), router `api/routers/agent.py` (mesmo padrão `_erro_gold` →503,
+  404 nominal).
+- **ADR-032** (novo registro no `ADR.md`): agent-ready ≠ espelho dos
+  endpoints de negócio — payloads **semânticos** que refletem a Camada
+  Semântica §8 e os scores §9/ADR-027/028, na mesma fronteira read-only do
+  ADR-026. **Decisão de escopo**: `taxa_ausencia`/`indice_alinhamento` ficam
+  fora (dependem de `fact_presenca`/`fact_votacao`, ainda inexistentes);
+  `hhi` vem de `supplier_concentration` (grão ano×parlamentar). Aprovado na
+  revisão da Onda 4 (a `docs/architecture/ai_architecture.md` era stub só de
+  rotas; §11 não definia contrato).
+- **Selo de contrato estendido à Onda 4** (`tests/integration/
+  test_api_gold_contrato.py`, 14→18): seed de `ml_staging.risk_scores`
+  atravessa o model dbt até a Gold; `supplier_concentration` derivada do dbt
+  a partir de `fact_despesa` (hhi ≈ 0.5556 em 2023); bind das colunas de
+  risco/concentração/fato/dimensão no `top_fornecedores` com join
+  `is_current` do SCD2.
+
+---
+
 ## Sprint 6 — API (FastAPI / Onda 3 — anomalias, comunidades, qualidade e status)
 
 ### Adicionado

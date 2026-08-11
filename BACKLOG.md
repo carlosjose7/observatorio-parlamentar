@@ -325,6 +325,9 @@
 > agregados (Gold consultado diretamente; nenhuma análise é recalculada por
 > request — ADR-030). **Onda 3 concluída** — anomalias (threshold = piso de
 > zscore), comunidades, qualidade/relatório (ADR-031) e pipeline/status.
+> **Onda 4 concluída** — endpoints agent-ready (ADR-032): JSON semântico
+> agregado para LLMs (`/agent/parlamentar`, `/agent/fornecedor`,
+> `/agent/anomalias` resumo, `/agent/context` retrato sistêmico).
 
 ### Onda 1 (implementada)
 
@@ -401,10 +404,37 @@
    TIMESTAMP e 1 linha. Suíte completa `tests` — **276 passed**
    (212 pipeline + 50 API + 14 integração).
 
-### Ondas (pendentes — Sprint 6 em curso)
+### Onda 4 (implementada)
 
-☐ Onda 4 — endpoints agent-ready (RF-05): `/agent/parlamentar/{id}`,
-   `/agent/fornecedor/{cnpj}`, `/agent/anomalias`, `/agent/context`
+☑ **Onda 4 — Endpoints agent-ready (RF-05/ADR-032)**:
+   `/agent/parlamentar/{id}` — perfil vigente do SCD2 (ADR-020) + métricas §8
+   (`total_gasto`, `gasto_medio`, `num_transacoes`, `num_fornecedores`,
+   `valor_maximo`, `valor_mediano`, `percentil_95` — agregação SQL sobre
+   `fact_despesa` do Gold) + `hhi_recente`/`hhi_periodo`
+   (`supplier_concentration`, grão ano×parlamentar) + `risk_index` e 5 scores
+   do período mais recente (`risk_scores`, ADR-027/029) + contagem/proporção
+   de anomalias (`expense_outliers`) + top-5 fornecedores por valor;
+   `/agent/fornecedor/{cnpj_cpf_valor}` — perfil `dim_fornecedor` + agregados
+   (`total_recebido`, `gasto_medio`, `valor_maximo`, `num_transacoes`,
+   `num_parlamentares`) + top-5 parlamentares (join `is_current`); CPF só
+   HMAC (ADR-011). `/agent/anomalias` — **resumo agregado**, não espelho
+   paginado: total, por ano, por critério disparado e top-10 por zscore com
+   nome do parlamentar. `/agent/context` — **retrato sistêmico** (CU-07):
+   métricas globais do Gold, períodos com dados, resumo do último
+   `data_quality_report` e da última execução `pipeline_runs`. **ADR-032**:
+   JSON semântico para LLM (Camada Semântica §8 + scores §9/ADR-027/028), na
+   mesma fronteira read-only do ADR-026, sem recalcular nada por request
+   (ADR-030); `taxa_ausencia`/`indice_alinhamento` fora por inexistência de
+   `fact_presenca`/`fact_votacao`. Schemas `api/schemas/agent.py`
+   (`extra="forbid"`), 4 funções em `api/repo.py`, router
+   `api/routers/agent.py`. Testes: `tests/api/test_agent.py` (8 — **58 API**);
+   selo de contrato estendido (14→18) — seed `ml_staging.risk_scores`
+   atravessa o model dbt até a Gold, `supplier_concentration` derivada do dbt
+   (hhi ≈ 0.5556) e bind das colunas de risco/concentração/fato/dimensão.
+   Suíte completa `tests` — **288 passed** (212 pipeline + 58 API + 18
+   integração).
+
+### Ondas (pendentes — Sprint 6.5)
 
 > **Dívida técnica aceita no fechamento da Onda 2** (backlog Sprint 6/6.5):
 > **paridade automatizada** dbt model → `schema.yml` → Pydantic → API — os
@@ -430,4 +460,4 @@
    integridade XCom; rodar em CI junto da suíte pytest.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.0 — Sprint 6 em curso: **Onda 3 completa** — `/anomalias?threshold=` (piso de z-score sobre o conjunto sinalizado — decisão fixada na revisão desta Onda 3; 422 para negativo/não-numérico), `/rede/comunidades` (nós materializados por comunidades, leitura de resultado ADR-030), `/qualidade/relatorio` (**ADR-031**: `data_quality_report` da Silver promovida à Gold — a API segue read-only sobre o Gold, ADR-026; correção no selo: materialização `table` em vez de incremental para parar o append/duplicação) e `/pipeline/status` (`pipeline_runs`, ADR-019) — 276 testes verdes (212 pipeline + 50 API + 14 integração). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API). ADRs 001-031. Sprint 5 fechada (212). Sprint 4 fechada (129).*
+*Versão atual: 1.1 — Sprint 6 em curso: **Onda 4 completa** — endpoints agent-ready (RF-05/ADR-032): `/agent/parlamentar/{id}` (perfil SCD2 vigente + métricas §8 + `hhi` de `supplier_concentration` + `risk_index`/5 scores + anomalias + top-5 fornecedores), `/agent/fornecedor/{cnpj_cpf_valor}` (perfil + agregados + top-5 parlamentares), `/agent/anomalias` (**resumo agregado** — total, por ano, por critério, top-10 zscore), `/agent/context` (**retrato sistêmico** CU-07) — 288 testes verdes (212 pipeline + 58 API + 18 integração). Onda 3 completa (anomalias/comunidades/qualidade/pipeline, 276). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).*

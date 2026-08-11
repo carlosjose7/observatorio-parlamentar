@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 5 em curso — **Onda 0 (Arquitetura) completa**: ADR-026 (fronteira dbt↔Python/ML via `ml_staging` + source dbt), ADR-027 (fórmulas dos 5 scores §§9/10), ADR-028 (contrato Feature Store via `pipeline/features.py` + `registry.yaml`), ADR-029 (pesos 0.2 vigentes, revisão pós-Sprint 6.5), ADR-030 (grafo recalculado total por execução). Ondas 1–4 (Feature Store/estatística, anomalias Isolation Forest, rede+clusterização, scores+`risk_index`) pendentes. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025; 129 testes verdes). ADRs 001-030
+> Última atualização: Sprint 6 em curso — **Onda 4 (agent-ready RF-05) completa**: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).
  
 ---
  
@@ -241,19 +241,28 @@ observatorio-parlamentar/
 ├── .github/
 │   └── workflows/
 │       └── pipeline.yml              # CI/CD (placeholder, Sprint 9)
-├── api/                              # FastAPI (scaffold, Sprint 6)
+├── api/                              # FastAPI (Sprint 6 — Ondas 1–4 completas)
 │   ├── routers/
 │   │   ├── __init__.py
-│   │   ├── parlamentares.py          # ┐
-│   │   ├── fornecedores.py           # │ Sprint 6
-│   │   ├── anomalias.py              # │
-│   │   ├── rede.py                   # │
-│   │   └── agent.py                  # ┘
+│   │   ├── parlamentares.py
+│   │   ├── fornecedores.py
+│   │   ├── anomalias.py
+│   │   ├── rede.py
+│   │   ├── qualidade.py
+│   │   ├── pipeline.py
+│   │   └── agent.py                  # agent-ready (ADR-032, Onda 4)
 │   ├── schemas/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── parlamentares.py
+│   │   ├── fornecedores.py
+│   │   ├── anomalias.py
+│   │   ├── rede.py
+│   │   ├── qualidade.py
+│   │   ├── pipeline.py
+│   │   └── agent.py
 │   ├── __init__.py
 │   ├── Dockerfile
-│   ├── dependencies.py               # Sprint 6
+│   ├── repo.py                       # camada read-only sobre o Gold (ADR-026)
 │   └── main.py
 ├── pipeline/                         # ETL (Sprint 3: Bronze + motor Silver; caminho de carga Silver — ADR-023, Sprint 4; Gold)
 │   ├── camara/
@@ -767,4 +776,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.7 — Sprint 5 em curso: **Onda 0 (Arquitetura) completa** — ADR-026 (fronteira dbt↔Python/ML via `ml_staging` + source dbt), ADR-027 (fórmulas dos 5 scores), ADR-028 (contrato Feature Store), ADR-029 (pesos — baseline vigente, revisão pós-Sprint 6.5), ADR-030 (grafo recalculado total por execução). Ondas 1–4 (Feature Store/estatística, anomalias Isolation Forest, rede+clusterização, scores+risk_index) pendentes. Sprint 4 fechada (Gold dimensional + analytics ADR-021/ADR-025; 129 testes verdes); ADRs 001-030.*
+*Versão atual: 1.8 — Sprint 6 em curso: **Onda 4 (agent-ready RF-05) completa** — ADR-032 (JSON semântico para LLMs; agent-ready ≠ espelho dos endpoints de negócio — reflete a Camada Semântica §8 e os scores §9/ADR-027/028, mesma fronteira read-only do ADR-026, sem recálculo por request ADR-030; `taxa_ausencia`/`indice_alinhamento` fora por inexistência de `fact_presenca`/`fact_votacao`): `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` (resumo agregado), `/agent/context` (retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline — ADR-031). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).*

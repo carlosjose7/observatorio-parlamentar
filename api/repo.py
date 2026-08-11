@@ -25,6 +25,24 @@ from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 
 from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
+from api.schemas.agent import (
+    AgentAnomalias,
+    AgentContext,
+    AgentFornecedor,
+    AgentParlamentar,
+    AnomaliaPorAno,
+    AnomaliaPorCriterio,
+    AnomaliaTop,
+    AnomaliasParlamentar,
+    FornecedorTop,
+    MetricasFornecedor,
+    MetricasGlobais,
+    MetricasParlamentar,
+    ParlamentarTop,
+    ResumoPipeline,
+    ResumoQualidade,
+    RiscoParlamentar,
+)
 from api.schemas.qualidade import LinhaQualidade, RelatorioQualidade
 from api.schemas.rede import ComunidadeItem, ListaComunidades
 from api.schemas.fornecedores import (
@@ -637,3 +655,299 @@ def listar_execucoes(*, limite: int) -> PipelineStatus:
         )
         itens.append(ExecucaoPipeline.model_validate(bruto))
     return PipelineStatus(total=len(itens), itens=itens)
+
+
+# ── Onda 4: agent-ready (ADR-032) ───────────────────────────────
+
+
+def _agregado_metricas(con, clausula: str, parametros: list[object]) -> tuple:
+    """Agregados da §8 sobre `fact_despesa` para o grão de uma coluna.
+
+    Métricas da Camada Semântica §8 computadas como agregação SQL sobre o
+    Gold materializado (ADR-032) — mesmo padrão do `/fornecedores/{cnpj}`.
+    Devolve (total_gasto, gasto_medio, num_transacoes, num_fornecedores,
+    valor_maximo, valor_mediano, percentil_95).
+    """
+    return con.execute(
+        "select sum(valor_liquido), avg(valor_liquido), count(*),"
+        " count(distinct id_fornecedor), max(valor_liquido),"
+        " percentile_cont(0.5) within group (order by valor_liquido),"
+        " percentile_cont(0.95) within group (order by valor_liquido)"
+        f" from fact_despesa where {clausula}",
+        parametros,
+    ).fetchone()
+
+
+@_tratar_erro_gold
+def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
+    """Contexto semântico agregado de um parlamentar (ADR-032).
+
+    Reúne perfil vigente (SCD2), métricas §8, `hhi` recente
+    (`supplier_concentration`), scores do período mais recente
+    (`risk_scores`), contagem de anomalias e top-5 fornecedores por valor.
+    Parlamentar inexistente → `None` (router responde 404).
+    """
+    perfil = obter_perfil_parlamentar(id_parlamentar)
+    if perfil is None:
+        return None
+
+    with _conexao() as con:
+        total, medio, n_transacoes, n_fornecedores, maximo, mediano, p95 = (
+            _agregado_metricas(con, "id_parlamentar = ?", [id_parlamentar])
+        )
+        hhi_linha = con.execute(
+            "select ano, hhi from supplier_concentration"
+            " where id_parlamentar = ? order by ano desc limit 1",
+            [id_parlamentar],
+        ).fetchone()
+        risco_linha = con.execute(
+            "select periodo, supplier_concentration_score, political_exposure_score,"
+            " supplier_dependency_score, expense_anomaly_score,"
+            " network_influence_score, risk_index"
+            " from risk_scores where id_parlamentar = ? order by periodo desc limit 1",
+            [id_parlamentar],
+        ).fetchone()
+        num_anomalias = con.execute(
+            "select count(*) from expense_outliers where id_parlamentar = ?",
+            [id_parlamentar],
+        ).fetchone()[0]
+        top_linhas = con.execute(
+            "select fd.id_fornecedor, df.nome_fornecedor,"
+            " sum(fd.valor_liquido) as total_gasto, count(*) as num_transacoes"
+            " from fact_despesa fd"
+            " join dim_fornecedor df on df.id_fornecedor = fd.id_fornecedor"
+            " where fd.id_parlamentar = ?"
+            " group by fd.id_fornecedor, df.nome_fornecedor"
+            " order by total_gasto desc limit 5",
+            [id_parlamentar],
+        ).fetchall()
+
+    risco = (
+        RiscoParlamentar.model_validate(
+            dict(
+                zip(
+                    [
+                        "periodo", "supplier_concentration_score",
+                        "political_exposure_score", "supplier_dependency_score",
+                        "expense_anomaly_score", "network_influence_score",
+                        "risk_index",
+                    ],
+                    risco_linha,
+                )
+            )
+        )
+        if risco_linha is not None
+        else None
+    )
+    metricas = MetricasParlamentar(
+        total_gasto=float(total) if total is not None else None,
+        gasto_medio=float(medio) if medio is not None else None,
+        num_transacoes=n_transacoes or 0,
+        num_fornecedores=n_fornecedores,
+        valor_maximo=float(maximo) if maximo is not None else None,
+        valor_mediano=float(mediano) if mediano is not None else None,
+        percentil_95=float(p95) if p95 is not None else None,
+        hhi_recente=float(hhi_linha[1]) if hhi_linha is not None else None,
+        hhi_periodo=hhi_linha[0] if hhi_linha is not None else None,
+    )
+    return AgentParlamentar(
+        id_parlamentar=perfil.id_parlamentar,
+        fonte=perfil.fonte,
+        nome=perfil.nome,
+        sigla_partido=perfil.sigla_partido,
+        sigla_uf=perfil.sigla_uf,
+        situacao_normalizada=perfil.situacao_normalizada,
+        periodo_vigente_desde=perfil.effective_date.isoformat(),
+        metricas=metricas,
+        risco=risco,
+        anomalias=AnomaliasParlamentar(
+            num_despesas_anomalas=num_anomalias,
+            proporcao=(num_anomalias / n_transacoes) if n_transacoes else None,
+        ),
+        top_fornecedores=[
+            FornecedorTop.model_validate(
+                {
+                    "id_fornecedor": tf[0],
+                    "nome_fornecedor": tf[1],
+                    "total_gasto": float(tf[2]) if tf[2] is not None else None,
+                    "num_transacoes": tf[3],
+                }
+            )
+            for tf in top_linhas
+        ],
+    )
+
+
+@_tratar_erro_gold
+def obter_agente_fornecedor(cnpj_cpf_valor: str) -> AgentFornecedor | None:
+    """Contexto semântico agregado de um fornecedor (ADR-032).
+
+    CNPJ casa exatamente; CPF está pseudonimizado (ADR-011) e não casa pelo
+    número cru — `None` nesse caso (router responde 404).
+    """
+    with _conexao() as con:
+        contexto = _fornecedor_contexto(con, cnpj_cpf_valor)
+        if contexto is None:
+            return None
+        total, medio, n_transacoes, n_parlamentares, maximo = con.execute(
+            "select sum(valor_liquido), avg(valor_liquido), count(*),"
+            " count(distinct id_parlamentar), max(valor_liquido)"
+            " from fact_despesa where id_fornecedor = ?",
+            [contexto.id_fornecedor],
+        ).fetchone()
+        top_linhas = con.execute(
+            "select fd.id_parlamentar, dp.nome,"
+            " sum(fd.valor_liquido) as total_gasto, count(*) as num_transacoes"
+            " from fact_despesa fd"
+            " join dim_parlamentar dp on dp.id_parlamentar = fd.id_parlamentar and dp.is_current"
+            " where fd.id_fornecedor = ?"
+            " group by fd.id_parlamentar, dp.nome"
+            " order by total_gasto desc limit 5",
+            [contexto.id_fornecedor],
+        ).fetchall()
+
+    return AgentFornecedor(
+        id_fornecedor=contexto.id_fornecedor,
+        cnpj_cpf_valor=contexto.cnpj_cpf_valor,
+        tipo_documento=(
+            contexto.tipo_documento.value
+            if contexto.tipo_documento is not None
+            else None
+        ),
+        nome_fornecedor=contexto.nome_fornecedor,
+        metricas=MetricasFornecedor(
+            total_recebido=float(total) if total is not None else None,
+            gasto_medio=float(medio) if medio is not None else None,
+            valor_maximo=float(maximo) if maximo is not None else None,
+            num_transacoes=n_transacoes or 0,
+            num_parlamentares=n_parlamentares,
+        ),
+        top_parlamentares=[
+            ParlamentarTop.model_validate(
+                {
+                    "id_parlamentar": tp[0],
+                    "nome": tp[1],
+                    "total_gasto": float(tp[2]) if tp[2] is not None else None,
+                    "num_transacoes": tp[3],
+                }
+            )
+            for tp in top_linhas
+        ],
+    )
+
+
+@_tratar_erro_gold
+def obter_agente_anomalias() -> AgentAnomalias:
+    """Resumo agregado de anomalias (ADR-032) — não a lista crua paginada.
+
+    Total, contagem por ano (`data_sk` YYYYMMDD), contagem por critério
+    disparado e top-10 por zscore com nome do parlamentar.
+    """
+    with _conexao() as con:
+        total = con.execute("select count(*) from expense_outliers").fetchone()[0]
+        por_ano = con.execute(
+            "select data_sk // 10000 as ano, count(*) as quantidade"
+            " from expense_outliers group by ano order by ano desc"
+        ).fetchall()
+        criterios = con.execute(
+            "select"
+            " count(*) filter (where criterio_zscore),"
+            " count(*) filter (where criterio_if),"
+            " count(*) filter (where criterio_fornecedor_poucos_clientes),"
+            " count(*) filter (where criterio_empresa_nova),"
+            " count(*) filter (where criterio_valores_identicos),"
+            " count(*) filter (where criterio_dia_sem_sessao)"
+            " from expense_outliers"
+        ).fetchone()
+        top = con.execute(
+            "select e.id_despesa, e.id_parlamentar, dp.nome,"
+            " e.valor_liquido, e.zscore, e.num_criterios"
+            " from expense_outliers e"
+            " left join dim_parlamentar dp"
+            " on dp.id_parlamentar = e.id_parlamentar and dp.is_current"
+            " order by e.zscore desc limit 10"
+        ).fetchall()
+
+    nomes_criterios = [
+        ("zscore", criterios[0]),
+        ("isolation_forest", criterios[1]),
+        ("fornecedor_poucos_clientes", criterios[2]),
+        ("empresa_nova", criterios[3]),
+        ("valores_identicos", criterios[4]),
+        ("dia_sem_sessao", criterios[5]),
+    ]
+    return AgentAnomalias(
+        total=total,
+        por_ano=[
+            AnomaliaPorAno.model_validate({"ano": a, "quantidade": q}) for a, q in por_ano
+        ],
+        por_criterio=[
+            AnomaliaPorCriterio(criterio=nome, quantidade=q)
+            for nome, q in nomes_criterios
+            if q
+        ],
+        top_por_zscore=[
+            AnomaliaTop.model_validate(
+                {
+                    "id_despesa": t[0],
+                    "id_parlamentar": t[1],
+                    "nome_parlamentar": t[2],
+                    "valor_liquido": float(t[3]) if t[3] is not None else None,
+                    "zscore": float(t[4]) if t[4] is not None else None,
+                    "num_criterios": t[5],
+                }
+            )
+            for t in top
+        ],
+    )
+
+
+@_tratar_erro_gold
+def obter_agente_contexto() -> AgentContext:
+    """Contexto semântico sistêmico (CU-07/ADR-032) — o "retrato" do Gold."""
+    with _conexao() as con:
+        globais = con.execute(
+            "select sum(valor_liquido), count(*),"
+            " count(distinct id_fornecedor), count(distinct id_parlamentar)"
+            " from fact_despesa"
+        ).fetchone()
+        num_anomalias = con.execute("select count(*) from expense_outliers").fetchone()[0]
+        periodos = con.execute(
+            "select distinct data_sk // 10000 as ano from fact_despesa order by ano"
+        ).fetchall()
+        qual = con.execute(
+            "select run_id, count(*) as tabelas_reportadas,"
+            " sum(total_registros) as total_registros,"
+            " sum(registros_quarentena) as total_quarentena"
+            " from data_quality_report"
+            " group by run_id order by max(execution_timestamp) desc limit 1"
+        ).fetchone()
+        pipe = con.execute(
+            "select run_id, status, execution_timestamp, pipeline_version"
+            " from pipeline_runs order by execution_timestamp desc limit 1"
+        ).fetchone()
+
+    return AgentContext(
+        metricas_globais=MetricasGlobais(
+            total_gasto=float(globais[0]) if globais[0] is not None else None,
+            num_transacoes=globais[1] or 0,
+            num_fornecedores=globais[2],
+            num_parlamentares=globais[3],
+            num_anomalias=num_anomalias,
+        ),
+        periodos_com_dados=[p[0] for p in periodos],
+        qualidade=ResumoQualidade(
+            run_id=qual[0] if qual else None,
+            tabelas_reportadas=qual[1] if qual else None,
+            total_registros=qual[2] if qual else None,
+            total_quarentena=qual[3] if qual else None,
+        ),
+        pipeline=ResumoPipeline(
+            run_id=pipe[0] if pipe else None,
+            status=pipe[1] if pipe else None,
+            execution_timestamp=(
+                pipe[2].isoformat() if pipe and pipe[2] is not None else None
+            ),
+            versao_pipeline=pipe[3] if pipe else None,
+        ),
+    )

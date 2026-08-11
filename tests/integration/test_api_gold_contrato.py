@@ -165,6 +165,13 @@ def _seed(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        # risk_scores alimentada p/ o contrato Onda 4 (risk_index, ADR-029)
+        con.executemany(
+            "insert into ml_staging.risk_scores values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (2023, 1, 0.7, 0.2, 0.3, 0.4, 0.5, 0.35, "r", "p", "2026-01-01 00:00:00", "s"),
+            ],
+        )
     finally:
         con.close()
 
@@ -412,3 +419,76 @@ def test_pipeline_status_liga_schema_de_controle_da_gold(_cliente_gold):
     corpo = _cliente_gold.get("/pipeline/status").json()
     assert corpo["total"] == 0
     assert corpo["itens"] == []
+
+
+# ── Onda 4: agent-ready contra o Gold do dbt ─────────────────────
+
+
+def test_agent_parlamentar_liga_schema_de_risco_e_concentracao(_cliente_gold):
+    """`/agent/parlamentar/1` liga as colunas do Gold emitido pelo dbt (ADR-032).
+
+    `risk_scores` semeada via `ml_staging` → Gold; `supplier_concentration`
+    é derivada pelo dbt de `fact_despesa` (período 2023, hhi ≈ 0.5556). O
+    top de fornecedores resolve nomes em `dim_fornecedor` — se o dbt
+    renomeasse uma coluna de `risk_scores`/`supplier_concentration`, a
+    consulta falharia e o contrato quebraria (503).
+    """
+    corpo = _cliente_gold.get("/agent/parlamentar/1").json()
+    assert corpo["nome"] == "JOSE SILVA"
+    assert corpo["fonte"] == "camara"
+    assert corpo["sigla_partido"] == "PARTIDO B"
+    assert corpo["metricas"]["total_gasto"] == 150.0
+    assert corpo["metricas"]["num_transacoes"] == 2
+    assert corpo["metricas"]["num_fornecedores"] == 2
+    assert corpo["metricas"]["hhi_periodo"] == 2023
+    assert corpo["metricas"]["hhi_recente"] == pytest.approx(0.5556, abs=1e-3)
+    assert corpo["risco"]["periodo"] == 2023
+    assert corpo["risco"]["risk_index"] == 0.35
+    assert corpo["anomalias"]["num_despesas_anomalas"] == 0
+    top = corpo["top_fornecedores"]
+    assert top[0]["nome_fornecedor"] == "LATAM"
+    assert top[0]["total_gasto"] == 100.0
+
+
+def test_agent_fornecedor_liga_schema_de_dimensao_e_fato(_cliente_gold):
+    """`/agent/fornecedor/{cnpj}` liga `dim_fornecedor` + `fact_despesa` do dbt."""
+    corpo = _cliente_gold.get("/agent/fornecedor/12345678000190").json()
+    assert corpo["nome_fornecedor"] == "LATAM"
+    assert corpo["tipo_documento"] == "CNPJ"
+    assert corpo["metricas"]["total_recebido"] == 100.0
+    assert corpo["metricas"]["num_transacoes"] == 1
+    assert corpo["metricas"]["num_parlamentares"] == 1
+    top = corpo["top_parlamentares"]
+    assert top[0]["nome"] == "JOSE SILVA"
+    assert top[0]["total_gasto"] == 100.0
+
+
+def test_agent_anomalias_resumo_liga_schema_de_outliers(_cliente_gold):
+    """`/agent/anomalias` liga as colunas de agregação de `expense_outliers`.
+
+    `ml_staging.expense_outliers` vazio → resumo honesto zerado (a API não
+    recalcula a regra); o bind de `data_sk`/`zscore`/critérios é validado
+    na própria consulta de agregação do endpoint.
+    """
+    corpo = _cliente_gold.get("/agent/anomalias").json()
+    assert corpo["total"] == 0
+    assert corpo["por_ano"] == []
+    assert corpo["por_criterio"] == []
+    assert corpo["top_por_zscore"] == []
+
+
+def test_agent_context_liga_todos_os_schemas_da_gold(_cliente_gold):
+    """`/agent/context` consolida globais + qualidade + pipeline (CU-07/ADR-032)."""
+    corpo = _cliente_gold.get("/agent/context").json()
+    globais = corpo["metricas_globais"]
+    assert globais["total_gasto"] == 350.0
+    assert globais["num_transacoes"] == 3
+    assert globais["num_fornecedores"] == 3
+    assert globais["num_parlamentares"] == 2
+    assert globais["num_anomalias"] == 0
+    assert corpo["periodos_com_dados"] == [2023]
+    assert corpo["qualidade"]["run_id"] == "run-integ-2026"
+    assert corpo["qualidade"]["tabelas_reportadas"] == 1
+    assert corpo["qualidade"]["total_registros"] == 100
+    assert corpo["qualidade"]["total_quarentena"] == 2
+    assert corpo["pipeline"]["run_id"] is None
