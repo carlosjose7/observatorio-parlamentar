@@ -27,7 +27,7 @@ sources:
   - name: ml_staging
     description: >
       Stage intermediário dos produtos de ML/rede — escrita EXCLUSIVA por
-      Python (`pipeline/anomalies.py`, `pipeline/network.py`), single-writer
+      Python (`analytics/anomalies/anomalies.py`, `analytics/network/network.py`), single-writer
       (ADR-026, Opção A). Vive no MESMO arquivo DuckDB da Gold
       (DUCKDB_DATABASE_PATH) mas em schema próprio — o `schema:` mapeia para
       cá (sem isso o dbt buscaria em `ml_staging.ml_staging_*`). O dbt apenas
@@ -39,7 +39,7 @@ sources:
         description: >
           Despesas avaliadas pela regra de anomalia do §10/ADR-002 — os 6
           critérios booleanos por despesa + `zscore`/`if_score`, `num_criterios`
-          e `is_anomalia` (≥2 critérios). Populado por pipeline/anomalies.py
+          e `is_anomalia` (≥2 critérios). Populado por analytics/anomalies/anomalies.py
           (Onda 2). Insumo da Gold `expense_outliers` (anomalias) e do
           `expense_anomaly_score` (ADR-027).
       - name: network_edges
@@ -47,20 +47,20 @@ sources:
           Arestas do grafo bipartido parlamentar↔fornecedor — peso
           `valor_total` (v_{p,f} agregado do período, ADR-030). Chaveada por
           `(run_id, periodo)`; recálculo total por execução (ADR-030.1).
-          Populado por pipeline/network.py (Onda 3). Insumo da Gold
+          Populado por analytics/network/network.py (Onda 3). Insumo da Gold
           `network_edges`.
       - name: network_nodes
         description: >
           Nós do grafo bipartido com métricas de centralidade — `pagerank`
           (network_influence_score cru, ADR-027.5), `degree_centrality` e
           `comunidade_id`. Chaveada por `(run_id, periodo)` (ADR-030.1).
-          Populado por pipeline/network.py (Onda 3). Insumo da Gold
+          Populado por analytics/network/network.py (Onda 3). Insumo da Gold
           `network_nodes`.
       - name: politician_similarity
         description: >
           Pares de parlamentares com similaridade de cosseno por sobreposição
           de fornecedores (CU-08, ADR-030.5). Chaveada por
-          `(run_id, periodo)` (ADR-030.1). Populado por pipeline/network.py
+          `(run_id, periodo)` (ADR-030.1). Populado por analytics/network/network.py
           (Onda 3). Insumo da Gold `politician_similarity`.
       - name: risk_scores
         description: >
@@ -68,5 +68,5 @@ sources:
           individuais do ADR-027 (normalizados Min-Max em [0,1], feature
           `minmax` ADR-028) e a composição ponderada `risk.pesos` de
           `config/analytics.yaml` (ADR-029). Chaveada por `(run_id, periodo)`,
-          recálculo total por execução. Populado por pipeline/risk.py
+          recálculo total por execução. Populado por analytics/parliamentarians/risk.py
           (Onda 4). Insumo da Gold `risk_scores`.

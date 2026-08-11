@@ -305,19 +305,22 @@ observatorio-parlamentar/
 │   ├── silver.py                     # Sprint 3
 │   ├── gold.py                       # Sprint 4
 │   ├── quality.py                    # Sprint 3
-│   ├── analytics.py                  # Sprint 5
-│   ├── network.py                    # Sprint 5
-│   ├── features.py                   # Sprint 5
-│   └── pipeline.py                   # Entrypoint principal
-├── analytics/                        # Módulos analíticos (scaffold, Sprint 5)
-│   ├── suppliers/
-│   │   └── __init__.py
+│   ├── parlamento.py                 # Sprint 3
+│   └── logging.py
+├── analytics/                        # Módulos analíticos (Sprint 5)
+│   ├── features.py                   # Contrato da Feature Store (ADR-028)
 │   ├── parliamentarians/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── analytics.py              # Onda 1 — estatística descritiva e correlações
+│   │   └── risk.py                   # Onda 4 — scores de risco e risk_index
 │   ├── anomalies/
-│   │   └── __init__.py
-│   └── network/
-│       └── __init__.py
+│   │   ├── __init__.py
+│   │   └── anomalies.py              # Onda 2 — detecção de anomalias (§10/ADR-002)
+│   ├── network/
+│   │   ├── __init__.py
+│   │   └── network.py                # Onda 3 — grafo bipartido parlamentar↔fornecedor
+│   └── suppliers/
+│       └── __init__.py               # scaffold
 ├── dashboard/                        # Streamlit (scaffold, Sprint 7)
 │   ├── pages/
 │   │   ├── .gitkeep

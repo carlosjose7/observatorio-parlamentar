@@ -1,4 +1,4 @@
-"""pipeline/analytics.py — estatística descritiva e correlações (Sprint 5, Onda 1).
+"""analytics/parliamentarians/analytics.py — estatística descritiva e correlações (Sprint 5, Onda 1).
 
 Implementa a Onda 1 de Analytics (PROJECT_CONTEXT §13): estatística
 descritiva e correlações que alimentam as features registradas na
@@ -8,7 +8,7 @@ pura e determinística (sem ML) — o reservado para as Ondas 2/3
 
 Cada função consome um DataFrame de fatos Gold (ex: `fact_despesa`) no
 grão correto e devolve métricas que correspondem a features do registry
-(ADR-028). O contrato de features é validado por `pipeline/features.py`;
+(ADR-028). O contrato de features é validado por `analytics/features.py`;
 estas funções apenas documentam, via log estruturado, quais features do
 registry consomem.
 """
@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import structlog
 
-from pipeline.features import carregar_registry
+from analytics.features import carregar_registry
 
 logger = structlog.get_logger()
 
@@ -121,7 +121,7 @@ def normalizar_minmax(serie: pd.Series) -> pd.Series:
     (`feature_store/registry.yaml`, ADR-028): `norm(x) = (x − min_X(x)) /
     (max_X(x) − min_X(x))` no universo `X` do período (ADR-003/ADR-027).
     É a implementação REUTILIZÁVEL da feature — o módulo de scores
-    (`pipeline/risk.py`) consome esta função; nada de versão solta.
+    (`analytics/parliamentarians/risk.py`) consome esta função; nada de versão solta.
 
     Args:
         serie: Série numérica com os valores crus de um score no universo
@@ -201,7 +201,7 @@ def resumo_por_parlamentar(
 def validar_features_no_registry(registry_path: str | None = None) -> list[str]:
     """Conferência de rastreabilidade: features que o registry declara.
 
-    Consulta o `feature_store/registry.yaml` via `pipeline/features.py`
+    Consulta o `feature_store/registry.yaml` via `analytics/features.py`
     (ADR-028) e devolve os nomes de features que hoje são consumidas
     pela camada analítica (scores do ADR-027). Serve de guarda
     documental: qualquer score calculado sem registro no registry deve

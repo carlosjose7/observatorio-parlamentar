@@ -5,7 +5,7 @@
 -- padrão de gasto (CU-08).
 --
 -- Fonte: `ml_staging.politician_similarity` — escrita EXCLUSIVA por
--- pipeline/network.py (ADR-026, Opção A: Python single-writer no staging; o
+-- analytics/network/network.py (ADR-026, Opção A: Python single-writer no staging; o
 -- dbt apenas consome como source e materializa esta Gold, ADR-021/026.2).
 -- Deriva do mesmo grafo do run corrente (comunidades/similaridade,
 -- ADR-030.5). `exists` contra `dim_parlamentar` garante que só promovido

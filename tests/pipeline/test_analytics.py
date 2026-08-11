@@ -1,7 +1,7 @@
 # tests/pipeline/test_analytics.py
 """Estatística descritiva e correlações da Sprint 5/Onda 1.
 
-Cobre `pipeline/analytics.py`: resumo descritivo (métricas §8),
+Cobre `analytics/parliamentarians/analytics.py`: resumo descritivo (métricas §8),
 correlação de Pearson entre colunas de fatos e agregação por
 parlamentar (insumo ADR-027). São funções puras (sem ML) e
 determinísticas — o reservado para ML/rede é das Ondas 2/3.
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pipeline.analytics import (
+from analytics.parliamentarians.analytics import (
     correlacao_pearson,
     resumo_estatistico,
     resumo_por_parlamentar,

@@ -1,4 +1,4 @@
-"""pipeline/network.py — grafo bipartido parlamentar↔fornecedor (Sprint 5, Onda 3).
+"""analytics/network/network.py — grafo bipartido parlamentar↔fornecedor (Sprint 5, Onda 3).
 
 Constrói a rede de relacionamentos entre parlamentares e fornecedores a
 partir do fato promovido `fact_despesa` (Sprint 4 Gold). O grafo é
@@ -37,7 +37,7 @@ import pandas as pd
 import structlog
 
 from pipeline.config import get_analytics
-from pipeline.features import carregar_registry
+from analytics.features import carregar_registry
 
 logger = structlog.get_logger()
 

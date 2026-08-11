@@ -1,7 +1,7 @@
 # tests/pipeline/test_risk.py
 """Scores de risco individual e `risk_index` (Sprint 5, Onda 4).
 
-Cobre `pipeline/risk.py` — ADR-027 (os 5 scores individuais com fórmulas
+Cobre `analytics/parliamentarians/risk.py` — ADR-027 (os 5 scores individuais com fórmulas
 fechadas: concentração HHI, exposição política, dependência de fornecedor,
 anomalia de despesa, influência em rede), ADR-029 (composição ponderada
 `risk_index` com `risk.pesos` da config), ADR-003/ADR-028 (normalização
@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import pipeline.risk as risco
+import analytics.parliamentarians.risk as risco
 
 _RAIZ = Path(__file__).resolve().parents[2]
 if str(_RAIZ) not in sys.path:

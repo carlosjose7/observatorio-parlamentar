@@ -238,7 +238,7 @@ def _dim_data_para_fatos(fatos: pd.DataFrame) -> pd.DataFrame:
 
 def _escrever_ml_staging(db: Path, fatos: pd.DataFrame) -> None:
     """Calcula a regra de anomalia e grava `ml_staging` (ADR-026 single-writer)."""
-    from pipeline.anomalies import executar_carga_outliers
+    from analytics.anomalies.anomalies import executar_carga_outliers
 
     datas = _dim_data_para_fatos(fatos)
     executar_carga_outliers(
@@ -298,7 +298,7 @@ def test_expense_outliers_ignora_nao_anomalia(tmp_path, monkeypatch):
     _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
 
     fatos = _fact_despesa(db)
-    from pipeline.anomalies import avaliar_criterios
+    from analytics.anomalies.anomalies import avaliar_criterios
 
     datas = _dim_data_para_fatos(fatos)
     resultado = avaliar_criterios(fatos, datas)

@@ -254,8 +254,8 @@ def _preparar_staging(db: Path, fatos: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
     (raw de PageRank); ambos são lidos de volta e entregues à
     `executar_carga_ml_risco` com a Gold `supplier_concentration`.
     """
-    from pipeline.anomalies import executar_carga_outliers
-    from pipeline.network import executar_carga_ml_rede
+    from analytics.anomalies.anomalies import executar_carga_outliers
+    from analytics.network.network import executar_carga_ml_rede
 
     datas = _dim_data_para_fatos(fatos)
     executar_carga_outliers(
@@ -280,7 +280,7 @@ def _preparar_staging(db: Path, fatos: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
 
 def _escrever_ml_staging(db: Path) -> None:
     """Compoe scores + `risk_index` e grava `ml_staging.risk_scores` (ADR-026/029)."""
-    from pipeline.risk import executar_carga_ml_risco
+    from analytics.parliamentarians.risk import executar_carga_ml_risco
 
     fatos = _fact_despesa(db)
     outlieres, nos = _preparar_staging(db, fatos)

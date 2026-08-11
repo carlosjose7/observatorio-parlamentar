@@ -1,5 +1,5 @@
 # tests/pipeline/test_features.py
-"""Contrato da Feature Store (ADR-028) — `pipeline/features.py`.
+"""Contrato da Feature Store (ADR-028) — `analytics/features.py`.
 
 Valida que o `feature_store/registry.yaml` respeita o contrato Pydantic
 (ADR-028.1), que nomes são únicos (ADR-028.3) e que toda feature de
@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from pipeline.features import (
+from analytics.features import (
     Feature,
     FeatureCategoria,
     FeatureRegistry,

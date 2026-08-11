@@ -81,7 +81,7 @@ models:
       Despesas classificadas como anomalia estatística (ADR-002/§10 — PELO
       MENOS 2 dos 6 critérios). Grão: uma despesa anômala. Materializada a
       partir de `ml_staging.expense_outliers` (ADR-026, Opção A): o staging é
-      escrito exclusivamente por pipeline/anomalies.py e o dbt só materializa
+      escrito exclusivamente por analytics/anomalies/anomalies.py e o dbt só materializa
       este Gold. `criterio_*`/`num_criterios` documentam por que cada despesa
       foi sinalizada; `zscore`/`if_score` preservam os scores usados na
       inferência (ADR-002: contamination 0.05 no treino, threshold < -0.1 na

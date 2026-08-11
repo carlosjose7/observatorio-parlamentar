@@ -4,7 +4,7 @@
 -- empresa < 12 meses, valores idênticos >= 3 no mês, dia sem sessão).
 --
 -- Fonte: `ml_staging.expense_outliers` — escrita EXCLUSIVA por
--- pipeline/anomalies.py (ADR-026, Opção A: Python single-writer no staging;
+-- analytics/anomalies/anomalies.py (ADR-026, Opção A: Python single-writer no staging;
 -- o dbt apenas consome como source e materializa esta Gold, ADR-021/026.2).
 -- Só as despesas ANÔMALAS (is_anomalia = true) entram na Gold; o staging
 -- guarda o avaliado completo para auditoria e para o `expense_anomaly_score`

@@ -1,7 +1,7 @@
 # tests/pipeline/test_anomalies.py
 """Detecção de anomalias de despesa (Sprint 5, Onda 2).
 
-Cobre `pipeline/anomalies.py` — o predicado `regra_anomalia` do §10/ADR-002:
+Cobre `analytics/anomalies/anomalies.py` — o predicado `regra_anomalia` do §10/ADR-002:
 uma despesa é anomalia quando satisfaz PELO MENOS 2 dos 6 critérios. Verifica:
 
 - Cada um dos 6 critérios isoladamente (`criterio_*`), com thresholds exatos
@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pipeline.anomalies import (
+from analytics.anomalies.anomalies import (
     IF_CONTAMINACAO,
     IF_LIMIAR_SCORE,
     ZSCORE_LIMIAR,
@@ -240,7 +240,7 @@ def test_regra_anomalia_registrada_no_registry():
     registry (categoria `funcao`, consumidora de expense_anomaly_score e
     expense_outliers) estaria quebrado.
     """
-    from pipeline.anomalies import regra_anomalia_no_registry
+    from analytics.anomalies.anomalies import regra_anomalia_no_registry
 
     assert regra_anomalia_no_registry() is True
 

@@ -1,4 +1,4 @@
-"""pipeline/anomalies.py — detecção de anomalias estatísticas (Sprint 5, Onda 2).
+"""analytics/anomalies/anomalies.py — detecção de anomalias estatísticas (Sprint 5, Onda 2).
 
 Implementa a definição formal de anomalia do §10 / ADR-002
 (PROJECT_CONTEXT.md): uma despesa é **anomalia estatística** quando satisfaz
@@ -37,7 +37,7 @@ import numpy as np
 import pandas as pd
 import structlog
 
-from pipeline.features import carregar_registry
+from analytics.features import carregar_registry
 
 logger = structlog.get_logger()
 

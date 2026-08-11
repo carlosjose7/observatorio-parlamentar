@@ -459,5 +459,15 @@
    a estrutura de dependências de todas as tasks (ordem passada) e a
    integridade XCom; rodar em CI junto da suíte pytest.
 
+☑ **Manutenção estrutural — realocação dos módulos analíticos** (padrão §6):
+   `analytics.py`/`risk.py` → `analytics/parliamentarians/`, `anomalies.py` →
+   `analytics/anomalies/`, `network.py` → `analytics/network/`, `features.py`
+   → `analytics/features.py` (git mv, histórico preservado). Imports internos,
+   docstrings e comentários ativos sincronizados; referência obsoleta a
+   `pipeline/pipeline.py` removida da árvore §6. Suíte 288 testes verdes após
+   a realocação (230 pipeline + 58 API).
+
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
 *Versão atual: 1.1 — **Sprint 6 fechada** — Onda 4 completa: endpoints agent-ready (RF-05/ADR-032): `/agent/parlamentar/{id}` (perfil SCD2 vigente + métricas §8 + `hhi` de `supplier_concentration` + `risk_index`/5 scores + anomalias + top-5 fornecedores), `/agent/fornecedor/{cnpj_cpf_valor}` (perfil + agregados + top-5 parlamentares), `/agent/anomalias` (**resumo agregado** — total, por ano, por critério, top-10 zscore), `/agent/context` (**retrato sistêmico** CU-07) — 288 testes verdes (212 pipeline + 58 API + 18 integração). Onda 3 completa (anomalias/comunidades/qualidade/pipeline, 276). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API + **DuckDB real de dev desatualizado — escopo da Sprint 6.5**). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).*
+
+*Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API).*

@@ -298,9 +298,9 @@ class RiskSettings(_StrictModel):
 class AnalyticsSettings(_StrictModel):
     """Configuração da camada analítica/ML da Sprint 5.
 
-    Topos consumidos por `pipeline/analytics.py` (Onda 1),
-    `pipeline/anomalies.py` (Onda 2), `pipeline/network.py` (Onda 3) e
-    `pipeline/risk.py` (Onda 4 — `risk.pesos`, ADR-029).
+    Topos consumidos por `analytics/parliamentarians/analytics.py` (Onda 1),
+    `analytics/anomalies/anomalies.py` (Onda 2), `analytics/network/network.py` (Onda 3) e
+    `analytics/parliamentarians/risk.py` (Onda 4 — `risk.pesos`, ADR-029).
     """
 
     rede: RedeSettings = Field(default_factory=RedeSettings)

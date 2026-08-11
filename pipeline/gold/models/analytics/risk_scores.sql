@@ -5,7 +5,7 @@
 -- `Σ_i w_i · score_i(p)` com pesos de `config/analytics.yaml → risk.pesos`
 -- (ADR-029 — baseline 0.2 uniforme, revisão empírica pós-Sprint 6.5).
 --
--- Fonte: `ml_staging.risk_scores` — escrita EXCLUSIVA por pipeline/risk.py
+-- Fonte: `ml_staging.risk_scores` — escrita EXCLUSIVA por analytics/parliamentarians/risk.py
 -- (ADR-026, Opção A: Python single-writer no staging; o dbt apenas consome
 -- como source e materializa esta Gold, ADR-021/026.2). Recálculo total por
 -- execução, chaveado por `(run_id, periodo)`.

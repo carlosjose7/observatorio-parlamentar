@@ -226,7 +226,7 @@ def _fact_despesa(db: Path) -> pd.DataFrame:
 
 def _escrever_ml_staging(db: Path, fatos: pd.DataFrame) -> None:
     """Reconstrói o grafo do run corrente e grava `ml_staging` (ADR-030.1)."""
-    from pipeline.network import executar_carga_ml_rede
+    from analytics.network.network import executar_carga_ml_rede
 
     executar_carga_ml_rede(
         fatos,

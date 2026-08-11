@@ -54,7 +54,7 @@ flowchart LR
 | **Bronze** | `pipeline/bronze.py` | Persistência raw em Parquet com metadados de ingestão |
 | **Silver** | `pipeline/silver.py` | Limpeza, normalização, deduplicação, validação Pandera |
 | **Gold** | `pipeline/gold.py` | Construção do Star Schema (fatos + dimensões) |
-| **Analytics** | `pipeline/analytics.py` | Scores de risco, anomalias, análise de redes |
+| **Analytics** | `analytics/` | Scores de risco, anomalias, análise de redes |
 | **Qualidade** | `pipeline/quality.py` | Relatório de qualidade de dados por execução |
 
 ## Reproductibilidade

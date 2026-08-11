@@ -1,5 +1,5 @@
 # Feature registry — fonte única de metadados de features (ADR-028).
-# Validado por pipeline/features.py (Pydantic) na carga e em testes.
+# Validado por analytics/features.py (Pydantic) na carga e em testes.
 # Campos obrigatórios (ADR-028.3): nome, descricao, formula, origem,
 # tipo, categoria, ultima_atualizacao, consumidores. Feature de categoria
 # agregado/ml/composicao exige `tabela`; apenas `funcao` dispensa.

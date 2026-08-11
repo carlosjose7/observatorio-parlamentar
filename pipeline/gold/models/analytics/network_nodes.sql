@@ -3,7 +3,7 @@
 -- `network_influence_score` cru (ADR-027.5 — normalizado no consumo);
 -- `degree_centrality`/`comunidade_id` complementam a análise de rede.
 --
--- Fonte: `ml_staging.network_nodes` — escrita EXCLUSIVA por pipeline/network.py
+-- Fonte: `ml_staging.network_nodes` — escrita EXCLUSIVA por analytics/network/network.py
 -- (ADR-026, Opção A: Python single-writer no staging; o dbt apenas consome
 -- como source e materializa esta Gold, ADR-021/026.2). Recálculo total por
 -- execução, chaveado por `(run_id, periodo)` (ADR-030.1).

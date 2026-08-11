@@ -1,4 +1,4 @@
-"""pipeline/risk.py - scores de risco e `risk_index` (Sprint 5, Onda 4).
+"""analytics/parliamentarians/risk.py - scores de risco e `risk_index` (Sprint 5, Onda 4).
 
 Implementa a Onda 4 (ADR-027/ADR-029): os **5 scores individuais** do §9
 com suas fórmulas fechadas no ADR-027 e a **composição final** `risk_index`
@@ -19,7 +19,7 @@ Fontes dos raws (grão `(periodo, id_parlamentar)`):
 
 Antes da ponderação, cada score é **normalizado Min-Max para [0, 1]**
 (ADR-003) usando a feature `minmax` da Feature Store (ADR-028) - a função
-reutilizável `pipeline/analytics.normalizar_minmax`, NÃO uma versão solta
+reutilizável `analytics/parliamentarians/analytics.normalizar_minmax`, NÃO uma versão solta
 aqui. O `risk_index` = `sum_i w_i * score_i(p)`, `w_i` lidos de `risk.pesos`
 (fonte única ADR-008/ADR-029 - nunca constantes no código).
 
@@ -38,9 +38,9 @@ import numpy as np
 import pandas as pd
 import structlog
 
-from pipeline.analytics import normalizar_minmax
+from analytics.parliamentarians.analytics import normalizar_minmax
 from pipeline.config import SCORES_RISCO, get_analytics
-from pipeline.features import carregar_registry
+from analytics.features import carregar_registry
 
 logger = structlog.get_logger()
 

@@ -8,6 +8,23 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 6.5 — Validação End-to-End (manutenção estrutural)
+
+### Movido
+- **Módulos analíticos realocados de `pipeline/` para `analytics/`**
+  (padrão canônico do `PROJECT_CONTEXT.md §6`, que já previa o pacote como
+  destino dos módulos analíticos — scaffold morto agora povoado):
+  - `pipeline/analytics.py` → `analytics/parliamentarians/analytics.py` (Onda 1)
+  - `pipeline/risk.py` → `analytics/parliamentarians/risk.py` (Onda 4)
+  - `pipeline/anomalies.py` → `analytics/anomalies/anomalies.py` (Onda 2)
+  - `pipeline/network.py` → `analytics/network/network.py` (Onda 3)
+  - `pipeline/features.py` → `analytics/features.py` (contrato Feature Store, ADR-028)
+  - `git mv` (histórico preservado); imports internos (`risk`→`analytics.parliamentarians.analytics`, demais→`analytics.features`), docstrings e comentários ativos sincronizados (SQL do Gold, `sources.yml`, `schema.yml`, `feature_store/registry.yaml`, `pipeline/config.py`, `docs/architecture/arch_pipeline.md`). Registros históricos (ADR/BACKLOG/CHANGELOG) preservados.
+- **Removida referência a `pipeline/pipeline.py`** (entrypoint inexistente) da árvore §6 — os entrypoints reais são o DAG (`pipeline/dags/pipeline_dag.py`) e `scripts/run_e2e_local.py`.
+- **Árvore §6 atualizada**: `analytics/` documentado com a estrutura real; `pipeline/` sem os módulos analíticos; suíte **288 testes verdes** (230 pipeline + 58 API) após a realocação.
+
+---
+
 ## Sprint 6 — API (FastAPI / Onda 4 — agent-ready ADR-032)
 
 ### Adicionado

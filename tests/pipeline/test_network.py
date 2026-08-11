@@ -1,7 +1,7 @@
 # tests/pipeline/test_network.py
 """Grafo bipartido parlamentar↔fornecedor (Sprint 5, Onda 3).
 
-Cobre `pipeline/network.py` — ADR-030 (grafo bipartido, aresta = valor gasto,
+Cobre `analytics/network/network.py` — ADR-030 (grafo bipartido, aresta = valor gasto,
 nós = parlamentares/fornecedores), ADR-030.1 (recálculo total por execução,
 PageRank global do período), ADR-027.5 (`network_influence_score` = PageRank
 normalizado), ADR-030.3 (disjuntor de custo por volume de arestas) e a
@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import pipeline.network as rede
+import analytics.network.network as rede
 
 _RAIZ = Path(__file__).resolve().parents[2]
 if str(_RAIZ) not in sys.path:

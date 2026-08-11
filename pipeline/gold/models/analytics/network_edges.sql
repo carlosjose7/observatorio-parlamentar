@@ -2,7 +2,7 @@
 -- Grão: (id_parlamentar, id_fornecedor, periodo) por run. `valor_total` é o
 -- peso da aresta `v_{p,f}` — valor agregado do período (ADR-030/030.1).
 --
--- Fonte: `ml_staging.network_edges` — escrita EXCLUSIVA por pipeline/network.py
+-- Fonte: `ml_staging.network_edges` — escrita EXCLUSIVA por analytics/network/network.py
 -- (ADR-026, Opção A: Python single-writer no staging; o dbt apenas consome
 -- como source e materializa esta Gold, ADR-021/026.2). Recálculo total por
 -- execução, chaveado por `(run_id, periodo)` (ADR-030.1). O mesmo princípio

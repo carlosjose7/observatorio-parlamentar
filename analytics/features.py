@@ -1,4 +1,4 @@
-"""pipeline/features.py — Contrato da Feature Store (ADR-028).
+"""analytics/features.py — Contrato da Feature Store (ADR-028).
 
 Implementa o ADR-028 (Sprint 5/Onda 1): o `feature_store/registry.yaml`
 deixa de ser scaffold vazio e passa a ser a fonte única de metadados de
