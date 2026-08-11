@@ -75,6 +75,49 @@ def _executar_silver(**context):
     }
 
 
+def _executar_gold(**context):
+    """Build das tabelas Gold via dbt (ADR-018/ADR-026) após Bronze→Silver.
+
+    Roda `dbt build` completo no projeto `pipeline/gold` num SUBPROCESSO
+    (mesmo motivo do teste de contrato: o adaptador dbt-duckdb mantém uma
+    conexão read-write por processo — subprocesso efêmero libera o DuckDB ao
+    sair, permitindo que a API o reabra read-only). `get_dbt_vars()` injeta a
+    var exigida por sources/schema; sem `--vars` o dbt falha em vez de
+    aplicar um default divergente (PROJECT_CONTEXT §15). Só é seguro rodar em
+    processo próprio porque no worker do Airflow ninguém mais mantém conexão.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    RAIZ = Path(__file__).resolve().parents[2]
+    GOLD = RAIZ / "pipeline" / "gold"
+    codigo = (
+        f"sys.path.insert(0, {str(RAIZ)!r})\n"
+        f"sys.path.insert(0, {str(GOLD)!r})\n"
+        "from dbt.cli.main import dbtRunner\n"
+        "from pipeline.config import get_dbt_vars\n"
+        f"r = dbtRunner().invoke([\n"
+        f"    'build',\n"
+        f"    '--project-dir', {str(GOLD)!r},\n"
+        f"    '--profiles-dir', {str(GOLD)!r},\n"
+        f"    '--vars', json.dumps(get_dbt_vars()),\n"
+        "]\n"
+        ")\n"
+        "raise SystemExit(0 if r.success else 1)\n"
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(
+            filter(bool, (str(GOLD), os.environ.get("PYTHONPATH", "")))
+        ),
+    }
+    subprocess.run([sys.executable, "-c", codigo], env=env, check=True)
+    return "gold_pronto"
+
+
 with DAG(
     dag_id="observatorio_pipeline",
     description="Pipeline principal de ingestão e transformação de dados"
@@ -96,4 +139,9 @@ with DAG(
         python_callable=_executar_silver,
     )
 
-    executar_bronze >> executar_silver
+    executar_gold = PythonOperator(
+        task_id="executar_gold",
+        python_callable=_executar_gold,
+    )
+
+    executar_bronze >> executar_silver >> executar_gold

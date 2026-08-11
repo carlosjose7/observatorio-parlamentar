@@ -37,12 +37,14 @@ def _parse_csv(
     run_meta: LoadMetadata,
     ano: int,
 ) -> list[SenadoBronzeDespesa]:
-    # A fonte publica uma linha de rodapé "ULTIMA ATUALIZACAO: ..." que não
-    # pertence ao dataset — descartada em qualquer posição antes do parsing.
+    # A fonte publica uma linha de rodapé "ULTIMA ATUALIZACAO: ..." (ou
+    # `"ULTIMA ATUALIZACAO";"06/08/2021 02:01"` no formato com aspas — pode vir
+    # ANTES do header no CSV real) que não pertence ao dataset — descartada em
+    # qualquer posição antes do parsing.
     linhas = [
         linha
         for linha in texto.splitlines()
-        if not linha.strip().upper().startswith("ULTIMA ATUALIZACAO")
+        if not linha.strip().strip('"').upper().startswith("ULTIMA ATUALIZACAO")
     ]
     df = pd.read_csv(
         io.StringIO("\n".join(linhas)),
@@ -54,7 +56,16 @@ def _parse_csv(
 
     source_version = cfg.padrao_arquivo.format(ano=ano)
     registros: list[SenadoBronzeDespesa] = []
+    descartadas = 0
     for _, row in df.iterrows():
+        try:
+            cod_documento = int(row["COD_DOCUMENTO"])
+        except (ValueError, KeyError):
+            # Linhas corrompidas da fonte (aspas não escapadas deslocam colunas
+            # e esvaziam COD_DOCUMENTO) — sem chave natural, não há como
+            # deduplicar; descarta com contagem (auditável no log).
+            descartadas += 1
+            continue
         meta = run_meta.model_copy(update={"source_version": source_version})
         registros.append(
             SenadoBronzeDespesa(
@@ -68,9 +79,16 @@ def _parse_csv(
                 data=row["DATA"],
                 detalhamento=(row.get("DETALHAMENTO") or "").strip() or None,
                 valor_reembolsado=row["VALOR_REEMBOLSADO"],
-                cod_documento=int(row["COD_DOCUMENTO"]),
+                cod_documento=cod_documento,
                 metadata=meta,
             )
+        )
+
+    if descartadas:
+        logger.warning(
+            "senado_linhas_corrompidas_descartadas",
+            ano=ano,
+            descartadas=descartadas,
         )
 
     vistos: set[int] = set()

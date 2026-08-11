@@ -55,13 +55,17 @@ class WatermarkSettings(_StrictModel):
     `parametro_filtro_fim` é opcional para fontes que exigem um
     período fechado na requisição (ex: CGU cartões exige
     `mesExtratoInicio` E `mesExtratoFim` — no incremental ambos são
-    setados com o mesmo mês).
+    setados com o mesmo mês). `parametro_filtro_ano` e
+    `parametro_filtro_mes` refinam o filtro dentro de um período maior
+    (ex: Câmara exige `idLegislatura`+`ano`+`mes` juntos).
     """
 
     estrategia: EstrategiaWatermark
     campo: str | None = None
     parametro_filtro: str | None = None
     parametro_filtro_fim: str | None = None
+    parametro_filtro_ano: str | None = None
+    parametro_filtro_mes: str | None = None
     formato_data: str | None = None
 
 
@@ -70,6 +74,7 @@ class EndpointSettings(_StrictModel):
 
     path: str
     parametros_fixos: dict[str, str] = Field(default_factory=dict)
+    rate_limit: RateLimitEndpointSettings | None = None
 
 
 class PaginacaoSettings(_StrictModel):
@@ -84,6 +89,18 @@ class RateLimitCamaraSettings(_StrictModel):
     """Rate limit da Câmara (~100 req/min, não documentado oficialmente)."""
 
     requisicoes_por_minuto: int = Field(default=100, gt=0)
+
+
+class RateLimitEndpointSettings(_StrictModel):
+    """Override de rate limit por endpoint (corretivo 6.5).
+
+    Alguns endpoints de uma mesma fonte têm limite mais conservador que o
+    da fonte — ex: `/cartoes` da CGU, tratado a 180 req/min (hipótese
+    conservadora, docs/sprint6.5_limites_fontes.md §4) até confirmação
+    oficial. Quando presente, sobrepõe `rate_limit` da fonte.
+    """
+
+    requisicoes_por_minuto: int = Field(gt=0)
 
 
 class SiafiCamaraSettings(_StrictModel):

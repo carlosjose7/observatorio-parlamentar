@@ -137,6 +137,8 @@ def _cliente_mock(
     senado_respostas: list[str] | None = None,
     emenda_respostas: list[list[dict]] | None = None,
     cartoes_requisicoes: list | None = None,
+    camara_requisicoes: list | None = None,
+    cgu_requisicoes: list | None = None,
     cartao_dinamico: bool = False,
 ) -> httpx.Client:
     """Cliente httpx com transporte mockado (nenhuma requisição de rede)."""
@@ -156,6 +158,8 @@ def _cliente_mock(
             return httpx.Response(200, json=DEPUTADO_DETALHE)
         if path.endswith("/despesas"):
             pagina = int(params.get("pagina", 1))
+            if camara_requisicoes is not None:
+                camara_requisicoes.append(dict(params))
             return httpx.Response(
                 200, json={"dados": [DESPESA] if pagina == 1 else [], "links": []}
             )
@@ -170,12 +174,16 @@ def _cliente_mock(
             )
         if path.endswith("/emendas"):
             pagina = int(params.get("pagina", 1))
+            if cgu_requisicoes is not None:
+                cgu_requisicoes.append({"params": dict(params), "headers": dict(request.headers)})
             dados = (emenda_seq.pop(0) if emenda_seq else [EMENDA]) if pagina == 1 else []
             return httpx.Response(200, json=dados)
         if path.endswith("/cartoes"):
             pagina = int(params.get("pagina", 1))
             if cartoes_requisicoes is not None:
                 cartoes_requisicoes.append(dict(params))
+            if cgu_requisicoes is not None:
+                cgu_requisicoes.append({"params": dict(params), "headers": dict(request.headers)})
             cartao = CARTAO
             if cartao_dinamico:
                 cartao = {**CARTAO, "mesExtrato": params.get("mesExtratoInicio", CARTAO["mesExtrato"])}
@@ -200,6 +208,7 @@ def _fontes_com_janelas(ano: int = 2026, mes: str = "07/2026"):
     profunda + monkeypatch evita vazamento de estado entre testes.
     """
     fontes = get_sources().model_copy(deep=True)
+    fontes.camara.carga_historica.mes_inicio = mes
     fontes.senado.carga_historica.ano_inicio = ano
     fontes.transparencia.carga_historica["emendas"].ano_inicio = ano
     fontes.transparencia.carga_historica["cartoes"].mes_inicio = mes
@@ -212,6 +221,24 @@ def _janelas_recentes(monkeypatch):
     import pipeline.bronze as bronze
 
     monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas())
+
+
+@pytest.fixture(autouse=True)
+def _throttle_instantaneo(monkeypatch):
+    """Desliga o throttling proativo nos testes de smoke (sem dormir real).
+
+    O token bucket consultado por `request_json` dorme para respeitar o
+    rate limit — num smoke test com HTTP mockado isso só atrasaria o suíte.
+    O comportamento do limitador é coberto em `test_rate_limit.py` (relógio
+    injetado); aqui usamos um limitador com folga enorme (dorme 0).
+    """
+    from pipeline.camara import extract as camara_extract
+    from pipeline.transparencia import extract as transparencia_extract
+    from pipeline.utils import RateLimiter
+
+    instantaneo = lambda *_args, **_kwargs: RateLimiter(10**9, dormir=lambda _s: None)
+    monkeypatch.setattr(camara_extract, "_limitador", instantaneo)
+    monkeypatch.setattr(transparencia_extract, "_limitador", instantaneo)
 
 
 def _pipeline_com_validacao(limite_periodos: int | None = 1):
@@ -316,7 +343,7 @@ def test_watermark_persiste_entre_runs(ambiente):
     run2 = run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
 
     estado_camara = ambiente["store"].get("watermark_camara_despesas")
-    assert estado_camara.last_watermark == "2026-07-03"  # maior dataDocumento observado
+    assert estado_camara.last_watermark == "08/2026"  # maior mês de competência processado
     assert estado_camara.run_id == run2.run_id
 
     estado_cartao = ambiente["store"].get("watermark_cgu_cartao")
@@ -334,6 +361,67 @@ def test_cartoes_envia_mes_inicio_e_fim(ambiente):
     cartao_req = requisicoes[0]
     assert cartao_req["mesExtratoInicio"] == cartao_req["mesExtratoFim"]
     assert cartao_req["tipoCartao"] == "1"
+
+
+def test_transparencia_envia_chave_api(ambiente, monkeypatch):
+    """Corretivo 6.5: `chave-api-dados` da CGU nunca era enviada (401).
+
+    Regressão: garante que emendas e cartões enviem o header de auth com a
+    chave lida do `.env` (`get_env().cgu_api_key`), jamais em código/YAML.
+    """
+    from pydantic import SecretStr
+
+    import pipeline.transparencia.extract as tx
+
+    class _EnvFake:
+        cgu_api_key = SecretStr("chave-secreta-teste")
+
+    monkeypatch.setattr(tx, "get_env", lambda: _EnvFake())
+
+    requisicoes: list = []
+    client = _cliente_mock(cgu_requisicoes=requisicoes)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+
+    cgu = [r for r in requisicoes if r["headers"].get("chave-api-dados")]
+    assert cgu, "nenhuma requisição CGU carregou o header de autenticação"
+    for req in cgu:
+        assert req["headers"]["chave-api-dados"] == "chave-secreta-teste"
+
+
+def test_transparencia_sem_chave_nao_envia_header(ambiente, monkeypatch):
+    from pydantic import SecretStr
+
+    import pipeline.transparencia.extract as tx
+
+    class _EnvFake:
+        cgu_api_key = SecretStr("")
+
+    monkeypatch.setattr(tx, "get_env", lambda: _EnvFake())
+
+    requisicoes: list = []
+    client = _cliente_mock(cgu_requisicoes=requisicoes)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+
+    cgu = [r for r in requisicoes if r["headers"].get("chave-api-dados")]
+    assert not cgu
+
+
+def test_camara_usa_idlegislatura_e_ano_mes_em_vez_de_datainicio(ambiente):
+    """Corretivo 6.5: a API rejeita `dataInicio` (400) — o filtro real é
+    `idLegislatura`+`ano`+`mes`. Regressão: garante que a requisição de
+    despesas nunca envie `dataInicio` e sempre envie os três filtros."""
+    requisicoes: list = []
+    client = _cliente_mock(camara_requisicoes=requisicoes)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+
+    despesas = [r for r in requisicoes if "idLegislatura" in r]
+    assert despesas
+    for req in despesas:
+        assert "dataInicio" not in req
+        assert "dataFim" not in req
+        assert req["idLegislatura"]
+        assert req["ano"] == "2026"
+        assert req["mes"] in {"7", "8"}
 
 
 def test_deduplicacao_senado_entre_runs(ambiente):
@@ -394,7 +482,7 @@ def test_config_deduplicacao_carregada():
 
 def test_config_carga_historica_carregada():
     fontes = get_sources()
-    assert fontes.camara.carga_historica.data_inicio == "2015-01-01"
+    assert fontes.camara.carga_historica.mes_inicio == "01/2015"
     assert fontes.senado.carga_historica.ano_inicio == 2015
     assert fontes.transparencia.carga_historica["emendas"].ano_inicio == 2020
     assert fontes.transparencia.carga_historica["cartoes"].mes_inicio == "01/2013"
@@ -478,6 +566,44 @@ def test_validacao_limita_janela_e_isola_watermark(ambiente, monkeypatch):
     # Watermark gravado em namespace isolado — store real intacto
     assert ambiente["store"].get("watermark_senado").last_watermark is None
     assert ambiente["store"].get("validacao:watermark_senado").last_watermark == "2025"
+
+
+def test_camara_primeira_carga_trunca_janela_no_modo_validacao(monkeypatch):
+    """Corretivo 1a/6.5: no modo validação a Câmara trunca a janela de meses.
+
+    A Câmara não aceita `dataInicio` — a extração particiona por mês de
+    competência (`idLegislatura`+`ano`+`mes`). Regressão: a primeira carga
+    real puxaria a janela integral desde `mes_inicio` (11 anos) mesmo no modo
+    validação.
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    import pipeline.bronze as bronze
+    from pipeline.contracts import LoadMetadata
+
+    run_meta = LoadMetadata(
+        run_id=uuid4(),
+        pipeline_version="0.1.0",
+        execution_timestamp=datetime(2026, 8, 10, tzinfo=timezone.utc),
+        source_version="",
+    )
+
+    monkeypatch.setattr(
+        bronze, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=2)
+    )
+    assert bronze._camara_filtro_inicial("01/2015", run_meta) == ["07/2026", "08/2026"]
+
+    monkeypatch.setattr(
+        bronze, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=1)
+    )
+    assert bronze._camara_filtro_inicial("01/2015", run_meta) == ["08/2026"]
+
+    # Sem o modo validação, o backfill permanece integral (2015 → 2026)
+    monkeypatch.setattr(bronze, "get_pipeline", get_pipeline)
+    meses = bronze._camara_filtro_inicial("01/2015", run_meta)
+    assert meses[0] == "01/2015"
+    assert meses[-1] == "08/2026"
 
 
 def test_namespace_watermark_store_round_trip(tmp_path):

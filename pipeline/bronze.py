@@ -149,6 +149,23 @@ def _truncar_validacao(periodos: list) -> list:
     return periodos
 
 
+def _camara_filtro_inicial(mes_inicio: str, run_meta: LoadMetadata) -> list[str]:
+    """Meses da primeira carga da Câmara (janela truncada no modo validação).
+
+    Corretivo 6.5: a API da Câmara não aceita `dataInicio`; a extração
+    particiona por mês de competência (`idLegislatura`+`ano`+`mes`). A janela
+    são os meses de `mes_inicio` até o mês da execução; no modo validação,
+    apenas os **últimos** `limite_periodos` meses (a janela histórica de
+    11 anos não faz sentido numa validação). Sem o modo validação, retorna o
+    backfill integral.
+    """
+    meses = _meses_historico(mes_inicio, run_meta)
+    validacao = get_pipeline().validacao
+    if validacao.habilitado and validacao.limite_periodos is not None:
+        return meses[-validacao.limite_periodos :]
+    return meses
+
+
 def _agregar_resultados(resultados: list[ExtractResult]) -> ExtractResult:
     """Combina extrações de múltiplos períodos (backfill) em um só resultado.
 
@@ -179,19 +196,22 @@ def _extrair(
 ) -> ExtractResult:
     """Extrai uma fonte, aplicando a janela de carga histórica no primeiro run.
 
-    Primeira carga (watermark vazio): Câmara filtra desde `data_inicio`;
-    Senado, emendas e cartões varrem os períodos de `carga_historica` até o
-    período corrente (ano ou mês), truncados para `limite_periodos` no modo
-    validação. Execuções seguintes seguem o fluxo incremental de cada fonte.
+    Primeira carga (watermark vazio): Câmara, cartões e Senado/emendas varrem
+    os períodos de `carga_historica` até o período corrente (ano ou mês),
+    truncados para `limite_periodos` no modo validação. Execuções seguintes
+    seguem o fluxo incremental de cada fonte.
     """
     fontes = get_sources()
     if fonte == "camara":
-        filtro = estado.last_watermark
-        ch = fontes.camara.carga_historica
-        if filtro is None and ch and ch.data_inicio:
-            filtro = ch.data_inicio
+        cfg = fontes.camara
+        ch = cfg.carga_historica
+        if estado.last_watermark is None and ch and ch.mes_inicio:
+            meses = _camara_filtro_inicial(ch.mes_inicio, run_meta)
+            return _agregar_resultados(
+                [camara_extract.extract_despesas(cfg, client, m, run_meta, retry_settings) for m in meses]
+            )
         return camara_extract.extract_despesas(
-            fontes.camara, client, filtro, run_meta, retry_settings
+            cfg, client, estado.last_watermark, run_meta, retry_settings
         )
 
     if fonte == "senado":
