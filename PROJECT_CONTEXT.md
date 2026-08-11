@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 6 em curso — **Onda 4 (agent-ready RF-05) completa**: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).
+> Última atualização: **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-032. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).
  
 ---
  
@@ -675,12 +675,12 @@ GET  /agent/context
 |---|---|---|---|
 | **0A** | Descoberta | Visão, personas, casos de uso, escopo | ✅ Concluída |
 | **0B** | Arquitetura | Stack, diretórios, diagramas, convenções | ✅ Concluída |
-| **1** | Modelagem | Schema completo + contratos de dados | ⏳ Pendente |
-| **2** | Bronze + Extração | Pipeline de ingestão funcionando | ⏳ Pendente |
-| **3** | Silver + Qualidade | Dados limpos + relatório Pandera | ⏳ Pendente |
-| **4** | Gold Layer | Star schema populado | ⏳ Pendente |
-| **5** | Analytics + ML + Redes | Tabelas analíticas + scores de risco | ⏳ Pendente |
-| **6** | FastAPI | API documentada e testada | ⏳ Pendente |
+| **1** | Modelagem | Schema completo + contratos de dados | ✅ Concluída |
+| **2** | Bronze + Extração | Pipeline de ingestão funcionando | ✅ Concluída |
+| **3** | Silver + Qualidade | Dados limpos + relatório Pandera | ✅ Concluída |
+| **4** | Gold Layer | Star schema populado | ✅ Concluída |
+| **5** | Analytics + ML + Redes | Tabelas analíticas + scores de risco | ✅ Concluída |
+| **6** | FastAPI | API documentada e testada | ✅ Concluída |
 | **6.5** | Validação Real | Pipeline end-to-end com dados reais | ⏳ Pendente |
 | **7** | Dashboard | Streamlit funcional | ⏳ Pendente |
 | **8** | Testes | Cobertura ≥ 80% | ⏳ Pendente |
@@ -776,4 +776,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.8 — Sprint 6 em curso: **Onda 4 (agent-ready RF-05) completa** — ADR-032 (JSON semântico para LLMs; agent-ready ≠ espelho dos endpoints de negócio — reflete a Camada Semântica §8 e os scores §9/ADR-027/028, mesma fronteira read-only do ADR-026, sem recálculo por request ADR-030; `taxa_ausencia`/`indice_alinhamento` fora por inexistência de `fact_presenca`/`fact_votacao`): `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` (resumo agregado), `/agent/context` (retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline — ADR-031). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).*
+*Versão atual: 1.9 — **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs; agent-ready ≠ espelho dos endpoints de negócio — reflete a Camada Semântica §8 e os scores §9/ADR-027/028, mesma fronteira read-only do ADR-026, sem recálculo por request ADR-030; `taxa_ausencia`/`indice_alinhamento` fora por inexistência de `fact_presenca`/`fact_votacao`): `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` (resumo agregado), `/agent/context` (retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline — ADR-031). ADRs 001-032. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).*
