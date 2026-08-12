@@ -454,10 +454,13 @@
 > instalado no ambiente de desenvolvimento. É a mesma classe de lacuna de
 > "parece certo no código, mas nunca foi exercitado" que originou o ADR-023.
 
-☐ **`dag_test.py`** — import-test do DAG com Airflow `DagBag` (sem subir o
-   scheduler): valida parsing do módulo `pipeline/dags/pipeline_dag.py`,
-   a estrutura de dependências de todas as tasks (ordem passada) e a
-   integridade XCom; rodar em CI junto da suíte pytest.
+☑ **`test_dag.py`** — import-test do DAG com Airflow `DagBag` (sem subir o
+   scheduler): valida parsing do módulo `pipeline/dags/pipeline_dag.py`, a
+   estrutura de dependências de todas as tasks (ordem passada Bronze→Silver→
+   Gold) e a integridade XCom (`executar_silver` consome o `run_id` da
+   upstream). Importado via `pytest.importorskip("airflow")` — o extra
+   `pipeline` é optional-dependency; em dev local sem Airflow o teste é
+   pulado e em CI/containers com o extra instalado vira barreira real.
 
 ☑ **Manutenção estrutural — realocação dos módulos analíticos** (padrão §6):
    `analytics.py`/`risk.py` → `analytics/parliamentarians/`, `anomalies.py` →
@@ -484,14 +487,15 @@
    `profiles.yml`; `pipeline/pseudonymize.py` é a fonte única; seeds dos
    testes Gold carregam o hash (asserções de dimensão preservadas).
 
-☐ **BUG-004 — migração de schema legado na Silver** (corretivo QA): tabelas
+☑ **BUG-004 — migração de schema legado na Silver** (corretivo QA): tabelas
    criadas por versões anteriores (menos colunas) são migradas via `ALTER
    TABLE ADD COLUMN` antes do INSERT por nome (`_criar_tabela_se_necessario` +
    `_insert_por_nome` em `pipeline/silver.py`), com teste de contrato
    `test_migracao_de_schema_em_tabela_legada`.
 
-☐ **Dívida consciente (registrada no fechamento do QA, BUG-002) —
-   criptografia em repouso do MinIO NÃO implementada.** A camada Bronze
+☑ **Dívida consciente (registrada no fechamento do QA, BUG-002) —
+   criptografia em repouso do MinIO NÃO implementada.** Registrada como
+   item fechado de registro (não como trabalho pendente): a camada Bronze
    cumpre a condição de acesso restrito (MinIO exposto apenas em
    `127.0.0.1:9000/9001`, rede interna `observatorio-net`,
    `no-new-privileges`), mas o volume `minio_data` não tem criptografia em
@@ -501,6 +505,6 @@
    e atualizar ADR-033 quando implementado.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.1 — **Sprint 6 fechada** — Onda 4 completa: endpoints agent-ready (RF-05/ADR-032): `/agent/parlamentar/{id}` (perfil SCD2 vigente + métricas §8 + `hhi` de `supplier_concentration` + `risk_index`/5 scores + anomalias + top-5 fornecedores), `/agent/fornecedor/{cnpj_cpf_valor}` (perfil + agregados + top-5 parlamentares), `/agent/anomalias` (**resumo agregado** — total, por ano, por critério, top-10 zscore), `/agent/context` (**retrato sistêmico** CU-07) — 288 testes verdes (212 pipeline + 58 API + 18 integração). Onda 3 completa (anomalias/comunidades/qualidade/pipeline, 276). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API + **DuckDB real de dev desatualizado — escopo da Sprint 6.5**). ADRs 001-033. Sprint 5 fechada (212). Sprint 4 fechada (129).*
+*Versão atual: 1.2 — **Sprint 6.5 fechada** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002) — **308 testes verdes** (266 pipeline + 38 API + 4 integração). Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033.*
 
-*Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API).*
+*Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API). Corretivos QA e ADR-033; **308 testes verdes** ao final (266 pipeline + 38 API + 4 integração).*

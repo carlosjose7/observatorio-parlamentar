@@ -64,7 +64,7 @@ Write-Host "API Docs:  http://${VpsIp}/docs" -ForegroundColor Cyan
 Write-Host "MinIO:     http://${VpsIp}/minio" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Airflow:   http://${VpsIp}:8080" -ForegroundColor Cyan
-Write-Host "           (***REMOVED***)" -ForegroundColor Cyan
+Write-Host "           (AIRFLOW_ADMIN_USER/_PASSWORD do .env)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "⚠️  Edite o .env na VPS:" -ForegroundColor Yellow
 Write-Host "   ssh -i `"$SshKey`" ubuntu@${VpsIp}" -ForegroundColor Gray

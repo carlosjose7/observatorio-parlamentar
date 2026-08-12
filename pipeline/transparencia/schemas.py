@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from pipeline.contracts import LoadMetadata, TipoDocumento
 
@@ -58,6 +58,20 @@ class CguBronzeUnidadeGestora(BaseModel):
         populate_by_name = True
 
 
+class CguBronzeTipoCartao(BaseModel):
+    """Objeto aninhado tipoCartao — a CGU expõe o tipo como objeto desde 2026.
+
+    O data_dictionary.md §3.3 documenta `tipoCartao.codigo` como o campo de
+    valor (ex: `1` = CPGF). Antes a API retornava a string direta; o modelo
+    aceita ambos (ver `CguBronzeCartao`).
+    """
+
+    codigo: str
+
+    class Config:
+        populate_by_name = True
+
+
 class CguBronzeCartao(BaseModel):
     """Registro bruto de transação de cartão CPGF da API da CGU."""
 
@@ -74,6 +88,20 @@ class CguBronzeCartao(BaseModel):
 
     class Config:
         populate_by_name = True
+
+    @field_validator("tipo_cartao_codigo", mode="before")
+    @classmethod
+    def _tipo_cartao_da_fonte(cls, v: object) -> str:
+        """Aceita `tipoCartao` como string legada ou objeto `{codigo: ...}`.
+
+        A CGU passou a retornar o objeto (2026); o modelo é resiliente a
+        ambos os formatos sem reprocessar o lote anterior.
+        """
+        if isinstance(v, str):
+            return v
+        if isinstance(v, dict) and "codigo" in v:
+            return str(v["codigo"])
+        raise ValueError(f"tipoCartao inválido: {v!r}")
 
 
 class CguBronzeEmenda(BaseModel):

@@ -28,6 +28,22 @@ _ISO_FORMATS = (
 )
 _PTBR_FORMAT = "%d/%m/%Y"
 
+#: Limite de sanidade para datas das fontes: o dado da CGU (cartões CPGF)
+#: começa em 2012 (config/sources.yaml: cartoes.mes_inicio "01/2013", com
+#: transações de dez/2012 nos extratos) e nenhuma fonte é futura em anos.
+#: Anos absurdos (ex: `06/10/2915` no CSV real do Senado) estouram o
+#: `datetime64[ns]` do pandas (máx. 2262) ANTES do gate Pandera; o parser
+#: rejeita aqui (retorna `None` → quarentena), preservando o ADR-016.
+#: O limite por fonte é refinado pelo gate Pandera (`nao_anterior_*`,
+#: pipeline/quality.py) — o parser apenas evita o estouro.
+_ANO_MINIMO_PLAUSIVEL = 2012
+_ANO_MAXIMO_PLAUSIVEL = 2100
+
+
+def _ano_plausivel(ano: int) -> bool:
+    """Ano dentro do intervalo aceito pelas fontes (2012..2100)."""
+    return _ANO_MINIMO_PLAUSIVEL <= ano <= _ANO_MAXIMO_PLAUSIVEL
+
 
 def parse_date_multi_format(
     valor: str | None,
@@ -58,6 +74,9 @@ def parse_date_multi_format(
         try:
             parsed = datetime.strptime(texto, fmt)
         except ValueError:
+            continue
+        if not _ano_plausivel(parsed.year):
+            logger.warning("data_ano_fora_de_alcance", valor=valor, ano=parsed.year)
             continue
         logger.debug("data_parseada", valor=valor, formato=fmt)
         return parsed.date()

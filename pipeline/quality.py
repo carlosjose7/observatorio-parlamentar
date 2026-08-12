@@ -132,8 +132,9 @@ def schema_silver_despesa() -> pa.DataFrameSchema:
 def schema_silver_cartao() -> pa.DataFrameSchema:
     """Schema Silver para `silver_cartao` (CGU cartões CPGF, ADR-013).
 
-    Regras de lote: datas plausíveis (não antes de 2015, não futuras) e
-    valores não negativos. Reflete NOT NULLs do `fact_cartao_cpgf`
+    Regras de lote: datas plausíveis (não antes de 2012 — início real dos
+    cartões CPGF, `config/sources.yaml` mes_inicio "01/2013" —, não futuras)
+    e valores não negativos. Reflete NOT NULLs do `fact_cartao_cpgf`
     (ADR-010/ADR-012): `unidade_gestora_codigo` é obrigatória — a fonte
     CGU sempre fornece `unidadeGestora` — e portanto NÃO é tratada como
     nullable, ao contrário de despesa/emenda que têm UG inativa na v1.
@@ -149,7 +150,7 @@ def schema_silver_cartao() -> pa.DataFrameSchema:
                 "datetime64[ns]",
                 nullable=False,
                 checks=[
-                    _nao_anterior_a(2015),
+                    _nao_anterior_a(2012),
                     _nao_futura(),
                 ],
             ),

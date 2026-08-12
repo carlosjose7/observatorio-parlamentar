@@ -153,6 +153,20 @@ class TestSchemaSilverCartao:
         assert len(validos) == 0
         assert linha.registros_quarentena == 1
 
+    def test_transacao_de_2012_aceita_inicio_real_cgu(self):
+        """Corretivo QA (E2E Sprint 6.5): a CGU publica cartões CPGF desde
+        2012 (config: mes_inicio "01/2013", com transações de dez/2012 nos
+        extratos) — o gate de `silver_cartao` rejeitava anos anteriores a
+        2015 e mandava a fonte INTEIRA para quarentena."""
+        df = self._df_cartao(
+            data_transacao=pd.to_datetime(["2012-12-05"])
+        )
+        validos, linha = avaliar_qualidade(
+            df, schema_silver_cartao(), "run1", "silver_cartao"
+        )
+        assert len(validos) == 1
+        assert linha.registros_quarentena == 0
+
     def test_chave_negocio_parametrizada_reaproveita_fallback(self):
         df = pd.DataFrame(
             {
@@ -450,3 +464,60 @@ class TestPersistenciaDedupSilver:
             " WHERE cod_documento = 'AAA'",
         )
         assert linhas == [("AAA", 100.0, 0.0)]
+
+    def test_coluna_de_texto_toda_nula_nao_vira_integer_no_schema(self, tmp_path):
+        """Corretivo QA (E2E Sprint 6.5): a coluna de texto integralmente nula
+        (ex: `nome_parlamentar` da Câmara) era inferida como `INTEGER` pelo
+        DuckDB na criação da tabela — a segunda fonte (Senado, com nomes reais)
+        derrubava o INSERT com `ConversionException`. A coluna deve nascer
+        `VARCHAR`, permitindo a carga das duas fontes na tabela compartilhada."""
+        import duckdb
+
+        def _df(fonte, nomes):
+            n = len(nomes)
+            return pd.DataFrame(
+                {
+                    "fonte": [fonte] * n,
+                    "cod_documento": [f"{fonte}-{i}" for i in range(n)],
+                    "data_documento": pd.to_datetime(["2024-07-03"] * n),
+                    "valor_liquido": [100.0] * n,
+                    "valor_glosa": [0.0] * n,
+                    "tipo_documento": ["CNPJ"] * n,
+                    "nome_parlamentar": pd.Series(nomes, dtype="object"),
+                }
+            )
+
+        chaves = ["fonte", "cod_documento"]
+        # 1ª carga (Câmara): nome_parlamentar 100% nulo — cria a tabela.
+        self._carregar(
+            tmp_path,
+            _df("camara", [None, None]),
+            "silver_despesa",
+            chaves,
+        )
+        # 2ª carga (Senado): nomes reais — não pode quebrar o INSERT.
+        self._carregar(
+            tmp_path,
+            _df("senado", ["ACIR GURGACZ", "ALAN RICK"]),
+            "silver_despesa",
+            chaves,
+        )
+
+        tipo = self._query(
+            tmp_path,
+            "SELECT data_type FROM information_schema.columns"
+            " WHERE table_name = 'silver_despesa' AND column_name = 'nome_parlamentar'",
+        )
+        assert tipo == [("VARCHAR",)]
+
+        linhas = self._query(
+            tmp_path,
+            "SELECT fonte, nome_parlamentar FROM silver_despesa"
+            " ORDER BY fonte, cod_documento",
+        )
+        assert linhas == [
+            ("camara", None),
+            ("camara", None),
+            ("senado", "ACIR GURGACZ"),
+            ("senado", "ALAN RICK"),
+        ]

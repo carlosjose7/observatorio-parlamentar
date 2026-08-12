@@ -510,6 +510,29 @@ def test_backfill_senado_multi_ano(ambiente, monkeypatch):
     assert mes2026 is not None and mes2026.iloc[0]["ano"] == 2026
 
 
+def test_cartao_aceita_tipo_cartao_como_objeto_da_cgu():
+    """Corretivo 6.5: a CGU passou a retornar `tipoCartao` como objeto
+    (`{id, codigo, ...}`) em vez de string. Regressão no contrato Bronze:
+    os dois formatos são aceitos e `tipo_cartao_codigo` vira string."""
+    from pipeline.transparencia.schemas import CguBronzeCartao
+
+    base = {k: v for k, v in CARTAO.items() if k != "tipoCartao"}
+    meta = {
+        "run_id": "6324085e-e78f-4d24-a8f1-1ab30d1c6bc1",
+        "pipeline_version": "0.1.0",
+        "execution_timestamp": "2026-08-12T00:00:00Z",
+        "source_version": "07/2026-execution-2026-08-12",
+    }
+
+    formato_objeto = {**base, "tipoCartao": {"id": 1, "codigo": "1", "descricao": "CPGF"}}
+    cartao = CguBronzeCartao.model_validate({**formato_objeto, "metadata": meta})
+    assert cartao.tipo_cartao_codigo == "1"
+
+    formato_string = {**base, "tipoCartao": "1"}
+    cartao = CguBronzeCartao.model_validate({**formato_string, "metadata": meta})
+    assert cartao.tipo_cartao_codigo == "1"
+
+
 def test_backfill_cartoes_multi_mes(ambiente, monkeypatch):
     import pipeline.bronze as bronze
 

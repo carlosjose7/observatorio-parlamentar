@@ -20,10 +20,12 @@ clean-targets:
 vars:
   dim_data_inicio: "2015-01-01"
   dim_data_fim: "2035-12-31"
-  # Diretório do Parquet de controle da Bronze (ADR-019). Padrão relativo ao
-  # arquivo DuckDB (resolve para reporoot/data/bronze/...). Em produção com
-  # MinIO, overridar para o local remoto.
-  bronze_pipeline_runs_dir: "../../data/bronze/controle/pipeline_runs/*.parquet"
+  # Diretório do Parquet de controle da Bronze (ADR-019). Corretivo QA
+  # (E2E Sprint 6.5): o DuckDB resolve globs relativos ao CWD do processo
+  # (não ao arquivo do banco) — `../../data/...` a partir do repo root
+  # resolvia a 0 arquivos e `pipeline_runs` ficava vazio. Agora relativo ao
+  # repo root. Em produção com MinIO, overridar para o local remoto.
+  bronze_pipeline_runs_dir: "data/bronze/controle/pipeline_runs/*.parquet"
   # Discriminador primário de autoria colegiada (ADR-017.3.a). Valores reais
   # do enum da fonte a confirmar no catálogo — item de seguimento no BACKLOG.
   # Padrão é o observado na captura real: "Emenda de Bancada" / "Emenda de Comissão"

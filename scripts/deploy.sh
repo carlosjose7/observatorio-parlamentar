@@ -84,7 +84,7 @@ echo -e "${GREEN}│  API Docs:  http://${VPS_IP}/docs                       │
 echo -e "${GREEN}│  MinIO:     http://${VPS_IP}/minio                      │${NC}"
 echo -e "${GREEN}│                                                         │${NC}"
 echo -e "${GREEN}│  Airflow:   http://${VPS_IP}:8080 (profile: pipeline)   │${NC}"
-echo -e "${GREEN}│  ***REMOVED***                                             │${NC}"
+echo -e "${GREEN}│  credenciais: AIRFLOW_ADMIN_USER/_PASSWORD do .env       │${NC}"
 echo -e "${GREEN}│                                                         │${NC}"
 echo -e "${GREEN}│  ⚠️  Não esqueça de editar o .env na VPS:               │${NC}"
 echo -e "${GREEN}│  ssh -i ${SSH_KEY} ${SSH_DEST}                          │${NC}"

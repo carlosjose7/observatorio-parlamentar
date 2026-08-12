@@ -149,8 +149,17 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
     colunas que faltam são adicionadas via `ALTER TABLE ADD COLUMN` com o tipo
     que o DuckDB infere para o DataFrame (mesmo tipo do CREATE). Nunca faz
     CREATE/DROP destrutivo nem perde dados existentes.
+
+    Corretivo QA (E2E Sprint 6.5): colunas `object` do pandas são normalizadas
+    para `string` antes da inferência — uma coluna de texto integralmente nula
+    (ex: `nome_parlamentar` da Câmara) era inferida como `INTEGER` pelo DuckDB,
+    derrubando o INSERT da outra fonte (Senado) com `ConversionException`.
     """
-    con.register("tmp_define", df)
+    definicao = df.copy()
+    for col in definicao.columns:
+        if definicao[col].dtype.kind == "O":
+            definicao[col] = definicao[col].astype("string")
+    con.register("tmp_define", definicao)
     con.execute(
         f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
     )

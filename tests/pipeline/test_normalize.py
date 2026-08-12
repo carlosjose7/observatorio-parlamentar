@@ -45,6 +45,23 @@ class TestParseDateMultiFormat:
         assert parse_date_multi_format("   ") is None
         assert parse_date_multi_format(None) is None
 
+    def test_ano_absurdo_retorna_none_nao_estoura_pandas(self):
+        """Corretivo 6.5: CSV real do Senado traz `06/10/2915`; um ano assim
+        estoura o `datetime64[ns]` do pandas (máx. 2262) antes do gate
+        Pandera. O parser rejeita e devolve `None` (→ quarentena, ADR-016)."""
+        assert parse_date_multi_format("06/10/2915") is None
+        assert parse_date_multi_format("2915-10-06") is None
+
+    def test_ano_limite_inferior_aceito(self):
+        assert parse_date_multi_format("01/01/2015") == date(2015, 1, 1)
+
+    def test_ano_inicial_cgu_2012_aceito(self):
+        """Corretivo QA (E2E Sprint 6.5): a CGU publica cartões CPGF desde
+        2012 (mes_inicio "01/2013", transações de dez/2012 nos extratos) —
+        o parser rejeitava anos < 2015 e nublava a fonte inteira de cartões."""
+        assert parse_date_multi_format("05/12/2012") == date(2012, 12, 5)
+        assert parse_date_multi_format("03/01/2013") == date(2013, 1, 3)
+
 
 class TestParseDecimalPtbr:
     def test_virgula_decimal_senado(self):

@@ -71,9 +71,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=airflow
-      - ***REMOVED***
-      - POSTGRES_DB=airflow
+      - POSTGRES_USER=${POSTGRES_USER:-airflow}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      - POSTGRES_DB=${POSTGRES_DB:-airflow}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -89,16 +89,18 @@ services:
     entrypoint: >
       bash -c "
       airflow db init &&
-      ***REMOVED*** --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
+      airflow users create --username "$$AIRFLOW_ADMIN_USER" --password "$$AIRFLOW_ADMIN_PASSWORD" --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
       airflow webserver
       "
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=***REMOVED***
-      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-***REMOVED***}
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
       - AIRFLOW__WEBSERVER__RBAC=True
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
@@ -127,8 +129,8 @@ services:
       "
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=***REMOVED***
-      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-***REMOVED***}
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
       - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=300

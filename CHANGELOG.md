@@ -8,7 +8,7 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 6.5 — Validação End-to-End (manutenção estrutural)
+## Sprint 6.5 — Validação End-to-End (manutenção estrutural) — FECHADA
 
 ### Corrigido (corretivos do prompt de QA)
 - **BUG-001 — progressão incremental da Bronze presa em reextração.** A
@@ -79,6 +79,18 @@ Histórico das alterações, organizado por sprint (ver
   - `git mv` (histórico preservado); imports internos (`risk`→`analytics.parliamentarians.analytics`, demais→`analytics.features`), docstrings e comentários ativos sincronizados (SQL do Gold, `sources.yml`, `schema.yml`, `feature_store/registry.yaml`, `pipeline/config.py`, `docs/architecture/arch_pipeline.md`). Registros históricos (ADR/BACKLOG/CHANGELOG) preservados.
 - **Removida referência a `pipeline/pipeline.py`** (entrypoint inexistente) da árvore §6 — os entrypoints reais são o DAG (`pipeline/dags/pipeline_dag.py`) e `scripts/run_e2e_local.py`.
 - **Árvore §6 atualizada**: `analytics/` documentado com a estrutura real; `pipeline/` sem os módulos analíticos; suíte **288 testes verdes** (230 pipeline + 58 API) após a realocação.
+
+### Adicionado (fechamento Sprint 6.5)
+- **`tests/pipeline/test_dag.py` — import-test do DAG com Airflow `DagBag`**
+  (sem subir o scheduler): valida o parsing de `pipeline/dags/pipeline_dag.py`,
+  a estrutura de dependências (ordem Bronze→Silver→Gold), a configuração do
+  DAG (`@daily`, sem catchup, tags) e a integridade XCom (`executar_silver`
+  consome o `run_id` de `executar_bronze`). O módulo é importado via
+  `pytest.importorskip("airflow")` — o Airflow é optional-dependency (extra
+  `pipeline`), então em dev local sem o extra o teste é pulado; em
+  CI/containers com o extra instalado vira barreira real.
+- **Fechamento da Sprint 6.5**: suíte completa **308 passed** (266 pipeline +
+  38 API + 4 integração), sem regressões.
 
 ---
 
