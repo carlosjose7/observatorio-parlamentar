@@ -333,6 +333,29 @@ class ApiSettings(_StrictModel):
     ano_minimo_consulta: int = Field(default=2015, ge=1900)
 
 
+# ── config/dashboard.yaml ────────────────────────────────────────
+
+
+class DashboardSettings(_StrictModel):
+    """Configuração da camada de apresentação Streamlit (Sprint 7, ADR-008).
+
+    Identifica o dashboard (`titulo`/`subtitulo`) e aponta para a base URL da
+    API REST via variável de ambiente (`url_env_var`, default `API_URL` —
+    injetada pelo docker-compose como `http://api:8000`). O dashboard NUNCA
+    abre o DuckDB: consome a API como fronteira de leitura (RF-05, ADR-026).
+    `exportacao_formatos` governa os botões de exportação (RF-08).
+    """
+
+    titulo: str = "Observatório Parlamentar"
+    subtitulo: str = "Plataforma de Inteligência Parlamentar Brasileira"
+    url_env_var: str = "API_URL"
+    url_padrao: str = "http://localhost:8000"
+    timeout_segundos: float = Field(default=30.0, gt=0)
+    exportacao_formatos: list[str] = Field(
+        default_factory=lambda: ["csv", "excel", "pdf"]
+    )
+
+
 # ── config/pipeline.yaml ─────────────────────────────────────────
 
 
@@ -510,6 +533,14 @@ def load_api_settings() -> ApiSettings:
     return ApiSettings.model_validate(_load_yaml("api.yaml")["api"])
 
 
+@lru_cache(maxsize=1)
+def load_dashboard_settings() -> DashboardSettings:
+    """Carrega `config/dashboard.yaml` (schema `dashboard:`)."""
+    return DashboardSettings.model_validate(
+        _load_yaml("dashboard.yaml")["dashboard"]
+    )
+
+
 def get_sources() -> SourcesSettings:
     """Acesso conveniente a `SourcesSettings` (cacheado)."""
     return load_sources_settings()
@@ -528,6 +559,11 @@ def get_analytics() -> AnalyticsSettings:
 def get_api() -> ApiSettings:
     """Acesso conveniente a `ApiSettings` (cacheado)."""
     return load_api_settings()
+
+
+def get_dashboard() -> DashboardSettings:
+    """Acesso conveniente a `DashboardSettings` (cacheado)."""
+    return load_dashboard_settings()
 
 
 def get_dbt_vars() -> dict[str, str]:

@@ -8,6 +8,49 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 7 — Dashboard (Streamlit) — EM ANDAMENTO
+
+### Adicionado
+- **`dashboard/client.py`** — cliente HTTP da API REST (RF-05, ADR-026):
+  um método por endpoint (`/parlamentares`, `/fornecedores`, `/anomalias`,
+  `/rede`, `/qualidade`, `/pipeline/status`, `/agent/*`), com `ApiError`
+  (erro de negócio com `detail`) e `ApiIndisponivel` (rede offline). A base
+  URL vem de `API_URL` (config ADR-008, default `http://localhost:8000`).
+- **`dashboard/ui.py`** — componentes reutilizáveis: `formatar_moeda`
+  (pt-BR), `carregar_com_feedback` (spinner + erro amigável), `estado_api`,
+  `metricas_seguras` e `tabela_exportavel` (CSV/Excel/PDF, RF-08).
+- **`config/dashboard.yaml`** + `DashboardSettings` (`pipeline/config.py`) —
+  fonte única de configuração do dashboard (ADR-008): título, base URL via
+  env var, timeout e formatos de exportação.
+- **Página 01 (Visão Geral)** — `dashboard/app.py`: KPIs globais (total
+  gasto, transações, fornecedores, parlamentares, anomalias), períodos com
+  dados, status dos serviços e execuções recentes do pipeline (RF-12).
+- **Página 02 (Parlamentar)** — perfil SCD2 + despesas com filtro por ano.
+- **Páginas 03/04 (Partido/Estado)** — agregação de parlamentares por
+  partido/UF com total gasto.
+- **Página 05 (Fornecedor)** — perfil + top parlamentares (ADR-011/033:
+  CNPJ claro, CPF pseudonimizado).
+- **Página 06 (Rede)** — grafo parlamentar-fornecedor (NetworkX) + 
+  comunidades (ADR-030).
+- **Página 07 (Anomalias)** — agregados por ano/critério + lista com
+  threshold de z-score (ADR-002).
+- **Página 08 (ML/Risco)** — scores de risco (radar, ADR-029), risk index e
+  top fornecedores via `/agent/parlamentar/{id}` (ADR-032).
+- **Página 09 (Qualidade)** — Data Quality Report do Gold (ADR-033).
+- **Página 10 (Metadados)** — catálogo de fontes e execuções (RF-12).
+- **`tests/dashboard/`** — 20 testes do client (rotas, erros, base URL) e
+  dos utilitários de UI.
+- **`pyproject.toml`** — extra `dashboard` com `openpyxl`/`matplotlib`;
+  `[tool.setuptools.packages.find]` declarado (flat-layout).
+
+### Resultado
+Suíte completa: **336 passed, 1 skipped** (20 novos do dashboard + 316
+anteriores). Dashboard validado com `AppTest` contra o DuckDB dev (dados do
+E2E real): KPIs com dados reais (total gasto R$ 4,5M, 8.983 transações),
+perfil/risco de parlamentar real, DQ report e execuções.
+
+---
+
 ## Sprint 6.5 — Validação End-to-End (manutenção estrutural) — FECHADA
 
 ### Adicionado — Validação E2E real (Bronze→Silver→Gold com APIs reais)

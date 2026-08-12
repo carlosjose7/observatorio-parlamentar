@@ -2,6 +2,10 @@
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["api*", "pipeline*", "analytics*", "dashboard*", "feature_store*"]
+exclude = ["tests*", "*.tests", "*.tests.*"]
+
 [project]
 name = "observatorio-parlamentar"
 version = "0.1.0"
@@ -35,6 +39,8 @@ pipeline = [
 ]
 dashboard = [
     "streamlit>=1.35.0",
+    "openpyxl>=3.1.0",
+    "matplotlib>=3.8.0",
 ]
 analytics = [
     "scikit-learn>=1.4.0",

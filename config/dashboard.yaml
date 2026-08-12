@@ -1,2 +1,17 @@
-# Dashboard presentation settings will be added in Sprint 7.
-dashboard: {}
+# Dashboard settings (Sprint 7) — camada de apresentação Streamlit.
+# Fonte única de configuração do dashboard (ADR-008): valores validados em
+# pipeline/config.py:DashboardSettings. Nenhuma régua é hardcoded no código.
+#
+# O dashboard consome a API REST (RF-05) como fronteira de leitura — nunca
+# abre o DuckDB diretamente. `url_env_var` nomeia a variável de ambiente com
+# a base URL da API (docker-compose injeta `API_URL=http://api:8000`; em dev
+# local, `http://localhost:8000`). Atrás do nginx, o prefixo externo é
+# `/api/` (nginx/default.conf).
+dashboard:
+  titulo: "Observatório Parlamentar"
+  subtitulo: "Plataforma de Inteligência Parlamentar Brasileira"
+  url_env_var: "API_URL"
+  url_padrao: "http://localhost:8000"
+  timeout_segundos: 30
+  # Exportações (RF-08) — formatos oferecidos nas páginas.
+  exportacao_formatos: ["csv", "excel", "pdf"]

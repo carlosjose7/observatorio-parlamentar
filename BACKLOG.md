@@ -574,3 +574,70 @@
 *Versão atual: 1.6 — **Sprint 6.5 — DONE / QA APPROVED** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002), secrets externalizados (CWE-798) com **varredura do histórico (872 blobs: nenhum secret real, teste de controle 3/3) e decisão de não reescrever**, Gitleaks no CI (`.gitleaks.toml` + job `secret-scan`) — **308 testes verdes** (266 pipeline + 38 API + 4 integração). **Validação E2E real concluída** (Bronze→Silver→Gold com APIs reais em modo validação): corretivos BUG-007/008/009/010/011 + regressões, Gold `PASS=224 ERROR=0`, `pipeline_runs` 12 linhas no dev; **316 testes verdes** (307 pipeline + 4 integração + 5 API + 1 skip Airflow). **Alinhamento documental da pseudonimização (BUG-DOC-001):** README, PROJECT_CONTEXT (RF-06/RNF) e ADR-004 agora refletem ADR-033 — Bronze mantém CPF bruto equivalente-público, Silver é a fronteira do hash. Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033. Recomendação pós-fechamento: proteção da branch `develop` exigindo `secret-scan` como check obrigatório (Sprint 9).*
 
 *Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API). Corretivos QA e ADR-033; **308 testes verdes** ao final (266 pipeline + 38 API + 4 integração).*
+
+---
+
+## Sprint 7 — Dashboard (Streamlit)
+
+☑ **`dashboard/client.py`** — cliente HTTP da API REST (RF-05, ADR-026):
+   um método por endpoint, com `ApiError` (erro de negócio com `detail`) e
+   `ApiIndisponivel` (rede offline → página mostra estado amigável). Base URL
+   de `API_URL` (config/dashboard.yaml, ADR-008; docker-compose injeta
+   `http://api:8000`; dev `http://localhost:8000`; nginx expõe `/api/`).
+
+☑ **`dashboard/ui.py`** — componentes reutilizáveis: `formatar_moeda` pt-BR,
+   `carregar_com_feedback` (spinner + erro amigável), `estado_api`,
+   `metricas_seguras`, `tabela_exportavel` (CSV/Excel/PDF, RF-08).
+
+☑ **Config (ADR-008)** — `config/dashboard.yaml` + `DashboardSettings` em
+   `pipeline/config.py`: título, `url_env_var`/`url_padrao`, timeout,
+   `exportacao_formatos`. Loader cacheado `load_dashboard_settings`/`get_dashboard`.
+
+☑ **Página 01 — Visão Geral** (`dashboard/app.py`): KPIs globais (total
+   gasto, transações, fornecedores, parlamentares, anomalias) via
+   `/agent/context`; períodos com dados; status dos serviços; execuções
+   recentes (`/pipeline/status`).
+
+☑ **Página 02 — Parlamentar**: busca por nome/UF/partido, perfil SCD2 e
+   despesas com filtro por ano e exportação.
+
+☑ **Página 03 — Partido** e **Página 04 — Estado**: agregação por partido/UF
+   com total gasto por parlamentar.
+
+☑ **Página 05 — Fornecedor**: perfil + top parlamentares; CNPJ claro, CPF
+   pseudonimizado (ADR-011/033).
+
+☑ **Página 06 — Rede**: grafo parlamentar-fornecedor (NetworkX + matplotlib)
+   e comunidades (ADR-030) com exportação PNG/CSV.
+
+☑ **Página 07 — Anomalias**: agregados por ano/critério (`/agent/anomalias`)
+   + lista com threshold de z-score (`/anomalias`, ADR-002).
+
+☑ **Página 08 — ML/Risco**: scores de risco em radar (ADR-029), risk index e
+   top fornecedores via `/agent/parlamentar/{id}` (ADR-032).
+
+☑ **Página 09 — Qualidade**: Data Quality Report do Gold (`/qualidade/
+   relatorio`, ADR-033) com resumo por tabela.
+
+☑ **Página 10 — Metadados**: catálogo de fontes e execuções do pipeline
+   (`/pipeline/status`, RF-12).
+
+☑ **UX**: erro amigável quando a API está offline (`carregar_com_feedback` +
+   `st.stop`), spinners de carregamento, navegação consistente por abas/barra
+   lateral.
+
+☑ **`tests/dashboard/`** — 20 testes: client (montagem de rotas/params,
+   `ApiError`/`ApiIndisponivel`, base URL via env) + UI (`formatar_moeda`,
+   `tabela_exportavel` com dados/vazio).
+
+☑ **`pyproject.toml`** — extra `dashboard` (`openpyxl`/`matplotlib`);
+   `[tool.setuptools.packages.find]` declarado para resolver o flat-layout.
+
+### Resultado Sprint 7
+Dashboard validado com `AppTest` contra o DuckDB dev (dados reais do E2E):
+KPIs com total gasto R$ 4,5M / 8.983 transações / 4.319 fornecedores /
+432 parlamentares; perfil e risco de parlamentar real (204379);
+DQ report e execuções renderizando. Suíte completa **336 passed, 1 skipped**
+(20 novos + 316 anteriores). *Roadmap §13 atualizado (Sprint 7 em andamento).*
+
+*Versão atual: 2.0 — **Sprint 7 em andamento** — Dashboard Streamlit: cliente da API (RF-05), 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08), UX com erro amigável; config ADR-008 (`config/dashboard.yaml`) e extra `dashboard`; **336 testes verdes** (20 novos do dashboard + 316 anteriores). Sprint 6.5 fechada (QA approved). ADRs 001-033.*

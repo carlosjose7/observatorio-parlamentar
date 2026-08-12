@@ -684,8 +684,8 @@ GET  /agent/context
 | **4** | Gold Layer | Star schema populado | ✅ Concluída |
 | **5** | Analytics + ML + Redes | Tabelas analíticas + scores de risco | ✅ Concluída |
 | **6** | FastAPI | API documentada e testada | ✅ Concluída |
-| **6.5** | Validação Real | Pipeline end-to-end com dados reais | ⏳ Pendente |
-| **7** | Dashboard | Streamlit funcional | ⏳ Pendente |
+| **6.5** | Validação Real | Pipeline end-to-end com dados reais | ✅ Concluída |
+| **7** | Dashboard | Streamlit funcional | ⏳ Em andamento |
 | **8** | Testes | Cobertura ≥ 80% | ⏳ Pendente |
 | **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Pendente |
  
