@@ -81,7 +81,7 @@ class CamaraSilverDespesa(BaseModel):
     )
     cnpj_cpf_valor: str | None = Field(
         default=None,
-        description="Dígitos sanitizados (CNPJ em claro) ou dígitos pendentes de HMAC (CPF) — hash aplicado na carga Gold",
+        description="Dígitos sanitizados (CNPJ em claro) ou dígitos pendentes de HMAC (CPF) — hash aplicado no transform Silver (ADR-033)",
     )
     tipo_documento: TipoDocumento | None
     cod_documento: str = Field(..., description="VARCHAR, nunca convertido para numérico")

@@ -11,9 +11,31 @@ import os
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+import pipeline.config as config
 from pipeline.camara.transform import COLUNAS_SILVER, construir_silver
+from pipeline.pseudonymize import pseudonymize_cpf
 from pipeline.storage import LocalParquetStorage
+
+_CHAVE_TESTE = "chave-teste-transform-camara-2026"
+# CPF pseudonimizado na Silver (ADR-033): o hash dos testes usa a MESMA chave
+# do EnvSettings injetada pelo fixture autouse `_cpf_env`.
+_CPF_HMAC = pseudonymize_cpf("12345678901", _CHAVE_TESTE.encode("utf-8"))
+
+
+@pytest.fixture(autouse=True)
+def _cpf_env(monkeypatch):
+    """Define chave HMAC determinística (ADR-033) e limpa o cache de settings.
+
+    `pseudonymize_cpf_column` lê `EnvSettings.cpf_hmac_secret_key`, que é
+    cacheado por `functools.lru_cache` — sem limpar o cache, um `.env` ou
+    teste anterior vazando o caminho DuckDB invalidaria a chave.
+    """
+    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", _CHAVE_TESTE)
+    config.load_env_settings.cache_clear()
+    yield
+    config.load_env_settings.cache_clear()
 
 
 def _df_bronze(**override) -> pd.DataFrame:
@@ -51,9 +73,9 @@ class TestConstruirCamara:
         assert df.loc[0, "valor_liquido"] == 1234.56
         assert str(df.loc[0, "data_documento"])[:10] == "2024-07-03"
 
-    def test_cpf_classificado(self):
+    def test_cpf_pseudonimizado(self):
         df = construir_silver(_df_bronze(cnpj_cpf_fornecedor=["123.456.789-01"]))
-        assert df.loc[0, "cnpj_cpf_valor"] == "12345678901"
+        assert df.loc[0, "cnpj_cpf_valor"] == _CPF_HMAC
         assert df.loc[0, "tipo_documento"] == "CPF"
 
     def test_documento_ausente_nao_classifica(self):

@@ -42,14 +42,23 @@ if str(_GOLD) not in sys.path:
     sys.path.insert(0, str(_GOLD))
 
 
+from pipeline.pseudonymize import pseudonymize_cpf  # noqa: E402
+
+_CHAVE_TESTE = "Chave-de-teste-gold-network-2026"
+# CPF pseudonimizado na Silver (ADR-033): o seed do DuckDB carrega o HASH, não
+# os dígitos — mesmo contrato do transform.py das fontes. O Gold repassa.
+_CPF_HMAC = pseudonymize_cpf("12345678901", _CHAVE_TESTE.encode("utf-8"))
+
+
 @pytest.fixture(autouse=True)
 def _chave_hmac(monkeypatch):
-    """Garante CPF_HMAC_SECRET_KEY determinístico para o plugin hmac_udf.
+    """Garante CPF_HMAC_SECRET_KEY determinístico (testes Silver e API).
 
-    O `dim_fornecedor` (requisito do fact_despesa) exige a chave quando há
-    fornecedores CPF — mesma garantia dos demais testes Gold.
+    A pseudonimização na Silver (`pipeline/pseudonymize.py`) usa a chave do
+    ambiente — mesma chave do `_CPF_HMAC` para que o hash dos testes seja
+    exatamente o persistido pelo dbt quando há fornecedores CPF.
     """
-    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-network-2026")
+    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", _CHAVE_TESTE)
 
 
 def _seed_silver(db: Path) -> None:
@@ -92,7 +101,7 @@ def _seed_silver(db: Path) -> None:
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "HOSPEDAGEM",
                  "12345678000190", "CNPJ", "COMERCIO X", 120, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 ("camara", 1, None, 2019, 6, "D2", "2019-06-15", "TAXI",
-                   "12345678901", "CPF", "AUTONOMO X", 80, 0, "r", "p", "2026-01-01 00:00:00", "s"),
+                   _CPF_HMAC, "CPF", "AUTONOMO X", 80, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 ("camara", 1, None, 2020, 3, "D3", "2020-03-10", "HOSPEDAGEM",
                    "12345678000190", "CNPJ", "COMERCIO Y", 50, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 ("senado", None, "MARIA SANTOS", 2019, 3, "D4", "2019-03-10", "HOSPEDAGEM",

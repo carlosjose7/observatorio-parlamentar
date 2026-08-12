@@ -1967,4 +1967,58 @@ Consequências:
 
 ---
 
+ADR-033
+Título: Pseudonimização de CPF aplicada na Silver (transform), não na Gold
+(UDF) nem na Bronze
+
+Status:
+Aceito — corretivo do prompt de QA (Sprint 6.5); refina ADR-004/ADR-011.
+
+Contexto:
+ADR-004/011 definiram que CPF de fornecedor PF é pseudonimizado com
+HMAC-SHA256, mas não fixaram a **camada** onde o hash é aplicado. Na
+implementação, o hash acontecia na Gold via um plugin dbt (`pipeline/
+gold/hmac_udf.py`, UDF `hmac_sha256_cpf` registrada no `profiles.yml`).
+O prompt de QA apontou duas fragilidades dessa materialização no
+modelo SQL:
+
+1. Cada `JOIN`/`WHERE` textual comparando a coluna hasheada precisava
+   chamar a UDF — re-hash no ponto de consumo, sujeito a inconsistência
+   se a chave do ambiente não estivesse presente no build.
+2. Os consumidores leem o dado "como está" na Gold; qualquer caminho
+   analítico que não chamasse a UDF exporia o CPF cru.
+
+Decisão:
+1. **A pseudonimização passa a ocorrer uma única vez, na Silver, dentro
+   do `transform.py` de cada fonte** (`pipeline/pseudonymize.py`:
+   `pseudonymize_cpf`/`pseudonymize_cpf_column`). O valor hasheado é o
+   que chega a `silver_despesa`/`silver_cartao`/`silver_emenda` e,
+   portanto, o que o Gold consome.
+2. **Gold repassa, nunca re-hasha.** Os models `dim_fornecedor`,
+   `desp_fornecedor` e `cartao_fornecedor` fazem JOIN por igualdade
+   direta do valor já hasheado; a UDF `hmac_sha256_cpf` e o plugin
+   `hmac_udf.py` foram removidos (e o registro correspondente em
+   `profiles.yml`).
+3. **A chave é lida de `EnvSettings.cpf_hmac_secret_key` com leitura
+   preguiçosa** (`_chave_ativa` com fail-fast): só é exigida quando o
+   lote contém ao menos um CPF — cargas CNPJ-only não dependem do env.
+4. **Bronze permanece com o dado bruto equivalente-público** (CPF de
+   fonte pública) e a Silver é a fronteira de pseudonimização; o Gold e
+   a API só expõem o hash (ADR-026 read-only preservado).
+
+Consequências:
+- Fonte única de hash: a chave é lida uma vez por transform, com
+  determinismo para os testes (seed do Gold carrega o hash esperado
+  calculado com a mesma chave de teste).
+- Remoção do acoplamento dbt↔UDF: builds do Gold não dependem de
+  registro de plugin nem de `CPF_HMAC_SECRET_KEY` no ambiente de
+  build.
+- `dim_fornecedor.cnpj_cpf_valor` continua "CNPJ em claro OU hash do
+  CPF OU NULL" (ADR-011) — sem hash-de-hash.
+- Chave continua em `EnvSettings.cpf_hmac_secret_key` (ADR-004) com o
+  mesmo plano de rotação; rotação exige re-materializar a Silver, não
+  o Gold.
+
+---
+
 <!-- Continue with further ADRs -->

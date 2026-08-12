@@ -15,7 +15,11 @@ Duas entidades com grãos e schemas próprios (ADR-012/ADR-013):
 
 Valores monetários pt-BR via `parse_decimal_ptbr`, datas DD/MM/AAAA via
 `parse_date_multi_format` e CNPJ/CPF do estabelecimento sanitizado e
-classificado (ADR-011). Parsers nunca lançam exceção (ADR-016).
+classificado (ADR-011). CPF de estabelecimento (11 dígitos) é
+pseudonimizado via HMAC-SHA256 na Silver (ADR-033); CNPJ permanece em
+texto claro. O `portador_cpf_formatado` já chega mascarado pela CGU e é
+persistido como `portador_cpf_mascarado`. Parsers nunca lançam exceção
+(ADR-016).
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ import pandas as pd
 import structlog
 
 from pipeline.contracts import resolve_tipo_documento
+from pipeline.pseudonymize import pseudonymize_cpf_column
 from pipeline.normalize import (
     normalizar_nome_proprio,
     parse_date_multi_format,
@@ -101,8 +106,12 @@ def construir_silver_cartao(df_bronze: pd.DataFrame) -> pd.DataFrame:
         resolve_tipo_documento(v)
         for v in df_bronze["estabelecimento_cnpj_formatado"]
     ]
-    estabelecimento_cnpj_valor = [par[0] for par in classificados]
-    estabelecimento_tipo = [par[1].value if par[1] else None for par in classificados]
+    tipos_documento = [par[1] for par in classificados]
+    estabelecimento_cnpj_valor = pseudonymize_cpf_column(
+        (par[0] for par in classificados),
+        (t.value if t else None for t in tipos_documento),
+    )
+    estabelecimento_tipo = [t.value if t else None for t in tipos_documento]
 
     dados = {
         "id": df_bronze["id"].astype("int64"),

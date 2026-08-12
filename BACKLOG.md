@@ -166,7 +166,7 @@
 ☑ `transform.py` Senado → `silver_despesa` (`fonte=senado`, mesmo contrato) — `pipeline/senado/transform.py`.
 ☑ `transform.py` CGU → `silver_emenda` (chave `["ano","codigo_emenda"]`) e `silver_cartao` (chave `["id"]`, id nativo da CGU propagado até a Silver) + DAG task Silver — `pipeline/transparencia/transform.py`.
 ☑ `pipeline_dag.py` — task `executar_silver` conectando Bronze→Silver (ADR-023), agregando os 4 `carregar_silver_*` com XCom.
-☑ `dim_fornecedor` — de `silver_despesa` com HMAC-SHA256 no Gold (CPF via UDF do plugin `hmac_udf.py`; CNPJ claro) + `tipo_documento` (ADR-011) + quarentena por construção.
+☑ `dim_fornecedor` — de `silver_despesa` com CPF pseudonimizado na Silver (ADR-033: HMAC-SHA256 aplicado no `transform.py`, `pipeline/pseudonymize.py`; CNPJ claro) + `tipo_documento` (ADR-011) + quarentena por construção.
 ☑ `dim_categoria_despesa` — de `silver_despesa.tipo_despesa` + quarentena.
 ☑ `pipeline_runs` dbt incremental operante (glob no Bronze Parquet; sem arquivos → **zero linhas**, nunca linha fictícia — `where false` com schema compatível); pendente o `scripts/backfill_pipeline_runs.py` para migrar o histórico das Sprints 2/3 (ADR-019).
 ☑ Agregados analíticos puros (`supplier_concentration`, `supplier_growth`) populados (ADR-021) — Onda 3 (`models/analytics/`, HHI por parlamentar/ano + crescimento YoY por fornecedor/ano; contratos em `gold.py`).
@@ -467,7 +467,24 @@
    `pipeline/pipeline.py` removida da árvore §6. Suíte 288 testes verdes após
    a realocação (230 pipeline + 58 API).
 
+☑ **Corretivos do prompt de QA (Sprint 6.5)**:
+   - **BUG-001** — incremental da Bronze avançava para período inexistente;
+     agora extrai o período seguinte apenas quando já existe, senão reextrai o
+     corrente (`_proximo_mes_competencia`/`_proximo_ano_competencia` +
+     `run_pipeline(execution_timestamp=...)`). 3 testes de regressão.
+   - **BUG-003** — Silver idempotente por chave de negócio: `escrever_validos_
+     duckdb` virou UPSERT (DELETE+INSERT na chave). 2 testes de regressão.
+   - **BUG-005** — `fontes_com_erro` tipada `list[str]` na API e
+     `cast(null as varchar[])` no ramo vazio de `pipeline_runs.sql`.
+   - **BUG-006** — `limite` de `/pipeline/status` confirmado dentro do teto
+     (`le=config.limite_maximo`), coberto por teste.
+
+☑ **ADR-033 — Pseudonimização de CPF movida para a Silver** (transform onde o
+   hash é aplicado; Gold repassa sem UDF). Plugin `hmac_udf.py` removido do
+   `profiles.yml`; `pipeline/pseudonymize.py` é a fonte única; seeds dos
+   testes Gold carregam o hash (asserções de dimensão preservadas).
+
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.1 — **Sprint 6 fechada** — Onda 4 completa: endpoints agent-ready (RF-05/ADR-032): `/agent/parlamentar/{id}` (perfil SCD2 vigente + métricas §8 + `hhi` de `supplier_concentration` + `risk_index`/5 scores + anomalias + top-5 fornecedores), `/agent/fornecedor/{cnpj_cpf_valor}` (perfil + agregados + top-5 parlamentares), `/agent/anomalias` (**resumo agregado** — total, por ano, por critério, top-10 zscore), `/agent/context` (**retrato sistêmico** CU-07) — 288 testes verdes (212 pipeline + 58 API + 18 integração). Onda 3 completa (anomalias/comunidades/qualidade/pipeline, 276). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API + **DuckDB real de dev desatualizado — escopo da Sprint 6.5**). ADRs 001-032. Sprint 5 fechada (212). Sprint 4 fechada (129).*
+*Versão atual: 1.1 — **Sprint 6 fechada** — Onda 4 completa: endpoints agent-ready (RF-05/ADR-032): `/agent/parlamentar/{id}` (perfil SCD2 vigente + métricas §8 + `hhi` de `supplier_concentration` + `risk_index`/5 scores + anomalias + top-5 fornecedores), `/agent/fornecedor/{cnpj_cpf_valor}` (perfil + agregados + top-5 parlamentares), `/agent/anomalias` (**resumo agregado** — total, por ano, por critério, top-10 zscore), `/agent/context` (**retrato sistêmico** CU-07) — 288 testes verdes (212 pipeline + 58 API + 18 integração). Onda 3 completa (anomalias/comunidades/qualidade/pipeline, 276). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API + **DuckDB real de dev desatualizado — escopo da Sprint 6.5**). ADRs 001-033. Sprint 5 fechada (212). Sprint 4 fechada (129).*
 
 *Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API).*

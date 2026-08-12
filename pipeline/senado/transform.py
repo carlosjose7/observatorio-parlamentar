@@ -13,8 +13,9 @@ Diferenças de fonte (ADR-016):
 - Não existe glosa — `valor_glosa` é fixado em 0.0.
 - `fonte='senado'`; chave de negócio `["fonte", "cod_documento"]`.
 
-O HMAC de CPF é aplicado no Gold (dbt) — aqui apenas digitação limpa
-(`clean_document_number`) + classificação (ADR-011).
+O CPF é pseudonimizado na própria Silver (ADR-033), via HMAC-SHA256
+(`pipeline.pseudonymize`) — aqui apenas a digitação limpa
+(`clean_document_number`) + classificação (ADR-011) + hash do CPF.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import structlog
 from pipeline.contracts import resolve_tipo_documento
 from pipeline.normalize import parse_date_multi_format, parse_decimal_ptbr
 from pipeline.parlamento import legislatura_para_data, normalizar_situacao
+from pipeline.pseudonymize import pseudonymize_cpf_column
 from pipeline.silver import (
     COLUNAS_SILVER_PARLAMENTAR,
     ResultadoCargaSilver,
@@ -77,8 +79,12 @@ def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
 
     n = len(df_bronze)
     classificados = [resolve_tipo_documento(v) for v in df_bronze["cnpj_cpf"]]
-    cnpj_cpf_valor = [par[0] for par in classificados]
-    tipo_documento = [par[1].value if par[1] else None for par in classificados]
+    tipos_documento = [par[1] for par in classificados]
+    cnpj_cpf_valor = pseudonymize_cpf_column(
+        (par[0] for par in classificados),
+        (t.value if t else None for t in tipos_documento),
+    )
+    tipo_documento = [t.value if t else None for t in tipos_documento]
 
     df = pd.DataFrame(
         {

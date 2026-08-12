@@ -67,11 +67,11 @@ SNAPSHOTS_PARLAMENTO = {
 }
 
 
-def _novo_run_meta() -> LoadMetadata:
+def _novo_run_meta(execution_timestamp: datetime | None = None) -> LoadMetadata:
     return LoadMetadata(
         run_id=uuid.uuid4(),
         pipeline_version=get_pipeline_version(),
-        execution_timestamp=datetime.now(timezone.utc),
+        execution_timestamp=execution_timestamp or datetime.now(timezone.utc),
         source_version="",
     )
 
@@ -149,6 +149,39 @@ def _truncar_validacao(periodos: list) -> list:
     return periodos
 
 
+def _proximo_mes_competencia(periodo: str, run_meta: LoadMetadata) -> str:
+    """Período a extrair na execução incremental após `MM/AAAA` (corretivo QA BUG-001).
+
+    Avança para o mês seguinte ao último watermark consolidado; quando o
+    próximo período ainda não existe (o watermark já é o mês corrente da
+    execução), reextrai o mês corrente — a fonte o republica dentro do mês
+    e a deduplicação por chave natural absorve as atualizações. Avanço e
+    reextração nunca ultrapassam o mês da execução.
+    """
+    mes, ano = (int(parte) for parte in periodo.split("/"))
+    mes += 1
+    if mes > 12:
+        mes, ano = 1, ano + 1
+    corrente = (run_meta.execution_timestamp.year, run_meta.execution_timestamp.month)
+    if (ano, mes) > corrente:
+        return f"{corrente[1]:02d}/{corrente[0]}"
+    return f"{mes:02d}/{ano}"
+
+
+def _proximo_ano_competencia(ano: int, run_meta: LoadMetadata) -> int:
+    """Ano a extrair na execução incremental após `ano` (corretivo QA BUG-001).
+
+    Análogo a `_proximo_mes_competencia` para o grão anual das emendas CGU:
+    avança para o ano seguinte e, quando o próximo ano ainda não existe, o
+    ano corrente é reextraído (o dataset anual é republicado — a dedup
+    absorve as correções).
+    """
+    proximo = ano + 1
+    if proximo > run_meta.execution_timestamp.year:
+        return run_meta.execution_timestamp.year
+    return proximo
+
+
 def _camara_filtro_inicial(mes_inicio: str, run_meta: LoadMetadata) -> list[str]:
     """Meses da primeira carga da Câmara (janela truncada no modo validação).
 
@@ -199,19 +232,29 @@ def _extrair(
     Primeira carga (watermark vazio): Câmara, cartões e Senado/emendas varrem
     os períodos de `carga_historica` até o período corrente (ano ou mês),
     truncados para `limite_periodos` no modo validação. Execuções seguintes
-    seguem o fluxo incremental de cada fonte.
+    extraem o **período seguinte** ao watermark consolidado (corretivo QA
+    BUG-001): mês+1 para Câmara/cartões, ano+1 para emendas; quando o próximo
+    período ainda não existe, o período corrente é reextraído (republicação —
+    a deduplicação por chave absorve). O watermark só avança após a escrita.
     """
     fontes = get_sources()
     if fonte == "camara":
         cfg = fontes.camara
         ch = cfg.carga_historica
-        if estado.last_watermark is None and ch and ch.mes_inicio:
-            meses = _camara_filtro_inicial(ch.mes_inicio, run_meta)
-            return _agregar_resultados(
-                [camara_extract.extract_despesas(cfg, client, m, run_meta, retry_settings) for m in meses]
-            )
+        if estado.last_watermark is None:
+            if ch and ch.mes_inicio:
+                meses = _camara_filtro_inicial(ch.mes_inicio, run_meta)
+                return _agregar_resultados(
+                    [camara_extract.extract_despesas(cfg, client, m, run_meta, retry_settings) for m in meses]
+                )
+            return camara_extract.extract_despesas(cfg, client, None, run_meta, retry_settings)
+        # Incremental: período seguinte ao watermark consolidado (corretivo QA BUG-001)
         return camara_extract.extract_despesas(
-            cfg, client, estado.last_watermark, run_meta, retry_settings
+            cfg,
+            client,
+            _proximo_mes_competencia(estado.last_watermark, run_meta),
+            run_meta,
+            retry_settings,
         )
 
     if fonte == "senado":
@@ -227,23 +270,32 @@ def _extrair(
     cfg = fontes.transparencia
     if fonte == "transparencia_emendas":
         ch = (cfg.carga_historica or {}).get("emendas")
-        if estado.last_watermark is None and ch and ch.ano_inicio is not None:
-            anos = _truncar_validacao(_anos_historico(ch.ano_inicio, run_meta))
-            return _agregar_resultados(
-                [transparencia_extract.extract_emendas(cfg, client, a, run_meta, retry_settings) for a in anos]
-            )
-        return transparencia_extract.extract_emendas(
-            cfg, client, int(estado.last_watermark) if estado.last_watermark else None, run_meta, retry_settings
-        )
+        if estado.last_watermark is None:
+            if ch and ch.ano_inicio is not None:
+                anos = _truncar_validacao(_anos_historico(ch.ano_inicio, run_meta))
+                return _agregar_resultados(
+                    [transparencia_extract.extract_emendas(cfg, client, a, run_meta, retry_settings) for a in anos]
+                )
+            return transparencia_extract.extract_emendas(cfg, client, None, run_meta, retry_settings)
+        # Incremental: ano seguinte ao watermark consolidado (corretivo QA BUG-001)
+        ano = _proximo_ano_competencia(int(estado.last_watermark), run_meta)
+        return transparencia_extract.extract_emendas(cfg, client, ano, run_meta, retry_settings)
 
     ch = (cfg.carga_historica or {}).get("cartoes")
-    if estado.last_watermark is None and ch and ch.mes_inicio:
-        meses = _truncar_validacao(_meses_historico(ch.mes_inicio, run_meta))
-        return _agregar_resultados(
-            [transparencia_extract.extract_cartoes(cfg, client, m, run_meta, retry_settings) for m in meses]
-        )
+    if estado.last_watermark is None:
+        if ch and ch.mes_inicio:
+            meses = _truncar_validacao(_meses_historico(ch.mes_inicio, run_meta))
+            return _agregar_resultados(
+                [transparencia_extract.extract_cartoes(cfg, client, m, run_meta, retry_settings) for m in meses]
+            )
+        return transparencia_extract.extract_cartoes(cfg, client, None, run_meta, retry_settings)
+    # Incremental: mês seguinte ao watermark consolidado (corretivo QA BUG-001)
     return transparencia_extract.extract_cartoes(
-        cfg, client, estado.last_watermark, run_meta, retry_settings
+        cfg,
+        client,
+        _proximo_mes_competencia(estado.last_watermark, run_meta),
+        run_meta,
+        retry_settings,
     )
 
 
@@ -326,6 +378,7 @@ def run_pipeline(
     store: WatermarkStore | None = None,
     client: httpx.Client | None = None,
     retry_settings: RetryDefaultSettings | None = None,
+    execution_timestamp: datetime | None = None,
 ) -> PipelineRun:
     """Executa o pipeline Bronze ponta a ponta e grava a linha de controle.
 
@@ -333,12 +386,15 @@ def run_pipeline(
         storage: Persistência Parquet (padrão: `criar_storage()`).
         store: Armazenamento de watermark (padrão: `JsonFileStore`).
         client: Cliente HTTP (padrão: novo cliente com timeout configurado).
-        retry_settings: Política de retry (tenacity) — override para testes.
+        retry_settings: Política de retry (tenacity) para override em testes.
+        execution_timestamp: Momento da execução usado como referência para a
+            janela de carga histórica/incremental e registrado no `run_meta`
+            (corretivo QA BUG-001). Omitido → `datetime.now(timezone.utc)`.
 
     Returns:
         PipelineRun com status consolidado e watermarks por fonte.
     """
-    run_meta = _novo_run_meta()
+    run_meta = _novo_run_meta(execution_timestamp)
     configure_logging()
     if client is None:
         client = httpx.Client(timeout=httpx.Timeout(get_pipeline().http.request_timeout_seconds))

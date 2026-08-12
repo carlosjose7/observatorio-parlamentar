@@ -41,7 +41,12 @@ if str(_GOLD) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def _chave_hmac(monkeypatch):
-    """Garante CPF_HMAC_SECRET_KEY determinístico para o plugin hmac_udf."""
+    """Garante CPF_HMAC_SECRET_KEY determinístico (pseudonimização ADR-033).
+
+    Estabelecimentos aqui são CNPJ (texto claro); a chave é mantida por
+    paridade com os demais testes Gold — qualquer CPF futuro no seed já
+    carrega o hash da Silver.
+    """
     monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-cartao-2026")
 
 

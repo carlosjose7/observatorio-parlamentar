@@ -157,7 +157,7 @@ _DDL = {
             pipeline_version varchar,
             execution_timestamp timestamp,
             status varchar,
-            fontes_com_erro varchar,
+            fontes_com_erro varchar[],
             watermark_camara varchar,
             watermark_senado varchar,
             watermark_cgu_emenda varchar,
@@ -290,9 +290,9 @@ def sembrar_gold(caminho) -> None:
         [
             ("run-2026-01-10", "0.1.0", "2026-01-10 03:30:00", "success", None,
              "2026-01-09", "2026-01-10", "2026-01-09", "2026-01-10"),
-            ("run-2026-01-05", "0.1.0", "2026-01-05 12:00:00", "partial", "camara",
+            ("run-2026-01-05", "0.1.0", "2026-01-05 12:00:00", "partial", ["camara"],
              "2026-01-04", None, None, None),
-            ("run-2025-12-01", "0.0.9", "2025-12-01 01:00:00", "failed", "senado,cgu_emenda",
+            ("run-2025-12-01", "0.0.9", "2025-12-01 01:00:00", "failed", ["senado", "cgu_emenda"],
              "2025-11-30", None, None, None),
         ],
     )

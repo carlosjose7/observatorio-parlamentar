@@ -4,9 +4,10 @@
 -- o `id_fornecedor` nasce do CNPJ/CPF do estabelecimento da transação, por JOIN
 -- na chave natural composta (tipo_documento, cnpj_cpf_valor) de dim_fornecedor.
 --
--- A pseudonimização do ADR-011 é respeitada: dim_fornecedor guarda CNPJ em
--- texto claro e CPF como HMAC-SHA256 (UDF `hmac_sha256_cpf`, plugin hmac_udf);
--- aqui a Silver ainda tem o dígito cru — a UDF aplica o MESMO hash para casar.
+-- A pseudonimização acontece na Silver (ADR-033, pipeline/pseudonymize.py):
+-- `silver_cartao.estabelecimento_cnpj_valor` (quando CPF) e `dim_fornecedor`
+-- carregam o MESMO hash HMAC-SHA256, então o JOIN é por igualdade direta — o
+-- Gold não reaplica hash. O `portador_cpf_formatado` já é mascarado pela CGU.
 --
 -- Diferente da despesa, `id_fornecedor` do cartão é NULLABLE no contrato
 -- (gold.py:188, a fonte não garante CNPJ do estabelecimento); quando o
@@ -23,7 +24,4 @@ select
 from {{ source('silver', 'silver_cartao') }} s
 left join {{ ref('dim_fornecedor') }} f
     on f.tipo_documento = s.estabelecimento_tipo_documento
-    and f.cnpj_cpf_valor = case
-        when s.estabelecimento_tipo_documento = 'CPF' then hmac_sha256_cpf(s.estabelecimento_cnpj_valor)
-        else s.estabelecimento_cnpj_valor
-    end
+    and f.cnpj_cpf_valor = s.estabelecimento_cnpj_valor

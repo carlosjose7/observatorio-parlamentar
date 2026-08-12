@@ -34,12 +34,15 @@
     -- Sem arquivos de controle: tabela vazia com schema compatível — NUNCA
     -- insere linha fictícia (nada distingue "dummy" de execução real; zero
     -- linhas = zero falsos positivos em DQ/reprodutibilidade/RF-12).
+    -- `fontes_com_erro` é LIST(VARCHAR) (corretivo QA BUG-005): o Parquet da
+    -- Bronze grava a lista de fontes com erro; o ramo vazio espelha o MESMO
+    -- tipo para o MERGE incremental nunca falhar por incompatibilidade.
     select
         cast(null as varchar) as run_id,
         cast(null as varchar) as pipeline_version,
         cast(null as timestamp) as execution_timestamp,
         cast(null as varchar) as status,
-        cast(null as varchar) as fontes_com_erro,
+        cast(null as varchar[]) as fontes_com_erro,
         cast(null as varchar) as watermark_camara,
         cast(null as varchar) as watermark_senado,
         cast(null as varchar) as watermark_cgu_emenda,

@@ -12,7 +12,10 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
 
+import pipeline.config as config
+from pipeline.pseudonymize import pseudonymize_cpf
 from pipeline.storage import LocalParquetStorage
 from pipeline.transparencia.transform import (
     COLUNAS_SILVER_CARTAO,
@@ -20,6 +23,25 @@ from pipeline.transparencia.transform import (
     construir_silver_cartao,
     construir_silver_emenda,
 )
+
+_CHAVE_TESTE = "chave-teste-transform-transparencia-2026"
+# CPF pseudonimizado na Silver (ADR-033): o hash dos testes usa a MESMA chave
+# do EnvSettings injetada pelo fixture autouse `_cpf_env`.
+_CPF_HMAC = pseudonymize_cpf("12345678901", _CHAVE_TESTE.encode("utf-8"))
+
+
+@pytest.fixture(autouse=True)
+def _cpf_env(monkeypatch):
+    """Define chave HMAC determinística (ADR-033) e limpa o cache de settings.
+
+    `pseudonymize_cpf_column` lê `EnvSettings.cpf_hmac_secret_key`, que é
+    cacheado por `functools.lru_cache` — sem limpar o cache, um `.env` ou
+    teste anterior vazando o caminho DuckDB invalidaria a chave.
+    """
+    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", _CHAVE_TESTE)
+    config.load_env_settings.cache_clear()
+    yield
+    config.load_env_settings.cache_clear()
 
 
 def _df_cartao(**override) -> pd.DataFrame:
@@ -91,6 +113,13 @@ class TestConstruirCartao:
         df = construir_silver_cartao(_df_cartao(estabelecimento_cnpj_formatado=[None]))
         assert df.loc[0, "estabelecimento_cnpj_valor"] is None
         assert df.loc[0, "estabelecimento_tipo_documento"] is None
+
+    def test_estabelecimento_pessoa_cpf_pseudonimizado(self):
+        df = construir_silver_cartao(
+            _df_cartao(estabelecimento_cnpj_formatado=["123.456.789-01"])
+        )
+        assert df.loc[0, "estabelecimento_cnpj_valor"] == _CPF_HMAC
+        assert df.loc[0, "estabelecimento_tipo_documento"] == "CPF"
 
     def test_vazio_retorna_schema(self):
         df = construir_silver_cartao(pd.DataFrame(columns=["id"]))

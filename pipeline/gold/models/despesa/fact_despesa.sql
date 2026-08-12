@@ -11,8 +11,8 @@
 --                      `fonte` da despesa (desp_orgao, ADR-022.1) — sem
 --                      literal da casa.
 --   - id_fornecedor  → dim_fornecedor (ADR-011), por (tipo_documento,
---                      cnpj_cpf_valor); CPF casado pelo HMAC da UDF
---                      (desp_fornecedor).
+--                      cnpj_cpf_valor); CPF casado pelo hash HMAC-SHA256 já
+--                      pseudonimizado na Silver (ADR-033, desp_fornecedor).
 --   - cod_tipo       → dim_categoria_despesa, por `substr(md5(upper(tipo_despesa)),
 --                      1, 12)` — mesmo determinismo da dimensão.
 --   - data_sk        → dim_data, YYYYMMDD de `data_documento`.

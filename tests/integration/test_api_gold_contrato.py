@@ -44,10 +44,17 @@ if str(_RAIZ) not in sys.path:
 if str(_GOLD) not in sys.path:
     sys.path.insert(0, str(_GOLD))
 
+from pipeline.pseudonymize import pseudonymize_cpf  # noqa: E402
+
+_CPF = "12345678901"
+# CPF pseudonimizado na Silver (ADR-033): o seed do DuckDB carrega o HASH, não
+# os dígitos — mesmo contrato do transform.py das fontes. O Gold repassa.
+_CPF_HMAC = pseudonymize_cpf(_CPF, _CHAVE_TESTE.encode("utf-8"))
+
 
 @pytest.fixture(autouse=True)
 def _chave_hmac(monkeypatch):
-    """Determinismo do HMAC do CPF (plugin `hmac_udf`) no build dbt."""
+    """Determinismo do HMAC do CPF (pseudonimização ADR-033) no build dbt."""
     monkeypatch.setenv("CPF_HMAC_SECRET_KEY", _CHAVE_TESTE)
 
 
@@ -118,7 +125,7 @@ def _seed(db: Path) -> None:
                 # D1: câmara por id, CNPJ — 2023 (dentro da versão vigente de JOSE)
                 ("camara", 1, None, 2023, 5, "D1", "2023-05-10", "PASSAGEM AEREA", "12345678000190", "CNPJ", "LATAM", 100, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 # D2: câmara por id, CPF → HMAC na dimensão
-                ("camara", 1, None, 2023, 6, "D2", "2023-06-15", "TAXI", "12345678901", "CPF", "AUTONOMO X", 50, 0, "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, None, 2023, 6, "D2", "2023-06-15", "TAXI", _CPF_HMAC, "CPF", "AUTONOMO X", 50, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 # D3: senado por nome (MARIA SANTOS → id 6)
                 ("senado", None, "MARIA SANTOS", 2023, 3, "D3", "2023-03-10", "HOSPEDAGEM", "11111111000100", "CNPJ", "HOTEL CENTER", 200, 0, "r", "p", "2026-01-01 00:00:00", "s"),
             ],

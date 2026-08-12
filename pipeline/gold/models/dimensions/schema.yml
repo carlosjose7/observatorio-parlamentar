@@ -21,7 +21,8 @@ models:
   - name: dim_fornecedor
     description: >
       Fornecedores de despesas parlamentares (ADR-011). CNPJ em texto claro,
-      CPF pseudonimizado com HMAC-SHA256 (plugin hmac_udf). Linhas sem
+      CPF pseudonimizado com HMAC-SHA256 (na Silver, ADR-033 — pipeline/
+      pseudonymize.py; o Gold repassa sem reaplicar hash). Linhas sem
       identidade resolúvel ficam em dim_fornecedor_quarantine (ADR-018).
     columns:
       - name: id_fornecedor

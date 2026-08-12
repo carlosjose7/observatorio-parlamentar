@@ -355,3 +355,53 @@ class TestPersistenciaDedupSilver:
             assert "dedup_removidas_silver_despesa" not in nomes
         finally:
             con.close()
+
+    def test_reexecucao_mesma_chave_upsert_nao_duplica(self, tmp_path):
+        """Corretivo QA BUG-003: a Silver é idempotente por chave de negócio —
+        re-executar a mesma carga SUBSTITUI o registro (DELETE+INSERT via
+        `escrever_validos_duckdb`), não duplica a linha na tabela."""
+        df = pd.DataFrame(
+            {
+                "fonte": ["camara"],
+                "cod_documento": ["AAA"],
+                "data_documento": pd.to_datetime(["2024-07-03"]),
+                "valor_liquido": [100.0],
+                "valor_glosa": [0.0],
+                "tipo_documento": ["CNPJ"],
+            }
+        )
+        chaves = ["fonte", "cod_documento"]
+        self._carregar(tmp_path, df, "silver_despesa", chaves)
+        self._carregar(tmp_path, df, "silver_despesa", chaves)
+
+        linhas = self._query(
+            tmp_path,
+            "SELECT fonte, cod_documento FROM silver_despesa WHERE cod_documento = 'AAA'",
+        )
+        assert linhas == [("camara", "AAA")]  # 1 linha, nunca 2
+
+    def test_correcao_de_registro_em_reexecucao_reflete(self, tmp_path):
+        """Corretivo QA BUG-003: correção de um registro já consolidado (mesma
+        chave, valor novo) REFLETE na Silver em vez de gerar nova linha —
+        a reexecução não cria novo `cod_documento`."""
+        def _df(valor):
+            return pd.DataFrame(
+                {
+                    "fonte": ["camara"],
+                    "cod_documento": ["AAA"],
+                    "data_documento": pd.to_datetime(["2024-07-03"]),
+                    "valor_liquido": [valor],
+                    "valor_glosa": [0.0],
+                    "tipo_documento": ["CNPJ"],
+                }
+            )
+
+        chaves = ["fonte", "cod_documento"]
+        self._carregar(tmp_path, _df(100.0), "silver_despesa", chaves)
+        self._carregar(tmp_path, _df(250.0), "silver_despesa", chaves)
+
+        linhas = self._query(
+            tmp_path,
+            "SELECT cod_documento, valor_liquido FROM silver_despesa WHERE cod_documento = 'AAA'",
+        )
+        assert linhas == [("AAA", 250.0)]

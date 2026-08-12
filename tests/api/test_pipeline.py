@@ -28,11 +28,11 @@ def test_status_parcial_e_falha(_cliente):
     corpo = _cliente.get("/pipeline/status").json()
     parcial = corpo["itens"][1]
     assert parcial["status"] == "partial"
-    assert parcial["fontes_com_erro"] == "camara"
+    assert parcial["fontes_com_erro"] == ["camara"]
     assert parcial["watermark_senado"] is None
     falha = corpo["itens"][2]
     assert falha["status"] == "failed"
-    assert falha["fontes_com_erro"] == "senado,cgu_emenda"
+    assert falha["fontes_com_erro"] == ["senado", "cgu_emenda"]
     assert falha["pipeline_version"] == "0.0.9"
 
 

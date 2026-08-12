@@ -12,15 +12,16 @@ Regressão do fechamento da cadeia de identidade da despesa (BACKLOG.md): o
 - **Senado** (CEAPS só expõe `senador` → silver_despesa.nome_parlamentar,
   id_parlamentar NULL): matching exato do nome normalizado (macro
   `nome_normalizado`, regra ADR-017) restrito à versão vigente na data.
-- **Fornecedor**: CNPJ por chave natural em texto claro; CPF casado via HMAC
-  da UDF (ADR-011) — o valor na dimensão NUNCA é o CPF cru.
+- **Fornecedor**: CNPJ por chave natural em texto claro; CPF casado pelo hash
+  HMAC-SHA256 já pseudonimizado na Silver (ADR-033, `pipeline.pseudonymize`)
+  — o valor na dimensão NUNCA é o CPF cru.
 
 Coberto aqui (dbtRunner de verdade, como `test_gold_scd2_adr017.py`):
 
 - ADR-017/ADR-020 adaptado à data: `parlamentar_resolvido` casa a versão
   vigente na `data_documento`; `parlamentar_ambiguo` nunca grava id;
   `parlamentar_fora_cobertura`; `parlamentar_nao_resolvido`; `data_nao_resolvida`.
-- ADR-011: fornecedor de CPF entra no fato pelo id da dimensão (HMAC).
+- ADR-011: fornecedor de CPF entra no fato pelo id da dimensão (hash HMAC).
 - ADR-022.1: órgão ausente da dimensão NÃO promove — vai à quarentena
   (`orgao_nao_resolvido`), nunca NULL silencioso.
 - ADR-022.3a: `fk_orphan_pct` por fato, coberto acima e abaixo do limiar
@@ -44,16 +45,24 @@ if str(_RAIZ) not in sys.path:
 if str(_GOLD) not in sys.path:
     sys.path.insert(0, str(_GOLD))
 
+from pipeline.pseudonymize import pseudonymize_cpf  # noqa: E402
+
+_CHAVE_TESTE = "Chave-de-teste-gold-despesa-2026"
+_CPF = "12345678901"
+# CPF pseudonimizado na Silver (ADR-033): o seed do DuckDB carrega o HASH, não
+# os dígitos — mesmo contrato do transform.py das fontes. O Gold repassa.
+_CPF_HMAC = pseudonymize_cpf(_CPF, _CHAVE_TESTE.encode("utf-8"))
+
 
 @pytest.fixture(autouse=True)
 def _chave_hmac(monkeypatch):
-    """Garante CPF_HMAC_SECRET_KEY determinístico para o plugin hmac_udf.
+    """Garante CPF_HMAC_SECRET_KEY determinístico (testes Silver e API).
 
-    O registro da UDF é exigido pelo `dim_fornecedor` (CPF pseudonimizado) e o
-    build só roda se a chave estiver presente no ambiente — mesma garantia de
-    `tests/pipeline/test_gold_hmac_udf.py`.
+    A pseudonimização na Silver (`pipeline/pseudonymize.py`) usa a chave do
+    ambiente; sem ela a carga falharia (ADR-033). Mesma chave do `_CPF_HMAC`
+    para que o hash dos testes seja exatamente o persistido pelo dbt.
     """
-    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", "Chave-de-teste-gold-despesa-2026")
+    monkeypatch.setenv("CPF_HMAC_SECRET_KEY", _CHAVE_TESTE)
 
 
 def _seed(db: Path) -> None:
@@ -119,7 +128,7 @@ def _seed(db: Path) -> None:
                 # D1: câmara por id (versão 1 vigente em 2019-05-10), fornecedor CNPJ
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "PASSAGEM AEREA", "12345678000190", "CNPJ", "LATAM", 100, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 # D2: câmara por id, fornecedor CPF → HMAC na dimensão
-                ("camara", 1, None, 2019, 6, "D2", "2019-06-15", "TAXI", "12345678901", "CPF", "AUTONOMO X", 50, 0, "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, None, 2019, 6, "D2", "2019-06-15", "TAXI", _CPF_HMAC, "CPF", "AUTONOMO X", 50, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 # D3: senado — resolvido por nome (MARIA SANTOS → id 6)
                 ("senado", None, "MARIA SANTOS", 2020, 3, "D3", "2020-03-10", "HOSPEDAGEM", "11111111000100", "CNPJ", "HOTEL CENTER", 200, 0, "r", "p", "2026-01-01 00:00:00", "s"),
                 # D4: senado — nome existe, sem versão vigente na data → fora de cobertura
@@ -308,8 +317,8 @@ def test_despesa_promove_so_resolvido(tmp_path, monkeypatch):
     assert ("D8", "data_nao_resolvida") in parlam_quar
     assert ("D7", "fornecedor_nao_resolvido") in fato_quar
     assert ("D8", "data_nao_resolvida") in fato_quar
-    # CPF pseudonimizado: 64 hex, nunca o número cru (ADR-011)
-    assert cpf_dim and len(cpf_dim) == 64 and cpf_dim != "12345678901"
+    # CPF pseudonimizado: 64 hex, nunca o número cru (ADR-011/ADR-033)
+    assert cpf_dim and len(cpf_dim) == 64 and cpf_dim == _CPF_HMAC
 
 
 def test_despesa_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):

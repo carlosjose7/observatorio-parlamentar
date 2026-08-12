@@ -9,6 +9,7 @@ entre runs (Opção 1 — read-merge-write) e gravação de `pipeline_runs`
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -613,3 +614,81 @@ def test_namespace_watermark_store_round_trip(tmp_path):
     isolado.set("watermark_senado", WatermarkState(last_watermark="2025"))
     assert isolado.get("watermark_senado").last_watermark == "2025"
     assert base.get("watermark_senado").last_watermark is None  # store real intacto
+
+
+def test_incremental_camara_avanca_mes_seguinte_ao_watermark(ambiente):
+    """Corretivo QA BUG-001: após a primeira carga, a execução seguinte extrai
+    o MÊS SEGUINTE ao watermark consolidado (08/2026 → 09/2026) — não reextrai
+    o mês já processado nem pula para um futuro inexistente."""
+    requisicoes: list = []
+    client = _cliente_mock(camara_requisicoes=requisicoes)
+
+    run1 = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client,
+        retry_settings=RETRY_TESTS,
+        execution_timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),
+    )
+    meses1 = sorted({int(r["mes"]) for r in requisicoes if "mes" in r})
+    assert meses1 == [7, 8]  # backfill de 07/2026 até o mês da execução
+    assert run1.watermark_camara == "08/2026"
+
+    requisicoes.clear()
+    run2 = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client,
+        retry_settings=RETRY_TESTS,
+        execution_timestamp=datetime(2026, 9, 5, tzinfo=timezone.utc),
+    )
+    meses2 = sorted({int(r["mes"]) for r in requisicoes if "mes" in r})
+    assert meses2 == [9]  # apenas o mês seguinte ao watermark, nada além
+    assert run2.watermark_camara == "09/2026"
+
+
+def test_incremental_camara_reextrai_mes_corrente_quando_proximo_nao_existe(ambiente):
+    """Corretivo QA BUG-001: watermark já no mês da execução → o período
+    seguinte ainda não existe, então o MÊS CORRENTE é reextraído
+    (republicação para a dedup absorver correções) — jamais um mês futuro."""
+    run1 = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"],
+        client=_cliente_mock(), retry_settings=RETRY_TESTS,
+        execution_timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),
+    )
+    assert run1.watermark_camara == "08/2026"
+
+    requisicoes: list = []
+    run2 = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"],
+        client=_cliente_mock(camara_requisicoes=requisicoes),
+        retry_settings=RETRY_TESTS,
+        execution_timestamp=datetime(2026, 8, 20, tzinfo=timezone.utc),
+    )
+    meses = sorted(int(r["mes"]) for r in requisicoes if "mes" in r)
+    assert meses == [8]  # reextrai 08/2026; nada pede 09/2026
+    assert run2.watermark_camara == "08/2026"
+
+
+def test_incremental_emendas_reextrai_ano_corrente_sem_ano_futuro(ambiente):
+    """Corretivo QA BUG-001: com watermark do ano corrente, a emenda reextrai
+    o ano corrente (não tenta o ano futuro); num run seguinte a execução já
+    avança para o ano novo."""
+    requisicoes: list = []
+    client = _cliente_mock(cgu_requisicoes=requisicoes)
+
+    run1 = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client,
+        retry_settings=RETRY_TESTS,
+        execution_timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),
+    )
+    anos1 = sorted({int(r["params"]["ano"]) for r in requisicoes if "ano" in r["params"]})
+    assert anos1 == [2026]
+    assert run1.watermark_cgu_emenda == "2026"
+
+    requisicoes.clear()
+    run2 = run_pipeline(
+        storage=ambiente["storage"], store=ambiente["store"], client=client,
+        retry_settings=RETRY_TESTS,
+        execution_timestamp=datetime(2026, 8, 20, tzinfo=timezone.utc),
+    )
+    anos2 = sorted({int(r["params"]["ano"]) for r in requisicoes if "ano" in r["params"]})
+    assert anos2 == [2026]  # próximo (2027) ainda não existe → reextrai 2026
+    assert run2.watermark_cgu_emenda == "2026"
+    assert not any(r["params"] == {"ano": "2027"} for r in requisicoes)

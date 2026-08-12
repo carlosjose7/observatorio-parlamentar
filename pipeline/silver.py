@@ -146,14 +146,31 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
     )
 
 
-def escrever_validos_duckdb(df: pd.DataFrame, tabela: str) -> None:
-    """Persiste linhas válidas na tabela DuckDB da Silver (INSERT)."""
+def escrever_validos_duckdb(
+    df: pd.DataFrame, tabela: str, chaves_dedup: list[str] | None = None
+) -> None:
+    """Persiste linhas válidas na tabela DuckDB da Silver (INSERT/MERGE).
+
+    A carga é idempotente por **chave de negócio** (corretivo QA BUG-003):
+    quando a tabela já existe e `chaves_dedup` é informado, os registros
+    já consolidados com a mesma chave são removidos antes do INSERT — a
+    carga vira um UPSERT por chave natural. Re-execuções da Silver e
+    correções de registros refletem nos registros existentes em vez de
+    duplicarem e criarem novo `cod_documento`. O `cod_documento` continua
+    sendo atribuído uma única vez na dedup (ADR-023/ADR-024) e é herdado
+    pelo registro substituído (nenhuma duplicação de documento).
+    """
     if df.empty:
         return
     con = _conectar_duckdb()
     try:
         _criar_tabela_se_necessario(con, tabela, df)
         con.register("tmp_validos", df)
+        if chaves_dedup:
+            cond = " and ".join(f"t.{col} = v.{col}" for col in chaves_dedup)
+            con.execute(
+                f"DELETE FROM {tabela} t USING tmp_validos v WHERE {cond}"
+            )
         con.execute(f"INSERT INTO {tabela} SELECT * FROM tmp_validos")
     finally:
         con.close()
@@ -295,7 +312,7 @@ def carregar_tabela_silver(
     # são reextraídas do conjunto original por índices já isolados internamente.
     quarentena = _quarentena_do_conjunto(df_dedup, df_validos)
 
-    escrever_validos_duckdb(df_validos, tabela)
+    escrever_validos_duckdb(df_validos, tabela, chaves_dedup)
     escrever_quarentena_duckdb(quarentena, tabela)
     escrever_dedup_removidas_duckdb(removidas, tabela)
     persistir_qualidade_report(linha)

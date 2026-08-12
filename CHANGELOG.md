@@ -10,6 +10,49 @@ Histórico das alterações, organizado por sprint (ver
 
 ## Sprint 6.5 — Validação End-to-End (manutenção estrutural)
 
+### Corrigido (corretivos do prompt de QA)
+- **BUG-001 — progressão incremental da Bronze presa em reextração.** A
+  execução incremental avançava para o período seguinte ao watermark mesmo
+  quando ele ainda não existia (mês/ano futuro): a fonte só era reextraída
+  quando o novo período já "existia" (senão nada era produzido e o watermark
+  nunca se consolidava). `pipeline/bronze.py` ganhou `_proximo_mes_competencia`
+  e `_proximo_ano_competencia`: o período seguinte ao watermark é extraído
+  **apenas se já existe** (≤ mês/ano da execução); caso contrário o período
+  corrente é reextraído (republicação — a dedup por chave absorve).
+  `run_pipeline(..., execution_timestamp)` para testes determinísticos.
+  Regressão: `test_incremental_camara_avanca_mes_seguinte_ao_watermark`,
+  `test_incremental_camara_reextrai_mes_corrente_quando_proximo_nao_existe`,
+  `test_incremental_emendas_reextrai_ano_corrente_sem_ano_futuro`.
+- **BUG-003 — Silver não idempotente por chave de negócio.** Re-execuções
+  duplicavam registros (`cod_documento`-novo) ao invés de substituir.
+  `pipeline/silver.py::escrever_validos_duckdb` virou **UPSERT por chave**:
+  DELETE das linhas já consolidadas (`USING tmp_validos` na chave de negócio)
+  seguido de INSERT — correções de registro refletem sem duplicar. Regressão:
+  `test_reexecucao_mesma_chave_upsert_nao_duplica`,
+  `test_correcao_de_registro_em_reexecucao_reflete`.
+- **BUG-005 — `fontes_com_erro` tipada como string na API.** A Bronze grava a
+  lista de fontes com erro como `LIST(VARCHAR)`; o schema `api/schemas/
+  pipeline.py` declarava `str | None` (a API recebia a lista sem serializar) e
+  o ramo vazio de `pipeline_runs.sql` usava `cast(null as varchar)`,
+  incompatível com a lista do Parquet no MERGE incremental. Corrigido para
+  `list[str] | None` e `cast(null as varchar[])`; seeds e asserções de
+  `tests/api` atualizados (ex.: `["camara"]`, `["senado", "cgu_emenda"]`).
+- **BUG-006 — limite do endpoint `GET /pipeline/status`.** O `limite` já está
+  dentro do teto configurado (`Query(ge=1, le=config.limite_maximo)`),
+  confirmado e coberto por `test_limite_de_execucoes`.
+
+### Adicionado (ADR-033)
+- **ADR-033 — pseudonimização de CPF movida da Gold (plugin UDF) para a
+  Silver.** O plugin `pipeline/gold/hmac_udf.py` (UDF `hmac_sha256_cpf`
+  registrada no `profiles.yml`) foi **removido**; o Gold agora apenas repassa
+  o valor já hasheado pela Silver (`pipeline/pseudonymize.py`:
+  `pseudonymize_cpf`/`pseudonymize_cpf_column`). CPF é hashado uma única vez
+  na Silver com a chave de `EnvSettings.cpf_hmac_secret_key` (leitura
+  preguiçosa — cargas CNPJ-only não exigem env); o Gold faz JOIN por igualdade
+  (sem hash-de-hash, evita re-pseudonimização inconsistente). Seeds dos testes
+  Gold carregam o hash, preservando as asserções de dimensão. O transform de
+  estabelecimento (transparência) também passa a pseudonimizar CPF.
+
 ### Movido
 - **Módulos analíticos realocados de `pipeline/` para `analytics/`**
   (padrão canônico do `PROJECT_CONTEXT.md §6`, que já previa o pacote como

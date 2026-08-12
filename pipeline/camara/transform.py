@@ -32,6 +32,7 @@ import structlog
 from pipeline.contracts import resolve_tipo_documento
 from pipeline.normalize import parse_date_multi_format
 from pipeline.parlamento import legislatura_para_data, normalizar_situacao
+from pipeline.pseudonymize import pseudonymize_cpf_column
 from pipeline.silver import (
     COLUNAS_SILVER_PARLAMENTAR,
     ResultadoCargaSilver,
@@ -76,6 +77,10 @@ def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame com as colunas canônicas de `silver_despesa` (fonte='camara')
         ou DataFrame vazio com o schema fixo quando não há registros.
+
+    Pseudonimização (ADR-033): o CPF (11 dígitos) é substituído pelo digest
+    HMAC-SHA256 (`pipeline.pseudonymize`) na saída — a Silver guarda o hash,
+    nunca os dígitos. O CNPJ permanece em texto claro (ADR-011).
     """
     if df_bronze.empty:
         return pd.DataFrame(columns=COLUNAS_SILVER)
@@ -84,8 +89,12 @@ def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
     classificados = [
         resolve_tipo_documento(v) for v in df_bronze["cnpj_cpf_fornecedor"]
     ]
-    cnpj_cpf_valor = [par[0] for par in classificados]
-    tipo_documento = [par[1].value if par[1] else None for par in classificados]
+    tipos_documento = [par[1] for par in classificados]
+    cnpj_cpf_valor = pseudonymize_cpf_column(
+        (par[0] for par in classificados),
+        (t.value if t else None for t in tipos_documento),
+    )
+    tipo_documento = [t.value if t else None for t in tipos_documento]
 
     df = pd.DataFrame(
         {

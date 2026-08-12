@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-032. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).
+> Última atualização: **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-033. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).
  
 ---
  
@@ -281,7 +281,6 @@ observatorio-parlamentar/
 │   │   ├── schemas.py                # Sprint 1
 │   │   └── transform.py              # ADR-023 (Sprint 4) — silver_cartao/silver_emenda
 │   ├── gold/                         # dbt (ADR-018) — Sprint 4
-│   │   ├── hmac_udf.py               # plugin UDF HMAC-SHA256 p/ CPF (ADR-011)
 │   │   ├── models/
 │   │   │   ├── sources.yml           # DuckDB Silver main.* como source (ADR-019)
 │   │   │   ├── dimensions/           # dim_fornecedor(+quarantine), dim_categoria_despesa(+quarantine), dim_data
@@ -303,6 +302,7 @@ observatorio-parlamentar/
 │   ├── config.py
 │   ├── normalize.py                  # Sprint 3
 │   ├── silver.py                     # Sprint 3
+│   ├── pseudonymize.py               # ADR-033 — HMAC-SHA256 de CPF aplicado na Silver
 │   ├── gold.py                       # Sprint 4
 │   ├── quality.py                    # Sprint 3
 │   ├── parlamento.py                 # Sprint 3
@@ -762,8 +762,11 @@ GET  /agent/context
   descontinuado por vulnerabilidade a ataque de força
   bruta/rainbow table, dado que o espaço de CPFs válidos é finito
   e computável.
-- Nenhum CPF em texto claro é persistido em qualquer camada,
-  incluindo Bronze — hash aplicado no momento da extração.
+- Nenhum CPF em texto claro é persistido na Gold nem exposto pela API — a
+  pseudonimização acontece no transform Silver (`pipeline/pseudonymize.py`,
+  ADR-033), antes de o dado chegar ao Gold. Bronze/Silver internamente
+  dependem do dado bruto equivalente-público (CPF vem de fonte pública) e o
+  hash é a fronteira de exposição.
 - Chave HMAC deve ter plano de rotação documentado (ex: anual), com
   re-hash de dados históricos quando a chave for rotacionada.
 - Dados pessoais de terceiros não públicos: mascarar.
@@ -779,4 +782,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.9 — **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs; agent-ready ≠ espelho dos endpoints de negócio — reflete a Camada Semântica §8 e os scores §9/ADR-027/028, mesma fronteira read-only do ADR-026, sem recálculo por request ADR-030; `taxa_ausencia`/`indice_alinhamento` fora por inexistência de `fact_presenca`/`fact_votacao`): `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` (resumo agregado), `/agent/context` (retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline — ADR-031). ADRs 001-032. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).*
+*Versão atual: 1.9 — **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs; agent-ready ≠ espelho dos endpoints de negócio — reflete a Camada Semântica §8 e os scores §9/ADR-027/028, mesma fronteira read-only do ADR-026, sem recálculo por request ADR-030; `taxa_ausencia`/`indice_alinhamento` fora por inexistência de `fact_presenca`/`fact_votacao`): `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` (resumo agregado), `/agent/context` (retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline — ADR-031). ADRs 001-033. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).*

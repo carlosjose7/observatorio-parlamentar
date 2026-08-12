@@ -19,7 +19,7 @@ class ExecucaoPipeline(BaseModel):
     pipeline_version: str | None
     execution_timestamp: str | None
     status: str
-    fontes_com_erro: str | None
+    fontes_com_erro: list[str] | None
     watermark_camara: str | None
     watermark_senado: str | None
     watermark_cgu_emenda: str | None
