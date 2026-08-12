@@ -47,6 +47,24 @@ Histórico das alterações, organizado por sprint (ver
   `README.md §II.5`, `PROJECT_CONTEXT.md` (RF-06 + RNF Segurança/LGPD) e a
   redação do ADR-004 (Status/Decisão) com a nota de refinamento pelo ADR-033.
 
+### Segurança (CWE-798 — resolução da pendência de rotação/histórico)
+- **Varredura do histórico concluída (872 blobs):** o único secret
+  versionado foi uma Fernet key curta (13 chars, inválida como Fernet) no
+  `docker-compose.yml` — nenhuma senha real, chave CGU ou
+  `CPF_HMAC_SECRET_KEY` esteve em commits. **Decisão: não reescrever o
+  histórico** (sem valor de exploração; force-push sem benefício).
+- **Gitleaks no CI:** job `secret-scan` em `.github/workflows/pipeline.yml`
+  (dispara em `workflow_dispatch` + `pull_request`) com `.gitleaks.toml`
+  próprio — regra extra para Fernet key e campos de secret do projeto
+  (`CPF_HMAC_SECRET_KEY`, `CGU_API_KEY`, `MINIO_ROOT_PASSWORD`,
+  `POSTGRES_PASSWORD`, `AIRFLOW_FERNET_KEY`, `AIRFLOW_ADMIN_PASSWORD`),
+  allowlist de placeholders. Previne regressão da CWE-798.
+- **Rotação documentada:** valores que já estiveram em repositório público
+  tratam-se como comprometidos — gerar nova Fernet key
+  (`Fernet.generate_key()`) e substituir no `.env`; mesma regra para
+  `CGU_API_KEY`/`CPF_HMAC_SECRET_KEY` caso alguma cópia do `.env` com
+  valores reais tenha sido compartilhada.
+
 ### Corrigido (corretivos do prompt de QA)
 - **BUG-001 — progressão incremental da Bronze presa em reextração.** A
   execução incremental avançava para o período seguinte ao watermark mesmo

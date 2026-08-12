@@ -550,16 +550,27 @@
    O commit `b03170a` (Sprint 6.5) removeu os secrets hardcoded do
    `docker-compose.yml` (Fernet key, senhas admin/postgres → variáveis de
    ambiente com `:?Defina ...` no `.env`), incluindo a postura "fail-fast"
-   que impede o stack de subir sem as credenciais. **Pendência de
-   segurança rastreada (não bloqueante para o fechamento funcional):**
-   1) reescrever o histórico git para remover os secrets que ficaram em
-   commits antigos (a reescrita foi anunciada no título do `b03170a` —
-   "pre-reescrita de historico" — e ainda não executada); 2) **rotacionar**
-   todas as credenciais que já estiveram no histórico (Fernet key, senhas
-   Airflow/Postgres/MinIO, `CPF_HMAC_SECRET_KEY`, `CGU_API_KEY`) — qualquer
-   chave já exposta em repositório deve ser considerada comprometida.
+   que impede o stack de subir sem as credenciais. **Análise do histórico
+   (varredura dos 872 blobs, Sprint 6.5):** o ÚNICO secret versionado foi
+   uma Fernet key curta no `docker-compose.yml` (13 chars, inválida como
+   Fernet — o Airflow não iniciaria com ela); **nenhuma** senha real, chave
+   CGU ou `CPF_HMAC_SECRET_KEY` esteve em commits. **Decisão: não reescrever
+   o histórico** (a Fernet key não tem valor de exploração; force-push
+   reescreveria todos os SHAs e quebraria clones/CI sem benefício
+   proporcional). Mitigações aplicadas:
+   1) **Secret scanner no CI** — Gitleaks adicionado ao
+      `.github/workflows/pipeline.yml` (job `secret-scan`, dispara em
+      `workflow_dispatch` + `pull_request`) com `.gitleaks.toml` próprio
+      (regra extra para Fernet key + campos de secret do projeto) — impede
+      regressão da CWE-798;
+   2) **Rotação recomendada no ambiente local** — a Fernet key antiga que
+      esteve no histórico deve ser substituída por uma nova gerada com
+      `Fernet.generate_key()` no `.env` (qualquer valor que já esteve em
+      repositório público trata-se como comprometido). Mesma regra para
+      `CGU_API_KEY`/`CPF_HMAC_SECRET_KEY` se alguma cópia do `.env` com
+      valores reais tiver sido compartilhada.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.4 — **Sprint 6.5 funcionalmente fechada** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002), secrets externalizados (CWE-798) + pendência de rotação/reescrita de histórico rastreada — **308 testes verdes** (266 pipeline + 38 API + 4 integração). **Validação E2E real concluída** (Bronze→Silver→Gold com APIs reais em modo validação): corretivos BUG-007/008/009/010/011 + regressões, Gold `PASS=224 ERROR=0`, `pipeline_runs` 12 linhas no dev; **316 testes verdes** (307 pipeline + 4 integração + 5 API + 1 skip Airflow). **Alinhamento documental da pseudonimização (BUG-DOC-001):** README, PROJECT_CONTEXT (RF-06/RNF) e ADR-004 agora refletem ADR-033 — Bronze mantém CPF bruto equivalente-público, Silver é a fronteira do hash. Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033.*
+*Versão atual: 1.5 — **Sprint 6.5 funcionalmente fechada** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002), secrets externalizados (CWE-798) com **varredura do histórico (872 blobs: nenhum secret real) e decisão de não reescrever**, Gitleaks no CI (`.gitleaks.toml` + job `secret-scan`), rotação documentada — **308 testes verdes** (266 pipeline + 38 API + 4 integração). **Validação E2E real concluída** (Bronze→Silver→Gold com APIs reais em modo validação): corretivos BUG-007/008/009/010/011 + regressões, Gold `PASS=224 ERROR=0`, `pipeline_runs` 12 linhas no dev; **316 testes verdes** (307 pipeline + 4 integração + 5 API + 1 skip Airflow). **Alinhamento documental da pseudonimização (BUG-DOC-001):** README, PROJECT_CONTEXT (RF-06/RNF) e ADR-004 agora refletem ADR-033 — Bronze mantém CPF bruto equivalente-público, Silver é a fronteira do hash. Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033.*
 
 *Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API). Corretivos QA e ADR-033; **308 testes verdes** ao final (266 pipeline + 38 API + 4 integração).*
