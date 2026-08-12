@@ -2006,6 +2006,18 @@ Decisão:
    fonte pública) e a Silver é a fronteira de pseudonimização; o Gold e
    a API só expõem o hash (ADR-026 read-only preservado).
 
+Condições de acesso ao Bronze (exigência do prompt de QA, BUG-002):
+- **Acesso restrito — satisfeito.** O MinIO (object storage da camada
+  Bronze) é exposto apenas em `127.0.0.1:9000/9001` (docker-compose.yml),
+  nunca em interface pública; a rede interna `observatorio-net` isola o
+  acesso entre serviços e `no-new-privileges` reduz privilégios do
+  container. Nenhuma rota externa publica o MinIO.
+- **Criptografia em repouso — NÃO implementada (dívida consciente).** O
+  volume `minio_data` não tem criptografia em repouso configurada. A
+  mitigação atual é o próprio pseudonimização na Silver + acesso restrito;
+  criptografia em repouso (server-side do MinIO ou disco cifrado) fica
+  registrada como item explícito no `BACKLOG.md` (Sprint 6.5).
+
 Consequências:
 - Fonte única de hash: a chave é lida uma vez por transform, com
   determinismo para os testes (seed do Gold carrega o hash esperado
@@ -2018,6 +2030,9 @@ Consequências:
 - Chave continua em `EnvSettings.cpf_hmac_secret_key` (ADR-004) com o
   mesmo plano de rotação; rotação exige re-materializar a Silver, não
   o Gold.
+- Segurança do Bronze repousa em defesa em profundidade parcial:
+  restrição de rede (satisfeita) + pseudonimização na Silver (satisfeita);
+  a criptografia em repouso é débito conhecido e rastreado no BACKLOG.
 
 ---
 

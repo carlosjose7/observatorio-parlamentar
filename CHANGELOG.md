@@ -30,6 +30,15 @@ Histórico das alterações, organizado por sprint (ver
   seguido de INSERT — correções de registro refletem sem duplicar. Regressão:
   `test_reexecucao_mesma_chave_upsert_nao_duplica`,
   `test_correcao_de_registro_em_reexecucao_reflete`.
+- **BUG-004 — Silver sem migração de schema legado.** Tabela criada por
+  versão anterior (menos colunas) falhava/desalinhava o INSERT posicional.
+  `pipeline/silver.py::_criar_tabela_se_necessario` agora adiciona as colunas
+  novas do DataFrame via `ALTER TABLE ADD COLUMN` (tipo inferido pelo DuckDB)
+  e todos os INSERTs (`escrever_validos_duckdb`, `escrever_quarentena_duckdb`,
+  `escrever_dedup_removidas_duckdb`, `persistir_qualidade_report`) passaram a
+  ser **por nome** (`_insert_por_nome`) — mapeamento campo-a-campo, nunca
+  posicional. Regressão: `test_migracao_de_schema_em_tabela_legada` (contrato
+  com banco de schema legado).
 - **BUG-005 — `fontes_com_erro` tipada como string na API.** A Bronze grava a
   lista de fontes com erro como `LIST(VARCHAR)`; o schema `api/schemas/
   pipeline.py` declarava `str | None` (a API recebia a lista sem serializar) e
@@ -52,6 +61,11 @@ Histórico das alterações, organizado por sprint (ver
   (sem hash-de-hash, evita re-pseudonimização inconsistente). Seeds dos testes
   Gold carregam o hash, preservando as asserções de dimensão. O transform de
   estabelecimento (transparência) também passa a pseudonimizar CPF.
+- **Condições de acesso ao Bronze registradas no ADR-033 (BUG-002):**
+  acesso restrito **satisfeito** (MinIO apenas em `127.0.0.1:9000/9001`,
+  rede interna `observatorio-net`, `no-new-privileges`) e **criptografia em
+  repouso do MinIO NÃO implementada** — registrada como dívida consciente em
+  item explícito do `BACKLOG.md` (Sprint 6.5).
 
 ### Movido
 - **Módulos analíticos realocados de `pipeline/` para `analytics/`**

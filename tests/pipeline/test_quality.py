@@ -405,3 +405,48 @@ class TestPersistenciaDedupSilver:
             "SELECT cod_documento, valor_liquido FROM silver_despesa WHERE cod_documento = 'AAA'",
         )
         assert linhas == [("AAA", 250.0)]
+
+    def test_migracao_de_schema_em_tabela_legada(self, tmp_path):
+        """Corretivo QA BUG-004: tabela Silver legada (criada por uma versão
+        anterior sem `valor_liquido`) é MIGRADA via `ALTER TABLE ADD COLUMN`
+        na carga — o INSERT por nome persiste a coluna nova em vez de falhar
+        ou desalinhar colunas."""
+        import duckdb
+
+        db_path = tmp_path / "silver_test.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute(
+            "create table silver_despesa ("
+            "  fonte varchar, cod_documento varchar, data_documento date,"
+            "  valor_glosa double, tipo_documento varchar)"
+        )
+        con.close()
+
+        df = pd.DataFrame(
+            {
+                "fonte": ["camara"],
+                "cod_documento": ["AAA"],
+                "data_documento": pd.to_datetime(["2024-07-03"]),
+                "valor_liquido": [100.0],  # coluna nova, ausente no schema legado
+                "valor_glosa": [0.0],
+                "tipo_documento": ["CNPJ"],
+            }
+        )
+        self._carregar(tmp_path, df, "silver_despesa", ["fonte", "cod_documento"])
+
+        colunas = [
+            c[0]
+            for c in self._query(
+                tmp_path,
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'silver_despesa'",
+            )
+        ]
+        assert "valor_liquido" in colunas
+
+        linhas = self._query(
+            tmp_path,
+            "SELECT cod_documento, valor_liquido, valor_glosa FROM silver_despesa"
+            " WHERE cod_documento = 'AAA'",
+        )
+        assert linhas == [("AAA", 100.0, 0.0)]

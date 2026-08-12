@@ -484,6 +484,22 @@
    `profiles.yml`; `pipeline/pseudonymize.py` é a fonte única; seeds dos
    testes Gold carregam o hash (asserções de dimensão preservadas).
 
+☐ **BUG-004 — migração de schema legado na Silver** (corretivo QA): tabelas
+   criadas por versões anteriores (menos colunas) são migradas via `ALTER
+   TABLE ADD COLUMN` antes do INSERT por nome (`_criar_tabela_se_necessario` +
+   `_insert_por_nome` em `pipeline/silver.py`), com teste de contrato
+   `test_migracao_de_schema_em_tabela_legada`.
+
+☐ **Dívida consciente (registrada no fechamento do QA, BUG-002) —
+   criptografia em repouso do MinIO NÃO implementada.** A camada Bronze
+   cumpre a condição de acesso restrito (MinIO exposto apenas em
+   `127.0.0.1:9000/9001`, rede interna `observatorio-net`,
+   `no-new-privileges`), mas o volume `minio_data` não tem criptografia em
+   repouso (server-side do MinIO ou disco cifrado). Mitigação atual: acesso
+   restrito + pseudonimização na Silver (ADR-033). Endurecimento futuro:
+   habilitar criptografia server-side (SSE-S3/KMS) ou cifrar o disco/volume,
+   e atualizar ADR-033 quando implementado.
+
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
 *Versão atual: 1.1 — **Sprint 6 fechada** — Onda 4 completa: endpoints agent-ready (RF-05/ADR-032): `/agent/parlamentar/{id}` (perfil SCD2 vigente + métricas §8 + `hhi` de `supplier_concentration` + `risk_index`/5 scores + anomalias + top-5 fornecedores), `/agent/fornecedor/{cnpj_cpf_valor}` (perfil + agregados + top-5 parlamentares), `/agent/anomalias` (**resumo agregado** — total, por ano, por critério, top-10 zscore), `/agent/context` (**retrato sistêmico** CU-07) — 288 testes verdes (212 pipeline + 58 API + 18 integração). Onda 3 completa (anomalias/comunidades/qualidade/pipeline, 276). Onda 2 completa (perfil/rede/fornecedores, 253). Onda 1 completa (infra + contrato + selo). Dívida técnica registrada (paridade dbt→schema.yml→Pydantic→API + **DuckDB real de dev desatualizado — escopo da Sprint 6.5**). ADRs 001-033. Sprint 5 fechada (212). Sprint 4 fechada (129).*
 

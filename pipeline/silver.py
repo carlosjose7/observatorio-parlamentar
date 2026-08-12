@@ -139,11 +139,55 @@ def _conectar_duckdb():
 
 
 def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
-    """Cria a tabela com o schema inferido se ainda não existir."""
+    """Cria a tabela com o schema inferido se ainda não existir; se a tabela
+    já existe, **migra o schema legado** adicionando as colunas novas presentes
+    no DataFrame (corretivo QA BUG-004).
+
+    Antes: `CREATE TABLE IF NOT EXISTS` + INSERT posicional — uma tabela
+    legada (de uma versão anterior da Silver com menos colunas) fazia o INSERT
+    posicional falhar ou gravar dados desalinhados, sem nenhuma migração. Agora
+    colunas que faltam são adicionadas via `ALTER TABLE ADD COLUMN` com o tipo
+    que o DuckDB infere para o DataFrame (mesmo tipo do CREATE). Nunca faz
+    CREATE/DROP destrutivo nem perde dados existentes.
+    """
     con.register("tmp_define", df)
     con.execute(
         f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
     )
+
+    existentes = {
+        linha[0]
+        for linha in con.execute(
+            f"SELECT column_name FROM information_schema.columns"
+            f" WHERE table_name = '{tabela}'"
+        ).fetchall()
+    }
+    novos = [col for col in df.columns if col not in existentes]
+    if not novos:
+        return
+
+    tipos = {
+        linha[0]: linha[1]
+        for linha in con.execute("DESCRIBE SELECT * FROM tmp_define").fetchall()
+    }
+    for col in novos:
+        con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipos[col]}")
+    logger.info(
+        "migracao_schema_silver",
+        tabela=tabela,
+        colunas_adicionadas=novos,
+    )
+
+
+def _insert_por_nome(con, tabela: str, registro: str, colunas: list[str]) -> None:
+    """INSERT com lista explícita de colunas (corretivo QA BUG-004).
+
+    Com a migração, `colunas ⊆ colunas da tabela`; o INSERT por nome (em vez
+    de `SELECT *` posicional) garante o mapeamento campo-a-campo mesmo quando
+    a tabela legada tem um subconjunto de colunas.
+    """
+    cols = ", ".join(f'"{c}"' for c in colunas)
+    con.execute(f"INSERT INTO {tabela} ({cols}) SELECT {cols} FROM {registro}")
 
 
 def escrever_validos_duckdb(
@@ -171,7 +215,7 @@ def escrever_validos_duckdb(
             con.execute(
                 f"DELETE FROM {tabela} t USING tmp_validos v WHERE {cond}"
             )
-        con.execute(f"INSERT INTO {tabela} SELECT * FROM tmp_validos")
+        _insert_por_nome(con, tabela, "tmp_validos", list(df.columns))
     finally:
         con.close()
 
@@ -188,7 +232,7 @@ def escrever_quarentena_duckdb(df: pd.DataFrame, tabela: str) -> str | None:
     try:
         _criar_tabela_se_necessario(con, nome, df)
         con.register("tmp_q", df)
-        con.execute(f"INSERT INTO {nome} SELECT * FROM tmp_q")
+        _insert_por_nome(con, nome, "tmp_q", list(df.columns))
     finally:
         con.close()
     return str(DIRETORIO_QUARENTENA / f"{tabela}.parquet")
@@ -210,7 +254,7 @@ def escrever_dedup_removidas_duckdb(df: pd.DataFrame, tabela: str) -> None:
     try:
         _criar_tabela_se_necessario(con, nome, df)
         con.register("tmp_dedup", df)
-        con.execute(f"INSERT INTO {nome} SELECT * FROM tmp_dedup")
+        _insert_por_nome(con, nome, "tmp_dedup", list(df.columns))
     finally:
         con.close()
 
@@ -238,7 +282,7 @@ def persistir_qualidade_report(linha: LinhaQualidadeReport) -> None:
         )
         _criar_tabela_se_necessario(con, "data_quality_report", dados)
         con.register("tmp_dq", dados)
-        con.execute("INSERT INTO data_quality_report SELECT * FROM tmp_dq")
+        _insert_por_nome(con, "data_quality_report", "tmp_dq", list(dados.columns))
         logger.info(
             "data_quality_report_persistido",
             run_id=str(linha.run_id),
