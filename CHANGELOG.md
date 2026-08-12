@@ -65,6 +65,16 @@ Histórico das alterações, organizado por sprint (ver
   `CGU_API_KEY`/`CPF_HMAC_SECRET_KEY` caso alguma cópia do `.env` com
   valores reais tenha sido compartilhada.
 
+### Status final da sprint (QA approved)
+**Sprint 6.5 — DONE / QA APPROVED.** Functional PASS · Integration PASS ·
+E2E real PASS · Data Quality (Gold 224/0) PASS · Security Secret Audit
+(872 blobs + teste de controle 3/3) PASS · Regression (316/1) PASS ·
+Documentation PASS · Working tree CLEAN.
+Recomendação de hardening (fora da sprint, monitorar na Sprint 9 quando o
+CI real entrar): garantir proteção da branch `develop` exigindo o job
+`secret-scan` (Gitleaks) como check obrigatório em qualquer caminho de
+merge/commit — hoje ele dispara em `workflow_dispatch` + `pull_request`.
+
 ### Corrigido (corretivos do prompt de QA)
 - **BUG-001 — progressão incremental da Bronze presa em reextração.** A
   execução incremental avançava para o período seguinte ao watermark mesmo
