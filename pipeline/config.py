@@ -351,9 +351,11 @@ class DashboardSettings(_StrictModel):
     url_env_var: str = "API_URL"
     url_padrao: str = "http://localhost:8000"
     timeout_segundos: float = Field(default=30.0, gt=0)
+    resposta_max_bytes: int = Field(default=10_485_760, gt=0)
     exportacao_formatos: list[str] = Field(
         default_factory=lambda: ["csv", "excel", "pdf"]
     )
+    exportacao_max_linhas: int = Field(default=5_000, gt=0)
 
 
 # ── config/pipeline.yaml ─────────────────────────────────────────

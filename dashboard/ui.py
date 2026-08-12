@@ -82,12 +82,22 @@ def tabela_exportavel(
 
     Gera CSV (sempre), Excel e PDF conforme `formatos`. Os downloads usam o
     padrão de `st.download_button` — sem dependência de backend de arquivo.
+
+    Gate 2 (auditoria Sprint 7): Excel/PDF são limitados a
+    `exportacao_max_linhas` linhas (config) para evitar DoS de memória/CPU
+    com datasets grandes; o CSV mantém o dataset completo. Quando o
+    DataFrame excede o teto, um aviso informa que a exportação é parcial.
     """
     if df.empty:
         st.info("Sem dados para exibir.")
         return
 
     st.dataframe(df)
+
+    from pipeline.config import get_dashboard
+
+    max_linhas = get_dashboard().exportacao_max_linhas
+    formato_parcial = len(df) > max_linhas
 
     formatos = set(formatos or ["csv", "excel", "pdf"])
     if "csv" in formatos:
@@ -97,12 +107,17 @@ def tabela_exportavel(
             file_name=f"{nome_arquivo}.csv",
             mime="text/csv",
         )
+    if formato_parcial and (formatos & {"excel", "pdf"}):
+        st.caption(
+            f"⚠️ Dataset com {len(df):,} linhas — Excel/PDF são limitados às "
+            f"{max_linhas:,} primeiras (CSV exporta tudo)."
+        )
     if "excel" in formatos:
         try:
             import io
 
             buf = io.BytesIO()
-            df.to_excel(buf, index=False)
+            df.head(max_linhas).to_excel(buf, index=False)
             st.download_button(
                 "📥 Exportar Excel",
                 buf.getvalue(),
@@ -117,11 +132,12 @@ def tabela_exportavel(
 
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(figsize=(10, max(2, 0.3 * len(df) + 1)))
+            parcial = df.head(max_linhas)
+            fig, ax = plt.subplots(figsize=(10, max(2, 0.3 * len(parcial) + 1)))
             ax.axis("off")
             ax.table(
-                cellText=df.round(2).astype(str).values,
-                colLabels=df.columns,
+                cellText=parcial.round(2).astype(str).values,
+                colLabels=parcial.columns,
                 loc="center",
                 cellLoc="left",
             )

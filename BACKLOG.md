@@ -640,4 +640,25 @@ KPIs com total gasto R$ 4,5M / 8.983 transações / 4.319 fornecedores /
 DQ report e execuções renderizando. Suíte completa **336 passed, 1 skipped**
 (20 novos + 316 anteriores). *Roadmap §13 atualizado (Sprint 7 em andamento).*
 
-*Versão atual: 2.0 — **Sprint 7 em andamento** — Dashboard Streamlit: cliente da API (RF-05), 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08), UX com erro amigável; config ADR-008 (`config/dashboard.yaml`) e extra `dashboard`; **336 testes verdes** (20 novos do dashboard + 316 anteriores). Sprint 6.5 fechada (QA approved). ADRs 001-033.*
+### Auditoria técnica (gates de revisão) — Sprint 7
+☑ **Gate 1 — HTTP client robusto** (`dashboard/client.py`): JSON inválido em
+   2xx vira `ApiError` (não escapa `JSONDecodeError`); retry limitado p/
+   transitórios (5xx/rede, GET idempotente), 4xx nunca retried; limite de
+   tamanho de resposta (`resposta_max_bytes`); mensagens sem URL interna.
+☑ **Gate 2 — Exportações limitadas** (`dashboard/ui.py`): Excel/PDF com teto
+   `exportacao_max_linhas` + aviso de truncamento; CSV completo (RF-08).
+☑ **Gate 3 — Rede com teto**: página 06 limita arestas/nós renderizados; API
+   `/rede/comunidades` ganhou `limite_nos` (default 200, teto 1000, enforced
+   no SQL via `row_number()` por comunidade/período por pagerank desc).
+☑ **Gate 4 — CNPJ URL-encoded** (`_codificar_path`): `/` de máscara não
+   quebra rota; regressão de CNPJ mascarado.
+☑ **Gate 5 — E2E HTTP real**: `tests/dashboard/test_integracao_api.py` sobe
+   uvicorn sobre Gold semeado e conecta o `ApiClient` por socket TCP — sem
+   mock de resposta. 8 cenários.
+🟠 **Dívida registrada — autenticação/TLS pendentes (ADR-007).** O dashboard
+   amplia a superfície da API (agora consumível publicamente via nginx).
+   Antes de expor fora de rede confiável/VPN, exigir: TLS (terminação no
+   reverso) e autenticação se a API servir dado individual. Não bloqueia o
+   fechamento funcional; permanece como item explícito de deploy (Sprint 9).
+
+*Versão atual: 2.1 — **Sprint 7 em andamento** — Dashboard Streamlit: cliente da API (RF-05), 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08), UX com erro amigável; config ADR-008 (`config/dashboard.yaml`) e extra `dashboard`. **Auditoria técnica concluída (Gates 1-5):** client HTTP robusto (retry/limites/erros amigáveis), exportações com teto, rede limitada na API (`limite_nos`), CNPJ URL-encoded, E2E HTTP real sem mock — **349 testes verdes** (13 novos: 8 E2E + 5 robustez + anteriores); dívida TLS/auth registrada (ADR-007, Sprint 9). Sprint 6.5 fechada (QA approved). ADRs 001-033.*

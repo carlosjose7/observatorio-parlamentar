@@ -49,6 +49,39 @@ anteriores). Dashboard validado com `AppTest` contra o DuckDB dev (dados do
 E2E real): KPIs com dados reais (total gasto R$ 4,5M, 8.983 transações),
 perfil/risco de parlamentar real, DQ report e execuções.
 
+### Auditoria técnica (gates de revisão) — Sprint 7
+Correções de robustez/segurança/performance após revisão de Tech Lead:
+
+- **Gate 1 — HTTP client (`dashboard/client.py`):** corpo 2xx não-JSON
+  vira `ApiError` (antes `JSONDecodeError` escapava para o Streamlit); retry
+  limitado para transitórios (5xx/rede, GET idempotente) — 4xx NUNCA é
+  retried (contractual); limite de tamanho de resposta (`resposta_max_bytes`,
+  config ADR-008); mensagens de erro amigáveis sem expor URL interna.
+- **Gate 2 — Exportações (`dashboard/ui.py`):** Excel/PDF limitados a
+  `exportacao_max_linhas` (config) com aviso de truncamento — CSV mantém o
+  dataset completo; evita DoS de memória/CPU com datasets grandes.
+- **Gate 3 — Rede/NetworkX:** página 06 limita arestas/nós renderizados
+  (`_MAX_ARESTAS`/`_MAX_NOS_COMUNIDADE`); **API `/rede/comunidades` ganhou
+  `limite_nos`** (default 200, teto 1000, enforced no SQL via
+  `row_number() over (partition by comunidade_id, periodo order by pagerank
+  desc)`) — o payload nunca explode com grafos reais.
+- **Gate 4 — CNPJ em URL:** `_codificar_path` faz URL-encode de segmentos de
+  path (`/` de CNPJ mascarado não quebra a rota); regressão para CNPJ
+  mascarado/espaços.
+- **Gate 5 — E2E real:** `tests/dashboard/test_integracao_api.py` sobe a
+  FastAPI real (uvicorn em subprocesso, socket TCP) sobre DuckDB Gold
+  semeado e conecta o `ApiClient` via HTTP real — SEM mock de resposta.
+  8 cenários (parlamentares, perfil/gastos, agent/risco, contexto, fornecedor,
+  anomalias/qualidade, 404→`ApiError`, comunidades com limite).
+- **Dívida registrada (não resolvida pela Sprint 7):** autenticação/TLS
+  permanecem pendentes (ADR-007) — o dashboard amplia a superfície da API;
+  proteger em deploy público (VPN/reverso TLS) antes de expor fora de
+  rede confiável. Item no BACKLOG.
+
+### Resultado da auditoria
+Suíte completa: **349 passed, 1 skipped** (13 novos dos gates: 8 E2E HTTP +
+5 robustez + anteriores). `tests/api/` 58 passed (limite_nos compatível).
+
 ---
 
 ## Sprint 6.5 — Validação End-to-End (manutenção estrutural) — FECHADA

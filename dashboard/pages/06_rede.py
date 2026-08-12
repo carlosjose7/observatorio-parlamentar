@@ -23,9 +23,14 @@ st.title("🕸️ Rede Parlamentar-Fornecedor")
 
 client = ApiClient()
 
+#: Teto de nós/arestas renderizados (Gate 3, auditoria Sprint 7) — evita
+#: NetworkX/visualização pesada com grafos grandes.
+_MAX_ARESTAS = 100
+_MAX_NOS_COMUNIDADE = 200
+
 
 def _rede_do_parlamentar(id_parlamentar: int) -> None:
-    """Grafo centrado em um parlamentar."""
+    """Grafo centrado em um parlamentar (limitado a `_MAX_ARESTAS` arestas)."""
     st.subheader("Rede de um parlamentar")
     payload = carregar_com_feedback(
         lambda: client.rede_parlamentar(id_parlamentar),
@@ -34,10 +39,20 @@ def _rede_do_parlamentar(id_parlamentar: int) -> None:
     if payload is None:
         return
 
+    arestas = payload.get("arestas", [])
+    if len(arestas) > _MAX_ARESTAS:
+        st.warning(
+            f"Rede com {len(arestas):,} fornecedores — exibindo os "
+            f"{_MAX_ARESTAS:,} com maior vínculo."
+        )
+        arestas = sorted(
+            arestas, key=lambda a: a.get("valor_total", 0), reverse=True
+        )[:_MAX_ARESTAS]
+
     grafo = nx.Graph()
     parlamentar = payload.get("parlamentar", {})
     grafo.add_node("eu", label=parlamentar.get("nome", "Parlamentar"), tipo="parlamentar")
-    for aresta in payload.get("arestas", []):
+    for aresta in arestas:
         grafo.add_node(aresta["id_fornecedor"], label=aresta["nome_fornecedor"], tipo="fornecedor")
         grafo.add_edge("eu", aresta["id_fornecedor"], weight=aresta.get("valor_total", 1.0))
 
@@ -83,8 +98,18 @@ def _comunidades() -> None:
         return
 
     linhas = []
+    total_nos = sum(len(c.get("nos", [])) for c in itens)
+    if total_nos > _MAX_NOS_COMUNIDADE:
+        st.warning(
+            f"{total_nos:,} nós no grafo — exibindo os {_MAX_NOS_COMUNIDADE:,} "
+            "de maior pagerank (Exportar CSV gera o conjunto completo)."
+        )
     for comunidade in itens:
-        for no in comunidade.get("nos", []):
+        nos = comunidade.get("nos", [])
+        if total_nos > _MAX_NOS_COMUNIDADE:
+            nos = sorted(nos, key=lambda n: n.get("pagerank", 0), reverse=True)
+            nos = nos[: max(1, int(_MAX_NOS_COMUNIDADE * len(nos) / total_nos))]
+        for no in nos:
             linhas.append(
                 {
                     "comunidade_id": comunidade["comunidade_id"],
@@ -96,7 +121,7 @@ def _comunidades() -> None:
                 }
             )
     df = pd.DataFrame(linhas).sort_values(["comunidade_id", "pagerank"], ascending=[True, False])
-    st.markdown(f"**{len(itens)} comunidades · {len(df)} nós**")
+    st.markdown(f"**{len(itens)} comunidades · {len(df)} nós exibidos**")
     tabela_exportavel(df, nome_arquivo="comunidades")
 
 

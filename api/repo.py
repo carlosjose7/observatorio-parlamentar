@@ -533,27 +533,42 @@ def listar_anomalias(
 
 
 @_tratar_erro_gold
-def listar_comunidades() -> ListaComunidades:
+def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
     """Comunidades do grafo materializado (`network_nodes`, ADR-030) + nomes.
 
     Agrupa os nós por `(comunidade_id, periodo)` obtidos da Gold e resolve o
     nome por join com as dimensões (parlamentar na versão vigente do SCD2,
     ADR-020; fornecedor direto). Leitura de resultado — o particionamento já
     foi calculado pela Sprint 5 (Onda 3), não recalculado aqui.
+
+    Gate 3 (auditoria Sprint 7): `limite_nos` limita os nós por comunidade
+    (top por pagerank) para o payload nunca explodir com grafos reais —
+    o teto é enforced no SQL, não apenas na exibição.
     """
     with _conexao() as con:
         linhas = con.execute(
             """
-            select nn.comunidade_id, nn.periodo, nn.id_no, nn.tipo_no,
-                   nn.pagerank, nn.degree_centrality,
-                   coalesce(dp.nome, df.nome_fornecedor) as nome
-            from network_nodes nn
-            left join dim_parlamentar dp
-                on nn.tipo_no = 'parlamentar' and dp.id_parlamentar = nn.id_no and dp.is_current
-            left join dim_fornecedor df
-                on nn.tipo_no = 'fornecedor' and df.id_fornecedor = nn.id_no
-            order by nn.periodo desc, nn.comunidade_id, nn.tipo_no, nn.id_no
-            """
+            select comunidade_id, periodo, id_no, tipo_no, pagerank,
+                   degree_centrality, nome
+            from (
+                select nn.comunidade_id, nn.periodo, nn.id_no, nn.tipo_no,
+                       nn.pagerank, nn.degree_centrality,
+                       coalesce(dp.nome, df.nome_fornecedor) as nome,
+                       row_number() over (
+                           partition by nn.comunidade_id, nn.periodo
+                           order by nn.pagerank desc, nn.id_no
+                       ) as rn
+                from network_nodes nn
+                left join dim_parlamentar dp
+                    on nn.tipo_no = 'parlamentar' and dp.id_parlamentar = nn.id_no
+                       and dp.is_current
+                left join dim_fornecedor df
+                    on nn.tipo_no = 'fornecedor' and df.id_fornecedor = nn.id_no
+            ) sub
+            where sub.rn <= ?
+            order by periodo desc, comunidade_id, tipo_no, id_no
+            """,
+            [limite_nos],
         ).fetchall()
 
     grupos: dict[tuple[int, int], dict] = {}

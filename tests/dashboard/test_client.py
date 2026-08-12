@@ -15,9 +15,9 @@ import pytest
 from dashboard.client import ApiClient, ApiError, ApiIndisponivel
 
 
-def _cliente(handler) -> ApiClient:
+def _cliente(handler, **kwargs) -> ApiClient:
     transport = httpx.MockTransport(handler)
-    return ApiClient(base_url="http://api-teste", transport=transport)
+    return ApiClient(base_url="http://api-teste", transport=transport, **kwargs)
 
 
 def _ok(payload: dict, status: int = 200):
@@ -139,25 +139,90 @@ class TestErros:
         client = _cliente(handler)
         with pytest.raises(ApiError) as exc:
             client.perfil_parlamentar(9)
-        assert "404" in str(exc.value)
         assert "não encontrado" in str(exc.value)
+        # Mensagem amigável, sem expor URL interna (base_url não vaza).
+        assert "api-teste" not in str(exc.value)
 
     def test_falha_de_rede_levanta_api_indisponivel(self):
         def handler(request):
             raise httpx.ConnectError("connection refused")
 
         client = _cliente(handler)
-        with pytest.raises(ApiIndisponivel):
+        with pytest.raises(ApiIndisponivel) as exc:
             client.agent_context()
+        # Não expõe a URL interna na mensagem.
+        assert "api-teste" not in str(exc.value)
 
-    def test_erro_sem_json_usa_texto_bruto(self):
+    def test_erro_sem_json_vira_erro_amigavel(self):
         def handler(request):
             return httpx.Response(503, text="Camada Gold indisponível")
 
         client = _cliente(handler)
+        # 503 persistente: retried e, ao esgotar, vira ApiIndisponivel amigável.
+        with pytest.raises(ApiIndisponivel) as exc:
+            client.agent_context()
+        assert "indisponível" in str(exc.value)
+
+    def test_json_invalido_em_200_vira_api_error(self):
+        """Gate 1: corpo não-JSON em status 2xx não escapa como JSONDecodeError."""
+
+        def handler(request):
+            return httpx.Response(200, content=b"<html>nao eh json</html>")
+
+        client = _cliente(handler)
+        with pytest.raises(ApiError):
+            client.agent_context()
+
+    def test_5xx_transitorio_e_retried(self):
+        """Gate 1: 500 é retried (GET idempotente) até responder 200."""
+        chamadas = {"n": 0}
+
+        def handler(request):
+            chamadas["n"] += 1
+            if chamadas["n"] < 3:
+                return httpx.Response(500, json={"detail": "boom"})
+            return httpx.Response(200, json={"metricas_globais": {"num_transacoes": 1}})
+
+        client = _cliente(handler)
+        payload = client.agent_context()
+        assert chamadas["n"] == 3
+        assert payload["metricas_globais"]["num_transacoes"] == 1
+
+    def test_4xx_nao_e_retried(self):
+        chamadas = {"n": 0}
+
+        def handler(request):
+            chamadas["n"] += 1
+            return httpx.Response(404, json={"detail": "não encontrado"})
+
+        client = _cliente(handler)
+        with pytest.raises(ApiError):
+            client.agent_context()
+        assert chamadas["n"] == 1
+
+    def test_resposta_acima_do_limite_e_rejeitada(self):
+        """Gate 1: corpo maior que o teto configurado é rejeitado com ApiError."""
+        grande = b'{"dados": "' + b"x" * 1_000_000 + b'"}'
+
+        def handler(request):
+            return httpx.Response(200, content=grande)
+
+        client = _cliente(handler, resposta_max_bytes=1024)
         with pytest.raises(ApiError) as exc:
             client.agent_context()
-        assert "Gold indisponível" in str(exc.value)
+        assert "limite" in str(exc.value)
+
+    def test_cnpj_mascarado_nao_quebra_a_rota(self):
+        """Gate 4: CNPJ com máscara é URL-encodado — o `/` não quebra o path."""
+        capturado = {}
+
+        def handler(request):
+            capturado["url"] = str(request.url)
+            return httpx.Response(200, json={})
+
+        client = _cliente(handler)
+        client.perfil_fornecedor("11.222.333/0001-81")
+        assert "11.222.333%2F0001-81" in capturado["url"]
 
 
 class TestBaseUrl:

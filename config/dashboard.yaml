@@ -13,5 +13,11 @@ dashboard:
   url_env_var: "API_URL"
   url_padrao: "http://localhost:8000"
   timeout_segundos: 30
+  # Teto do corpo de resposta aceito (bytes) — proteção contra payload
+  # anômalo/DoS (Gate 1, auditoria Sprint 7).
+  resposta_max_bytes: 10485760
   # Exportações (RF-08) — formatos oferecidos nas páginas.
   exportacao_formatos: ["csv", "excel", "pdf"]
+  # Limite de linhas para exportações pesadas (Excel/PDF) — evita DoS de
+  # memória/CPU no cliente (Gate 2, auditoria Sprint 7).
+  exportacao_max_linhas: 5000

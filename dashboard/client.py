@@ -7,16 +7,25 @@ NUNCA abre o DuckDB diretamente. A base URL vem de `config/dashboard.yaml`
 `http://api:8000`; em dev local `http://localhost:8000`; atrás do nginx o
 prefixo externo é `/api/`).
 
-Padrão de falha: chamadas a uma API indisponível não derrubam a página —
-os métodos retornam `None` para o estado "indisponível", e a camada de
-apresentação exibe estado de erro amigável (UX). Erros HTTP com body JSON
-(`{"detail": ...}`) são propagados como `ApiError` com a mensagem.
+Robustez (Gate 1, auditoria Sprint 7):
+- `timeout` explícito para cada requisição (config, ADR-008).
+- Erros de transporte (`ConnectError`, `ConnectTimeout`, `ReadTimeout`,
+  `RemoteProtocolError`, ...) viram `ApiIndisponivel` — nunca escapam para
+  o Streamlit.
+- Corpo de resposta não-JSON em status 2xx viram `ApiError` (em vez de
+  `JSONDecodeError` cru).
+- Retry limitado para erros transitórios (rede/5xx) em GET — idempotente e
+  seguro; erro 4xx NUNCA é retried (contractual).
+- Limite de tamanho de resposta (`resposta_max_bytes`, config) — corpo maior
+  que o teto é rejeitado com `ApiError` (proteção contra payload anômalo).
+- Mensagens de erro não expõem a URL interna nem credenciais.
 """
 
 from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -24,13 +33,25 @@ from pipeline.config import get_dashboard
 
 PASTA_RAIZ_API = ""  # sem prefixo — a URL base já aponta para a API
 
+#: Máximo de tentativas para erros transitórios (GET idempotente).
+_MAX_TENTATIVAS = 3
+
 
 class ApiError(RuntimeError):
-    """Erro de negócio retornado pela API (ex: 404, 422, 503)."""
+    """Erro de negócio retornado pela API (ex: 404, 422, 503) ou corpo inválido."""
 
 
 class ApiIndisponivel(RuntimeError):
     """API inacessível (rede/erro de transporte) — dashboard offline."""
+
+
+def _codificar_path(valor: Any) -> str:
+    """Encoda um segmento de path (URL-safe) para uso em `{param}` de rota.
+
+    Ex: CNPJ mascarado `11.222.333/0001-81` → `11.222.333%2F0001-81`
+    (o `/` não pode quebrar a rota). Espaços e caracteres especiais também.
+    """
+    return quote(str(valor), safe="")
 
 
 class ApiClient:
@@ -38,13 +59,15 @@ class ApiClient:
 
     Os métodos retornam o payload JSON (dict) dos endpoints paginados e
     agregados. Para falhas de rede, levantam `ApiIndisponivel`; para erros
-    de negócio HTTP, `ApiError` com a mensagem de `detail`.
+    de negócio HTTP ou corpo inválido, `ApiError`.
     """
 
     def __init__(
         self,
         base_url: str | None = None,
         timeout: float | None = None,
+        max_tentativas: int | None = None,
+        resposta_max_bytes: int | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         cfg = get_dashboard()
@@ -52,6 +75,10 @@ class ApiClient:
             cfg.url_env_var, cfg.url_padrao
         ).rstrip("/")
         self.timeout = timeout or cfg.timeout_segundos
+        self.max_tentativas = max_tentativas or _MAX_TENTATIVAS
+        self.resposta_max_bytes = (
+            resposta_max_bytes or cfg.resposta_max_bytes
+        )
         self._transport = transport
 
     def _cliente(self) -> httpx.Client:
@@ -61,19 +88,54 @@ class ApiClient:
             transport=self._transport,
         )
 
+    def _mensagem_indisponivel(self) -> str:
+        """Mensagem amigável de API offline — sem expor URL interna."""
+        return "A API de dados está indisponível no momento. Tente novamente mais tarde."
+
     def _get(self, caminho: str, params: dict[str, Any] | None = None) -> Any:
-        try:
-            with self._cliente() as client:
-                resp = client.get(caminho, params=params)
-        except httpx.HTTPError as exc:
-            raise ApiIndisponivel(f"API indisponível em {self.base_url}") from exc
-        if resp.status_code >= 400:
+        ultimo_erro: Exception | None = None
+        for tentativa in range(self.max_tentativas):
+            client = self._cliente()
             try:
-                detail = resp.json().get("detail", resp.text)
-            except ValueError:
-                detail = resp.text
-            raise ApiError(f"Erro HTTP {resp.status_code}: {detail}")
-        return resp.json()
+                resp = client.get(caminho, params=params)
+                if resp.status_code >= 500:
+                    # Transitório: tenta de novo (GET idempotente).
+                    ultimo_erro = ApiError(
+                        f"A API retornou um erro temporário (HTTP {resp.status_code})."
+                    )
+                    continue
+                if len(resp.content) > self.resposta_max_bytes:
+                    raise ApiError(
+                        "Resposta da API acima do limite permitido para exibição."
+                    )
+                if resp.status_code >= 400:
+                    raise ApiError(self._mensagem_erro(resp))
+                try:
+                    return resp.json()
+                except ValueError as exc:
+                    raise ApiError(
+                        "A API retornou uma resposta inválida (JSON malformado)."
+                    ) from exc
+            except httpx.HTTPError as exc:
+                ultimo_erro = exc
+                # Retry apenas para erros de transporte (rede/connect/timeout).
+                continue
+            except ApiError:
+                # Erro de negócio (4xx/limite/JSON inválido): não é retried.
+                raise
+            finally:
+                client.close()
+        raise ApiIndisponivel(self._mensagem_indisponivel()) from ultimo_erro
+
+    def _mensagem_erro(self, resp: httpx.Response) -> str:
+        """Extrai a mensagem amigável de um erro HTTP sem expor a URL interna."""
+        try:
+            detail = resp.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        if isinstance(detail, str) and detail:
+            return f"Erro na consulta: {detail}"
+        return f"A consulta não pôde ser completada (HTTP {resp.status_code})."
 
     # ── Parlamentares ────────────────────────────────────────────
 
@@ -97,7 +159,7 @@ class ApiClient:
 
     def perfil_parlamentar(self, id_parlamentar: int) -> dict[str, Any]:
         """GET /parlamentares/{id} (perfil SCD2 vigente)."""
-        return self._get(f"/parlamentares/{id_parlamentar}")
+        return self._get(f"/parlamentares/{_codificar_path(id_parlamentar)}")
 
     def gastos_parlamentar(
         self,
@@ -110,11 +172,13 @@ class ApiClient:
         params: dict[str, Any] = {"pagina": pagina, "limite": limite}
         if ano:
             params["ano"] = ano
-        return self._get(f"/parlamentares/{id_parlamentar}/gastos", params)
+        return self._get(
+            f"/parlamentares/{_codificar_path(id_parlamentar)}/gastos", params
+        )
 
     def rede_parlamentar(self, id_parlamentar: int) -> dict[str, Any]:
         """GET /parlamentares/{id}/rede (nós e arestas da rede do parlamentar)."""
-        return self._get(f"/parlamentares/{id_parlamentar}/rede")
+        return self._get(f"/parlamentares/{_codificar_path(id_parlamentar)}/rede")
 
     # ── Fornecedores ─────────────────────────────────────────────
 
@@ -135,7 +199,7 @@ class ApiClient:
 
     def perfil_fornecedor(self, cnpj_cpf_valor: str) -> dict[str, Any]:
         """GET /fornecedores/{cnpj_cpf_valor} (perfil + agregados)."""
-        return self._get(f"/fornecedores/{cnpj_cpf_valor}")
+        return self._get(f"/fornecedores/{_codificar_path(cnpj_cpf_valor)}")
 
     def parlamentares_fornecedor(
         self,
@@ -145,7 +209,10 @@ class ApiClient:
     ) -> dict[str, Any]:
         """GET /fornecedores/{cnpj_cpf_valor}/parlamentares (top parlamentares)."""
         params: dict[str, Any] = {"pagina": pagina, "limite": limite}
-        return self._get(f"/fornecedores/{cnpj_cpf_valor}/parlamentares", params)
+        return self._get(
+            f"/fornecedores/{_codificar_path(cnpj_cpf_valor)}/parlamentares",
+            params,
+        )
 
     # ── Anomalias ────────────────────────────────────────────────
 
@@ -163,9 +230,13 @@ class ApiClient:
 
     # ── Rede ─────────────────────────────────────────────────────
 
-    def comunidades(self) -> dict[str, Any]:
-        """GET /rede/comunidades (comunidades detectadas no grafo)."""
-        return self._get("/rede/comunidades")
+    def comunidades(self, limite_nos: int = 200) -> dict[str, Any]:
+        """GET /rede/comunidades (comunidades detectadas no grafo).
+
+        `limite_nos` limita os nós por comunidade (Gate 3, auditoria Sprint 7)
+        — a API aplica o teto na consulta, nunca no cliente.
+        """
+        return self._get("/rede/comunidades", {"limite_nos": limite_nos})
 
     # ── Qualidade ────────────────────────────────────────────────
 
@@ -191,11 +262,11 @@ class ApiClient:
 
     def agent_parlamentar(self, id_parlamentar: int) -> dict[str, Any]:
         """GET /agent/parlamentar/{id} (métricas + risco + anomalias)."""
-        return self._get(f"/agent/parlamentar/{id_parlamentar}")
+        return self._get(f"/agent/parlamentar/{_codificar_path(id_parlamentar)}")
 
     def agent_fornecedor(self, cnpj_cpf_valor: str) -> dict[str, Any]:
         """GET /agent/fornecedor/{cnpj_cpf_valor} (métricas + top parlamentares)."""
-        return self._get(f"/agent/fornecedor/{cnpj_cpf_valor}")
+        return self._get(f"/agent/fornecedor/{_codificar_path(cnpj_cpf_valor)}")
 
     def agent_anomalias(self) -> dict[str, Any]:
         """GET /agent/anomalias (agregados de anomalias)."""
@@ -204,3 +275,4 @@ class ApiClient:
     def agent_context(self) -> dict[str, Any]:
         """GET /agent/context (métricas globais + qualidade + pipeline)."""
         return self._get("/agent/context")
+
