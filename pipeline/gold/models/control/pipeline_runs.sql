@@ -24,12 +24,12 @@
         pipeline_version,
         try_cast(execution_timestamp as timestamp) as execution_timestamp,
         status,
-        fontes_com_erro,
+        cast(fontes_com_erro as varchar[]) as fontes_com_erro,
         watermark_camara,
         watermark_senado,
         watermark_cgu_emenda,
         watermark_cgu_cartao
-    from read_parquet('{{ var('bronze_pipeline_runs_dir') }}')
+    from read_parquet('{{ var('bronze_pipeline_runs_dir') }}', union_by_name = true)
 {% else %}
     -- Sem arquivos de controle: tabela vazia com schema compatível — NUNCA
     -- insere linha fictícia (nada distingue "dummy" de execução real; zero

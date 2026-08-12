@@ -10,6 +10,34 @@ Histórico das alterações, organizado por sprint (ver
 
 ## Sprint 6.5 — Validação End-to-End (manutenção estrutural) — FECHADA
 
+### Adicionado — Validação E2E real (Bronze→Silver→Gold com APIs reais)
+- `scripts/run_e2e_local.py`: runner completo em modo validação (`limite 2`,
+  watermark em namespace `validacao:`, `--reset` para rebuild determinístico).
+  Exercita a cadeia ponta-a-ponta com as quatro fontes e `dbt build` completo
+  no subprocesso.
+- Corretivos encontrados na validação real (com regressões):
+  - **BUG-007** — coluna de texto toda nula (Câmara `nome_parlamentar`)
+    era inferida `INTEGER` no DuckDB ao criar a tabela, derrubando o INSERT
+    do Senado (`ConversionException`). `silver.py::_criar_tabela_se_necessario`
+    normaliza colunas `object` → `string` (VARCHAR) na inferência.
+  - **BUG-008** — cartões CGU (2012-2013) rejeitados por limite de sanidade
+    do parser e gate Pandera; limites ajustados para 2012 (`normalize.py`,
+    `quality.py`). Transações pré-2015 no Gold seguem para `fact_cartao_cpgf_
+    quarantine` (horizonte `dim_data` 2015-2035 — limitação conhecida).
+  - **BUG-009** — `ml_staging` ausente quebrava o `dbt build` completo
+    (ADR-026, escrita exclusiva dos scripts de ML); o runner cria o schema
+    vazio antes do build (mesmo contrato do selo de contrato).
+  - **BUG-010** — `pipeline_runs` Gold vazio (glob `bronze_pipeline_runs_dir`
+    resolvido relativo ao cwd, não ao arquivo do banco) e consolidação de
+    arquivos com `fontes_com_erro` de tipos mistos (`INTEGER[]` legado vs
+    `VARCHAR[]`). `dbt_project.yml` com caminho relativo ao repo root;
+    `pipeline_runs.sql` com `union_by_name = true` + `cast(... as varchar[])`.
+  - **BUG-011** — runner E2E: `import json`/`import sys` faltantes no
+    subprocesso do build e `→` incompatível com cp1252 no `--reset`.
+- Resultado da validação: Bronze `success` (4 fontes), Silver Câmara 9.350 +
+  Senado 63.874 despesa / parlamentar 514+162 / cartão ~120k / emenda 45.799,
+  Gold `dbt build` PASS=224 ERROR=0, `pipeline_runs` 12 linhas no dev.
+
 ### Corrigido (corretivos do prompt de QA)
 - **BUG-001 — progressão incremental da Bronze presa em reextração.** A
   execução incremental avançava para o período seguinte ao watermark mesmo

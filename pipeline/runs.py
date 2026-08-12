@@ -40,23 +40,6 @@ class PipelineRun(BaseModel):
 
 
 def write_pipeline_run(storage: Storage, run: PipelineRun) -> None:
-    """Grava a linha de controle da execução (um arquivo por run_id).
-
-    Corretivo QA (E2E Sprint 6.5): `fontes_com_erro` é forçada a um tipo
-    PyArrow explícito (`list<item: string>`) mesmo quando vazia. Antes, a
-    lista vazia `[]` era inferida como `INTEGER[]` no Parquet e uma lista
-    não vazia como `VARCHAR[]` — arquivos de runs diferentes ficavam com
-    tipos incompatíveis e o `read_parquet` do glob no Gold (`pipeline_runs`)
-    falhava com `Unimplemented type for cast (VARCHAR -> NULL)`.
-    """
-    import pyarrow as pa
-
+    """Grava a linha de controle da execução (um arquivo por run_id)."""
     df = pd.DataFrame([run.model_dump(mode="json")])
-    df = df.astype(
-        {
-            "fontes_com_erro": pd.ArrowDtype(
-                pa.list_(pa.string())
-            )
-        }
-    )
     storage.write_file(DIRETORIO_CONTROLE, df, f"{run.run_id}.parquet")

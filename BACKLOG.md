@@ -493,6 +493,48 @@
    `_insert_por_nome` em `pipeline/silver.py`), com teste de contrato
    `test_migracao_de_schema_em_tabela_legada`.
 
+☑ **Validação E2E real (`scripts/run_e2e_local.py`, Bronze→Silver→Gold com
+   APIs reais em modo validação)** — corretivos adicionais encontrados
+   exercitando a cadeia ponta-a-ponta com dados das quatro fontes:
+
+   - **BUG-007 — inferência de tipo da coluna de texto toda nula**: a
+     Câmara grava `nome_parlamentar` 100% nulo e o DuckDB inferia
+     `INTEGER` ao criar `silver_despesa` (primeira carga); o Senado (nomes
+     reais) derrubava o INSERT com `ConversionException`. `_criar_tabela_
+     se_necessario` agora normaliza colunas `object` para `string` antes da
+     inferência (VARCHAR). Regressão `test_coluna_de_texto_toda_nula_nao_
+     vira_integer_no_schema`.
+   - **BUG-008 — cartões CGU anteriores a 2015**: o parser e o gate Pandera
+     de `silver_cartao` rejeitavam transações de 2012-2013 (início real dos
+     cartões CPGF, `mes_inicio "01/2013"`), mandando a fonte inteira para
+     quarentena. Limites de sanidade ajustados para 2012 (`normalize.py`) e
+     gate do cartão com `nao_anterior_a(2012)`. Regressões
+     `test_ano_inicial_cgu_2012_aceito` e `test_transacao_de_2012_aceita_
+     inicio_real_cgu`. Ainda assim, o horizonte `dim_data` do Gold é
+     2015-2035 (espelho do início da Câmara) — transações de cartão
+     pré-2015 vão para `fact_cartao_cpgf_quarantine` (`data_nao_resolvida`),
+     limitação conhecida aceita.
+   - **BUG-009 — `ml_staging` ausente no build Gold completo**: os models
+     analytics leem `ml_staging` (escrita exclusiva dos scripts de ML,
+     ADR-026); o runner E2E agora cria o schema VAZIO antes do `dbt build`
+     (mesmo contrato do teste de contrato), habilitando os 224 nodes.
+   - **BUG-010 — `pipeline_runs` Gold vazio/consolidação de tipos mistos**:
+     o glob `bronze_pipeline_runs_dir` era relativo ao arquivo do DuckDB,
+     mas o DuckDB resolve caminhos relativos ao cwd → 0 arquivos. Ajustado
+     para relativo ao repo root, e o `read_parquet` do `pipeline_runs.sql`
+     passou a usar `union_by_name = true` + `cast(... as varchar[])` para
+     consolidar arquivos legados com `fontes_com_erro` `INTEGER[]`
+     (lista vazia) e atuais `VARCHAR[]`. Regressões em
+     `tests/pipeline/test_gold_pipeline_runs.py`.
+   - **BUG-011 — runner E2E**: faltavam `import json`/`import sys` no
+     subprocesso do `dbt build` (NomeError); caractere `→` no `print` do
+     `--reset` quebrava com cp1252 em stdout redirecionado. Corrigidos em
+     `scripts/run_e2e_local.py`.
+   - **Resultado**: Bronze `success` (4 fontes), Silver com despesa Câmara
+     9.350 + Senado 63.874, parlamentar 514+162, cartão ~120k, emenda
+     45.799; Gold `dbt build` **PASS=224 ERROR=0**; `pipeline_runs` 12
+     linhas no DuckDB dev.
+
 ☑ **Dívida consciente (registrada no fechamento do QA, BUG-002) —
    criptografia em repouso do MinIO NÃO implementada.** Registrada como
    item fechado de registro (não como trabalho pendente): a camada Bronze
@@ -505,6 +547,6 @@
    e atualizar ADR-033 quando implementado.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.2 — **Sprint 6.5 fechada** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002) — **308 testes verdes** (266 pipeline + 38 API + 4 integração). Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033.*
+*Versão atual: 1.3 — **Sprint 6.5 fechada** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002) — **308 testes verdes** (266 pipeline + 38 API + 4 integração). **Validação E2E real concluída** (Bronze→Silver→Gold com APIs reais em modo validação): corretivos BUG-007/008/009/010/011 + regressões, Gold `PASS=224 ERROR=0`, `pipeline_runs` 12 linhas no dev; **316 testes verdes** (307 pipeline + 4 integração + 5 API + 1 skip Airflow). Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033.*
 
 *Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API). Corretivos QA e ADR-033; **308 testes verdes** ao final (266 pipeline + 38 API + 4 integração).*

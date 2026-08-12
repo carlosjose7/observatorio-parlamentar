@@ -26,6 +26,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import duckdb
@@ -196,7 +197,7 @@ _SELECAO_FATO = (
 )
 
 
-def _rodar_build_subprocess(db: Path, selecao: str) -> None:
+def _rodar_build_subprocess(db: Path, selecao: str, dir_controle: Path | None = None) -> None:
     """Roda `dbt build` do Gold num SUBPROCESSO e aguarda o término.
 
     Necessário porque o adaptador dbt-duckdb mantém uma conexão
@@ -207,19 +208,31 @@ def _rodar_build_subprocess(db: Path, selecao: str) -> None:
     processo dos endpoints então abre o Gold estritamente read-only
     (ADR-026), como ocorre em produção (pipeline e API são processos
     separados).
+
+    Corretivo QA (E2E Sprint 6.5): `bronze_pipeline_runs_dir` é isolado
+    num diretório temporário (vazio por padrão) para o contrato não ler os
+    Parquet de controle do repo dev (o default `data/bronze/...` do
+    `dbt_project.yml` é relativo ao cwd do subprocesso). Sem isso, um DuckDB
+    dev com runs do E2E real contaminaria o build de teste (pipeline_runs
+    não vazio).
     """
+    if dir_controle is None:
+        dir_controle = Path(tempfile.mkdtemp()) / "controle_vazio"
+        dir_controle.mkdir(parents=True, exist_ok=True)
     codigo = (
         "import json, sys\n"
         f"sys.path.insert(0, {str(_RAIZ)!r})\n"
         f"sys.path.insert(0, {str(_GOLD)!r})\n"
         "from dbt.cli.main import dbtRunner\n"
         "from pipeline.config import get_dbt_vars\n"
+        "vars_dbt = get_dbt_vars()\n"
+        f"vars_dbt['bronze_pipeline_runs_dir'] = {str(dir_controle)!r} + '/*.parquet'\n"
         f"r = dbtRunner().invoke([\n"
         f"    'build',\n"
         f"    '--project-dir', {str(_GOLD)!r},\n"
         f"    '--profiles-dir', {str(_GOLD)!r},\n"
         f"    '--select', {selecao!r},\n"
-        f"    '--vars', json.dumps(get_dbt_vars()),\n"
+        f"    '--vars', json.dumps(vars_dbt),\n"
         "]\n"
         ")\n"
         "raise SystemExit(0 if r.success else 1)\n"
