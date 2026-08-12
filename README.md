@@ -120,9 +120,12 @@ já que o desenho do Data Lake é agnóstico ao motor de consulta.
  
 ### II.5 Segurança e Mascaramento de Dados
  
-- **Pseudonimização de CPF (ADR-004):** fornecedores pessoa física
-  têm o CPF substituído por HMAC-SHA256 com chave secreta antes de
-  qualquer persistência — inclusive na camada Bronze. A chave é
+- **Pseudonimização de CPF (ADR-004/ADR-033):** fornecedores pessoa
+  física têm o CPF substituído por HMAC-SHA256 com chave secreta na
+  camada **Silver** — a fronteira de pseudonimização. A Bronze mantém o
+  dado bruto equivalente-público (CPF de fonte pública oficial, acesso
+  restrito no MinIO); a partir da Silver o valor hasheado é o único
+  consumido pelo Gold e pela API, que nunca re-hasham. A chave é
   gerenciada via GitHub Secrets/`.env`, nunca versionada em código.
 - **Por que HMAC e não hash simples com salt fixo:** o espaço de
   CPFs válidos é finito e computável, tornando um hash com salt fixo
@@ -131,19 +134,22 @@ já que o desenho do Data Lake é agnóstico ao motor de consulta.
   determinístico necessário para análise (mesmo CPF → mesmo hash).
 - **Base legal (LGPD):** interesse público / transparência (Art. 7º,
   III), já que a fonte é dado público oficial; ainda assim, CPF é
-  tratado como dado pessoal sensível e nunca exposto em texto claro.
+  tratado como dado pessoal sensível: a Bronze o mantém apenas como
+  dado bruto equivalente-público sob acesso restrito, e as camadas
+  consumíveis (Silver/Gold/API) só expõem o hash.
 - **Controle de acesso:** API pública para dados agregados;
   endpoints que retornassem dado individual sensível (nenhum
   planejado no MVP) exigiriam autenticação — item já registrado no
   backlog futuro.
-- **Exemplo prático de mascaramento:**
+- **Exemplo prático de mascaramento** (aplicado no `transform.py` de
+  cada fonte, camada Silver — `pipeline/pseudonymize.py`):
 ```python
 import hmac
 import hashlib
 import os
  
 def pseudonymize_cpf(cpf: str) -> str:
-    """Pseudonimiza um CPF via HMAC-SHA256.
+    """Pseudonimiza um CPF via HMAC-SHA256 (Silver, ADR-033).
  
     Args:
         cpf: CPF em texto claro, apenas dígitos.

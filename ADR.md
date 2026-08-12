@@ -83,7 +83,10 @@ ADR-004
 Título: Estratégia de pseudonimização de CPF de fornecedores PF
  
 Status:
-Aceito — substitui a redação de PROJECT_CONTEXT.md §17
+Aceito — substitui a redação de PROJECT_CONTEXT.md §17. A camada de
+aplicação foi refinada pelo ADR-033 (Sprint 6.5): o hash é aplicado na
+Silver, e a Bronze mantém o CPF bruto equivalente-público sob acesso
+restrito.
  
 Contexto:
 PROJECT_CONTEXT.md §17 definia "hash SHA-256 com salt fixo" para
@@ -94,8 +97,9 @@ válidos é finito e computável.
 Decisão:
 Adotar HMAC-SHA256 com chave secreta (gerenciada via GitHub Secrets
 / .env, nunca hardcoded), em substituição ao salt fixo. Nenhum CPF em
-texto claro é persistido em qualquer camada, incluindo Bronze — hash
-aplicado no momento da extração.
+texto claro é persistido nas camadas consumíveis (Silver/Gold/API) —
+hash aplicado na Silver (ADR-033 refina a camada: Bronze mantém o
+dado bruto equivalente-público sob acesso restrito, sem hash).
  
 Consequências:
 - Requer atualização de PROJECT_CONTEXT.md §17.

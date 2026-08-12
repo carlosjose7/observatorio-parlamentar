@@ -40,7 +40,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 **RF-03** — O sistema deve calcular e expor os 5 scores de risco e o `risk_index` composto (§9, ADR-003) para cada parlamentar.
 **RF-04** — O sistema deve detectar anomalias de despesa segundo os 6 critérios formais (§10, ADR-002), exigindo ≥2 critérios simultâneos.
 **RF-05** — O sistema deve expor endpoints REST documentados (OpenAPI/Swagger) para consumo por dashboard e agentes de IA (§11).
-**RF-06** — O sistema deve pseudonimizar CPFs de fornecedores PF via HMAC-SHA256 antes de qualquer persistência (§17, ADR-004).
+**RF-06** — O sistema deve pseudonimizar CPFs de fornecedores PF via HMAC-SHA256 na camada Silver (fronteira de pseudonimização; a Bronze mantém o dado bruto equivalente-público sob acesso restrito — §17, ADR-004/ADR-033).
 **RF-07** — O sistema deve gerar automaticamente Data Dictionary, diagramas Mermaid e relatório HTML ao final do pipeline.
 **RF-08** — O sistema deve permitir exportação de dados em CSV, Excel e PDF a partir do dashboard.
 **RF-09** — O sistema deve calcular índice de concentração de fornecedores (HHI) por parlamentar/partido/estado.
@@ -57,7 +57,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | **Performance** | API deve responder em < 500ms (p95) para endpoints de consulta simples; < 2s para endpoints com agregação/rede |
 | **Disponibilidade** | Pipeline diário via GitHub Actions com taxa de sucesso ≥ 95%; dashboard com disponibilidade best-effort (Streamlit Community Cloud, sem SLA formal) |
 | **Escalabilidade** | Arquitetura deve suportar crescimento incremental de dados (10+ anos de histórico) sem reescrita de camadas Bronze/Silver |
-| **Segurança/LGPD** | Nenhum dado pessoal sensível (CPF) em texto claro em qualquer camada (ADR-004); apenas dados públicos oficiais |
+| **Segurança/LGPD** | Nenhum CPF em texto claro nas camadas consumíveis (Silver/Gold/API) — pseudonimização HMAC-SHA256 na Silver (ADR-004/033); a Bronze mantém o dado bruto equivalente-público sob acesso restrito; apenas dados públicos oficiais |
 | **Observabilidade** | Logging estruturado (`structlog`) em todos os módulos; relatório de qualidade de dados gerado a cada execução |
 | **Manutenibilidade** | Cobertura de testes ≥ 80% (Pytest); zero hardcode — configuração externa via `config/*.yaml`/`.env` |
 | **Reprodutibilidade** | Qualquer execução anterior deve ser reproduzível a partir de `run_id` e `pipeline_version` |

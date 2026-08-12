@@ -38,6 +38,15 @@ Histórico das alterações, organizado por sprint (ver
   Senado 63.874 despesa / parlamentar 514+162 / cartão ~120k / emenda 45.799,
   Gold `dbt build` PASS=224 ERROR=0, `pipeline_runs` 12 linhas no dev.
 
+### Corrigido (alinhamento documental de segurança — BUG-DOC-001)
+- **README/PROJECT_CONTEXT/ADR-004 alinhados ao ADR-033.** A documentação
+  ainda afirmava que o CPF era pseudonimizado "antes de qualquer persistência
+  — inclusive na Bronze" (postura do ADR-004 original). ADR-033 mudou a
+  fronteira para a Silver: a Bronze mantém o CPF bruto equivalente-público
+  sob acesso restrito, e Silver/Gold/API só expõem o hash. Corrigidos
+  `README.md §II.5`, `PROJECT_CONTEXT.md` (RF-06 + RNF Segurança/LGPD) e a
+  redação do ADR-004 (Status/Decisão) com a nota de refinamento pelo ADR-033.
+
 ### Corrigido (corretivos do prompt de QA)
 - **BUG-001 — progressão incremental da Bronze presa em reextração.** A
   execução incremental avançava para o período seguinte ao watermark mesmo
