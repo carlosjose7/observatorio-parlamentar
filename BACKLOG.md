@@ -467,8 +467,8 @@
    `analytics/anomalies/`, `network.py` → `analytics/network/`, `features.py`
    → `analytics/features.py` (git mv, histórico preservado). Imports internos,
    docstrings e comentários ativos sincronizados; referência obsoleta a
-   `pipeline/pipeline.py` removida da árvore §6. Suíte 288 testes verdes após
-   a realocação (230 pipeline + 58 API).
+   `pipeline/pipeline.py` removida da árvore §6. Suíte 306 testes verdes após
+   a realocação (230 pipeline + 58 API + 18 integração).
 
 ☑ **Corretivos do prompt de QA (Sprint 6.5)**:
    - **BUG-001** — incremental da Bronze avançava para período inexistente;
@@ -571,9 +571,9 @@
       valores reais tiver sido compartilhada.
 
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.6 — **Sprint 6.5 — DONE / QA APPROVED** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002), secrets externalizados (CWE-798) com **varredura do histórico (872 blobs: nenhum secret real, teste de controle 3/3) e decisão de não reescrever**, Gitleaks no CI (`.gitleaks.toml` + job `secret-scan`) — **308 testes verdes** (266 pipeline + 38 API + 4 integração). **Validação E2E real concluída** (Bronze→Silver→Gold com APIs reais em modo validação): corretivos BUG-007/008/009/010/011 + regressões, Gold `PASS=224 ERROR=0`, `pipeline_runs` 12 linhas no dev; **316 testes verdes** (307 pipeline + 4 integração + 5 API + 1 skip Airflow). **Alinhamento documental da pseudonimização (BUG-DOC-001):** README, PROJECT_CONTEXT (RF-06/RNF) e ADR-004 agora refletem ADR-033 — Bronze mantém CPF bruto equivalente-público, Silver é a fronteira do hash. Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033. Recomendação pós-fechamento: proteção da branch `develop` exigindo `secret-scan` como check obrigatório (Sprint 9).*
+*Versão atual: 1.6 — **Sprint 6.5 — DONE / QA APPROVED** — Validação End-to-End: manutenção estrutural completa (módulos analíticos em `analytics/` §6), corretivos do prompt de QA BUG-001/003/004/005/006 com regressões, ADR-033 (pseudonimização na Silver), import-test do DAG (`tests/pipeline/test_dag.py`, Airflow via optional-dependency), dívida de criptografia MinIO registrada (BUG-002), secrets externalizados (CWE-798) com **varredura do histórico (872 blobs: nenhum secret real, teste de controle 3/3) e decisão de não reescrever**, Gitleaks no CI (`.gitleaks.toml` + job `secret-scan`) — **308 testes verdes** (232 pipeline + 58 API + 18 integração). **Validação E2E real concluída** (Bronze→Silver→Gold com APIs reais em modo validação): corretivos BUG-007/008/009/010/011 + regressões, Gold `PASS=224 ERROR=0`, `pipeline_runs` 12 linhas no dev; **316 testes verdes** (240 pipeline + 58 API + 18 integração + 1 skip Airflow). **Alinhamento documental da pseudonimização (BUG-DOC-001):** README, PROJECT_CONTEXT (RF-06/RNF) e ADR-004 agora refletem ADR-033 — Bronze mantém CPF bruto equivalente-público, Silver é a fronteira do hash. Dívida técnica de paridade dbt→Pydantic→API registrada (próxima sprint). Sprint 6 fechada (288). ADRs 001-033. Recomendação pós-fechamento: proteção da branch `develop` exigindo `secret-scan` como check obrigatório (Sprint 9).*
 
-*Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 288 testes verdes após a realocação (230 pipeline + 58 API). Corretivos QA e ADR-033; **308 testes verdes** ao final (266 pipeline + 38 API + 4 integração).*
+*Manutenção estrutural Sprint 6.5: módulos analíticos realocados de `pipeline/` para `analytics/` conforme §6 (git mv); referência obsoleta a `pipeline/pipeline.py` removida da árvore §6; 306 testes verdes após a realocação (230 pipeline + 58 API + 18 integração). Corretivos QA e ADR-033; **308 testes verdes** ao final (232 pipeline + 58 API + 18 integração).*
 
 ---
 

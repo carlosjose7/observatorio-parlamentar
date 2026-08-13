@@ -144,7 +144,7 @@ Suíte completa: **349 passed, 1 skipped** (13 novos dos gates: 8 E2E HTTP +
 ### Status final da sprint (QA approved)
 **Sprint 6.5 — DONE / QA APPROVED.** Functional PASS · Integration PASS ·
 E2E real PASS · Data Quality (Gold 224/0) PASS · Security Secret Audit
-(872 blobs + teste de controle 3/3) PASS · Regression (316/1) PASS ·
+(872 blobs + teste de controle 3/3) PASS · Regression (316 passed + 1 skipped) PASS ·
 Documentation PASS · Working tree CLEAN.
 Recomendação de hardening (fora da sprint, monitorar na Sprint 9 quando o
 CI real entrar): garantir proteção da branch `develop` exigindo o job
@@ -219,7 +219,7 @@ merge/commit — hoje ele dispara em `workflow_dispatch` + `pull_request`.
   - `pipeline/features.py` → `analytics/features.py` (contrato Feature Store, ADR-028)
   - `git mv` (histórico preservado); imports internos (`risk`→`analytics.parliamentarians.analytics`, demais→`analytics.features`), docstrings e comentários ativos sincronizados (SQL do Gold, `sources.yml`, `schema.yml`, `feature_store/registry.yaml`, `pipeline/config.py`, `docs/architecture/arch_pipeline.md`). Registros históricos (ADR/BACKLOG/CHANGELOG) preservados.
 - **Removida referência a `pipeline/pipeline.py`** (entrypoint inexistente) da árvore §6 — os entrypoints reais são o DAG (`pipeline/dags/pipeline_dag.py`) e `scripts/run_e2e_local.py`.
-- **Árvore §6 atualizada**: `analytics/` documentado com a estrutura real; `pipeline/` sem os módulos analíticos; suíte **288 testes verdes** (230 pipeline + 58 API) após a realocação.
+- **Árvore §6 atualizada**: `analytics/` documentado com a estrutura real; `pipeline/` sem os módulos analíticos; suíte **306 testes verdes** (230 pipeline + 58 API + 18 integração) após a realocação.
 
 ### Adicionado (fechamento Sprint 6.5)
 - **`tests/pipeline/test_dag.py` — import-test do DAG com Airflow `DagBag`**
@@ -230,8 +230,8 @@ merge/commit — hoje ele dispara em `workflow_dispatch` + `pull_request`.
   `pytest.importorskip("airflow")` — o Airflow é optional-dependency (extra
   `pipeline`), então em dev local sem o extra o teste é pulado; em
   CI/containers com o extra instalado vira barreira real.
-- **Fechamento da Sprint 6.5**: suíte completa **308 passed** (266 pipeline +
-  38 API + 4 integração), sem regressões.
+- **Fechamento da Sprint 6.5**: suíte completa **308 passed** (232 pipeline +
+  58 API + 18 integração), sem regressões.
 
 ---
 
