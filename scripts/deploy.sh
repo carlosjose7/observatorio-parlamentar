@@ -60,8 +60,11 @@ echo -e "${GREEN}✓ Arquivos sincronizados${NC}"
 echo -e "\n${YELLOW}[4/5] Subindo containers Docker...${NC}"
 ssh -i "$SSH_KEY" "$SSH_DEST" "
     cd ~/observatorio-parlamentar &&
-    cp .env.example .env 2>/dev/null || true
-    echo 'AVISO: Edite o .env com suas credenciais reais depois.'
+    if [ ! -f .env ]; then
+        cp .env.example .env
+        echo 'Arquivo .env criado. Preencha credenciais reais antes de executar novamente.'
+        exit 1
+    fi
     docker compose build --parallel 2>&1
     docker compose up -d 2>&1
 "
@@ -86,8 +89,4 @@ echo -e "${GREEN}│                                                         │
 echo -e "${GREEN}│  Airflow:   http://${VPS_IP}:8080 (profile: pipeline)   │${NC}"
 echo -e "${GREEN}│  credenciais: AIRFLOW_ADMIN_USER/_PASSWORD do .env       │${NC}"
 echo -e "${GREEN}│                                                         │${NC}"
-echo -e "${GREEN}│  ⚠️  Não esqueça de editar o .env na VPS:               │${NC}"
-echo -e "${GREEN}│  ssh -i ${SSH_KEY} ${SSH_DEST}                          │${NC}"
-echo -e "${GREEN}│  nano ~/observatorio-parlamentar/.env                   │${NC}"
-echo -e "${GREEN}│  docker compose restart                                 │${NC}"
 echo -e "${GREEN}└─────────────────────────────────────────────────────────┘${NC}"

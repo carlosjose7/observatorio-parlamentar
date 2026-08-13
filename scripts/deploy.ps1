@@ -49,8 +49,11 @@ Write-Host "✓ Arquivos enviados" -ForegroundColor Green
 Write-Host "[4/4] Subindo containers Docker..." -ForegroundColor Yellow
 ssh -i "$SshKey" "ubuntu@${VpsIp}" @"
     cd ~/observatorio-parlamentar
-    cp .env.example .env 2>\\\$null || true
-    echo 'AVISO: Edite o .env com suas credenciais reais depois.'
+    if [ ! -f .env ]; then
+        cp .env.example .env
+        echo 'Arquivo .env criado. Preencha credenciais reais antes de executar novamente.'
+        exit 1
+    fi
     docker compose build --parallel 2>&1
     docker compose up -d 2>&1
 "@
@@ -66,7 +69,3 @@ Write-Host ""
 Write-Host "Airflow:   http://${VpsIp}:8080" -ForegroundColor Cyan
 Write-Host "           (AIRFLOW_ADMIN_USER/_PASSWORD do .env)" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "⚠️  Edite o .env na VPS:" -ForegroundColor Yellow
-Write-Host "   ssh -i `"$SshKey`" ubuntu@${VpsIp}" -ForegroundColor Gray
-Write-Host "   nano ~/observatorio-parlamentar/.env" -ForegroundColor Gray
-Write-Host "   docker compose restart" -ForegroundColor Gray

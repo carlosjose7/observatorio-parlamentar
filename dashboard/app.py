@@ -49,11 +49,16 @@ def _render_kpis(contexto: dict) -> None:
     metricas = contexto.get("metricas_globais") or {}
     st.markdown("### Panorama")
     c1, c2, c3, c4, c5 = st.columns(5)
-    metricas_seguras("Total Gasto", formatar_moeda(metricas.get("total_gasto")))
-    metricas_seguras("Transações", metricas.get("num_transacoes"))
-    metricas_seguras("Fornecedores", metricas.get("num_fornecedores"))
-    metricas_seguras("Parlamentares", metricas.get("num_parlamentares"))
-    metricas_seguras("Anomalias", metricas.get("num_anomalias"))
+    with c1:
+        metricas_seguras("Total Gasto", formatar_moeda(metricas.get("total_gasto")))
+    with c2:
+        metricas_seguras("Transações", metricas.get("num_transacoes"))
+    with c3:
+        metricas_seguras("Fornecedores", metricas.get("num_fornecedores"))
+    with c4:
+        metricas_seguras("Parlamentares", metricas.get("num_parlamentares"))
+    with c5:
+        metricas_seguras("Anomalias", metricas.get("num_anomalias"))
 
 
 def _render_periodos(contexto: dict) -> None:

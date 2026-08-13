@@ -27,6 +27,7 @@ dependencies = [
 api = [
     "fastapi[standard]>=0.110.0",
     "uvicorn[standard]>=0.29.0",
+    "duckdb>=1.0.0",
 ]
 pipeline = [
     "apache-airflow[postgres]==2.9.3",
@@ -41,6 +42,7 @@ dashboard = [
     "streamlit>=1.35.0",
     "openpyxl>=3.1.0",
     "matplotlib>=3.8.0",
+    "networkx>=3.2.0",
 ]
 analytics = [
     "scikit-learn>=1.4.0",

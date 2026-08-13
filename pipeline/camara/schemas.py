@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from pipeline.contracts import LoadMetadata, TipoDocumento
 
@@ -60,8 +60,7 @@ class CamaraBronzeDespesa(BaseModel):
 
     metadata: LoadMetadata
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CamaraSilverDespesa(BaseModel):
@@ -124,5 +123,4 @@ class CamaraBronzeDeputado(BaseModel):
 
     metadata: LoadMetadata
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from pipeline.contracts import LoadMetadata, TipoDocumento
 
@@ -33,8 +33,7 @@ class CguBronzeEstabelecimento(BaseModel):
         default=None, alias="numeroInscricaoSocial", description="Campo morto — 100% vazio"
     )
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CguBronzePortador(BaseModel):
@@ -44,8 +43,7 @@ class CguBronzePortador(BaseModel):
     cpf_formatado: str = Field(..., alias="cpfFormatado", description="Já mascarado pela fonte, ex: ***.122.497-**")
     nis: str | None = Field(default=None, description="Campo morto — 100% vazio")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CguBronzeUnidadeGestora(BaseModel):
@@ -54,8 +52,7 @@ class CguBronzeUnidadeGestora(BaseModel):
     codigo: str
     nome: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CguBronzeTipoCartao(BaseModel):
@@ -68,8 +65,7 @@ class CguBronzeTipoCartao(BaseModel):
 
     codigo: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CguBronzeCartao(BaseModel):
@@ -86,8 +82,7 @@ class CguBronzeCartao(BaseModel):
 
     metadata: LoadMetadata
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("tipo_cartao_codigo", mode="before")
     @classmethod
@@ -124,8 +119,7 @@ class CguBronzeEmenda(BaseModel):
 
     metadata: LoadMetadata
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CguSilverCartao(BaseModel):
