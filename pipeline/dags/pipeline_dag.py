@@ -9,7 +9,6 @@ from pipeline.camara.transform import (
 from pipeline.camara.transform import (
     carregar_silver_parlamentar as silver_parlamentar,
 )
-from pipeline.logging import configure_logging
 from pipeline.senado.transform import carregar_silver_despesa as silver_senado
 from pipeline.senado.transform import (
     carregar_silver_parlamentar as silver_parlamentar_senado,
@@ -86,7 +85,6 @@ def _executar_gold(**context):
     aplicar um default divergente (PROJECT_CONTEXT §15). Só é seguro rodar em
     processo próprio porque no worker do Airflow ninguém mais mantém conexão.
     """
-    import json
     import os
     import subprocess
     import sys

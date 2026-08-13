@@ -251,7 +251,6 @@ def similaridade_parlamentares(
         `num_fornecedores_compartilhados` e `similaridade`, ordenado por
         (a, b) — determinístico.
     """
-    import networkx as nx
 
     if grafo.number_of_nodes() == 0:
         return pd.DataFrame(
@@ -470,7 +469,6 @@ def escrever_rede_duckdb(
         pipeline_version: Versão do pipeline; padrão lido de `pyproject.toml`.
         source_version: Versão da fonte do lote.
     """
-    import duckdb
 
     from pipeline.config import get_pipeline_version
 

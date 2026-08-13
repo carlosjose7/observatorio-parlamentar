@@ -237,7 +237,9 @@ def _throttle_instantaneo(monkeypatch):
     from pipeline.transparencia import extract as transparencia_extract
     from pipeline.utils import RateLimiter
 
-    instantaneo = lambda *_args, **_kwargs: RateLimiter(10**9, dormir=lambda _s: None)
+    def instantaneo(*_args, **_kwargs):
+        return RateLimiter(10**9, dormir=lambda _s: None)
+
     monkeypatch.setattr(camara_extract, "_limitador", instantaneo)
     monkeypatch.setattr(transparencia_extract, "_limitador", instantaneo)
 
@@ -340,7 +342,7 @@ def test_fonte_isolada_com_falha(ambiente):
 
 def test_watermark_persiste_entre_runs(ambiente):
     client = _cliente_mock()
-    run1 = run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
     run2 = run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
 
     estado_camara = ambiente["store"].get("watermark_camara_despesas")

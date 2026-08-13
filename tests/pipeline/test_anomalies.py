@@ -21,14 +21,11 @@ from datetime import date
 from pathlib import Path
 
 import duckdb
-import numpy as np
 import pandas as pd
-import pytest
 
 from analytics.anomalies.anomalies import (
     IF_CONTAMINACAO,
     IF_LIMIAR_SCORE,
-    ZSCORE_LIMIAR,
     avaliar_criterios,
     criterio_dia_sem_sessao,
     criterio_empresa_nova,
@@ -135,6 +132,13 @@ def test_fornecedor_sem_dado_nao_acusa():
     assert criterio.tolist() == [False, True]
 
 
+def test_fornecedor_coluna_ausente_ou_lote_vazio_nao_acusa():
+    assert criterio_fornecedor_poucos_clientes(pd.DataFrame()).empty
+    assert criterio_fornecedor_poucos_clientes(
+        pd.DataFrame({"id_parlamentar": [1]})
+    ).tolist() == [False]
+
+
 def test_empresa_nova_doze_meses():
     """Critério 4: empresa com < 12 meses na data da despesa acusa."""
     fatos = _fatos([100.0, 100.0], id_fornecedor=10)
@@ -162,6 +166,11 @@ def test_empresa_nova_sem_base_nao_acusa():
     assert criterio_empresa_nova(fatos, None).tolist() == [False, False]
 
 
+def test_empresa_nova_com_base_vazia_nao_acusa():
+    """Base explicitamente vazia também é degradação segura e auditável."""
+    assert criterio_empresa_nova(_fatos([100.0]), pd.Series(dtype="datetime64[ns]")).tolist() == [False]
+
+
 def test_valores_identicos_no_mes():
     """Critério 5: 3+ valores idênticos do mesmo parlamentar no mês."""
     fatos = _fatos([50, 50, 50, 10], data_sk=20240501)
@@ -176,6 +185,10 @@ def test_valores_identicos_parlamentares_distintos():
     criterio = criterio_valores_identicos(fatos, _dim_data())
     # Parlamentar 1: 2 ocorrências (< 3) → não acusa; parl 2: só 1.
     assert criterio.tolist() == [False, False, False]
+
+
+def test_valores_identicos_com_dimensao_vazia_nao_acusa():
+    assert criterio_valores_identicos(_fatos([50]), pd.DataFrame()).tolist() == [False]
 
 
 def test_dia_sem_sessao():
@@ -207,7 +220,6 @@ def test_anomalia_requer_dois_criterios():
     )
     resultado = avaliar_criterios(fatos, _dim_data())
 
-    p1 = resultado[resultado["id_parlamentar"] == 1]
     p2 = resultado[resultado["id_parlamentar"] == 2]
     # P1: despesa de 5000 tem z > 2.5 e o fornecedor 10 é exclusivo → 2 critérios.
     assert resultado.loc[resultado["valor_liquido"] == 5000, "is_anomalia"].all()
@@ -231,6 +243,22 @@ def test_anomalia_contagem():
     # despesa → garante ao menos 1 anomalia.
     assert 1 <= contagem_anomalias(resultado) <= 7
     assert contagem_anomalias(pd.DataFrame()) == 0
+
+
+def test_avaliar_criterios_degrada_sem_dimensao_ou_fornecedor():
+    """Ausência de dados auxiliares nunca cria falso positivo."""
+    fatos = _fatos([100, 100, 100]).drop(columns=["id_fornecedor"])
+    resultado = avaliar_criterios(fatos, dim_data=None)
+
+    assert not resultado["criterio_fornecedor_poucos_clientes"].any()
+    assert not resultado["criterio_valores_identicos"].any()
+    assert not resultado["criterio_dia_sem_sessao"].any()
+
+
+def test_avaliar_criterios_vazio_preserva_schema():
+    resultado = avaliar_criterios(pd.DataFrame(), _dim_data())
+    assert resultado.empty
+    assert {"zscore", "if_score", "num_criterios", "is_anomalia"} <= set(resultado.columns)
 
 
 def test_regra_anomalia_registrada_no_registry():
@@ -285,6 +313,17 @@ def test_escrita_ml_staging_expense_outliers(tmp_path):
         con.close()
 
 
+def test_escrita_outliers_vazia_nao_abre_duckdb(monkeypatch):
+    """Lote vazio é no-op: não cria staging nem toca na conexão."""
+    import analytics.anomalies.anomalies as modulo
+
+    def nao_conectar(_db_path):
+        raise AssertionError("não deve conectar para lote vazio")
+
+    monkeypatch.setattr(modulo, "_conectar_duckdb", nao_conectar)
+    escrever_expense_outliers_duckdb(pd.DataFrame(), run_id="run-vazia")
+
+
 def test_executar_carga_outliers_escreve_e_retorna(tmp_path):
     """Orquestra avaliar + gravar em ml_staging (ponto de entrada da DAG)."""
     db = tmp_path / "pipe.duckdb"
@@ -306,7 +345,6 @@ def test_executar_carga_outliers_escreve_e_retorna(tmp_path):
 
 def test_empresa_nova_na_persistencia(tmp_path):
     """O critério 4 entra na regra quando a base de abertura existe."""
-    db = tmp_path / "pipe.duckdb"
     fatos = _fatos([100, 100], id_fornecedor=10)
     abertura = pd.Series({10: pd.Timestamp("2023-11-01")})  # 6 meses
     resultado = avaliar_criterios(

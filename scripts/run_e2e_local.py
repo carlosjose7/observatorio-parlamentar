@@ -30,7 +30,6 @@ INSERE (não faz upsert), então recriar do zero garante rebuild determinístico
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import subprocess

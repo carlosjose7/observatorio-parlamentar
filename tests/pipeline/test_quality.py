@@ -9,7 +9,6 @@ de nulos e o registro do Data Quality Report.
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from pipeline.quality import (
     avaliar_qualidade,
@@ -283,10 +282,8 @@ class TestPersistenciaDedupSilver:
     """
 
     def _carregar(self, tmp_path, df, tabela, chaves):
-        import duckdb
 
         db_path = tmp_path / "silver_test.duckdb"
-        monkeypatch_env = f"DUCKDB_DATABASE_PATH={db_path}"
 
         # get_env() e cacheado (lru_cache) — limpa para usar o path temporario
         import pipeline.config as config
@@ -471,7 +468,6 @@ class TestPersistenciaDedupSilver:
         DuckDB na criação da tabela — a segunda fonte (Senado, com nomes reais)
         derrubava o INSERT com `ConversionException`. A coluna deve nascer
         `VARCHAR`, permitindo a carga das duas fontes na tabela compartilhada."""
-        import duckdb
 
         def _df(fonte, nomes):
             n = len(nomes)

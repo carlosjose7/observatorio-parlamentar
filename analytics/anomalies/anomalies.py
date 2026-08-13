@@ -492,7 +492,6 @@ def escrever_expense_outliers_duckdb(
     """
     if resultado.empty:
         return
-    import duckdb
 
     from pipeline.config import get_pipeline_version
 

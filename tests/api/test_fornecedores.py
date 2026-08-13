@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from pipeline.config import load_env_settings
@@ -114,3 +115,22 @@ def test_gold_indisponivel_503_fornecedores(tmp_path, monkeypatch):
         resposta = client.get("/fornecedores")
     assert resposta.status_code == 503
     assert resposta.json() == {"detail": "Camada Gold indisponível"}
+
+
+@pytest.mark.parametrize(
+    ("atributo", "rota"),
+    [
+        ("obter_perfil_fornecedor", f"/fornecedores/{_CNPJ}"),
+        ("listar_parlamentares_fornecedor", f"/fornecedores/{_CNPJ}/parlamentares"),
+    ],
+)
+def test_rotas_individuais_gold_indisponivel_503(monkeypatch, atributo, rota):
+    import api.routers.fornecedores as router_module
+    from api.repo import GoldIndisponivel
+
+    def indisponivel(*_args, **_kwargs):
+        raise GoldIndisponivel("offline")
+
+    monkeypatch.setattr(router_module, atributo, indisponivel)
+    with TestClient(app) as client:
+        assert client.get(rota).status_code == 503

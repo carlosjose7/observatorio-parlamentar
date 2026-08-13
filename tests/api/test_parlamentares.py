@@ -212,3 +212,24 @@ def test_gold_indisponivel_503(tmp_path, monkeypatch):
         resposta = client.get("/parlamentares")
     assert resposta.status_code == 503
     assert resposta.json() == {"detail": "Camada Gold indisponível"}
+
+
+@pytest.mark.parametrize(
+    ("atributo", "rota"),
+    [
+        ("listar_gastos", "/parlamentares/1/gastos"),
+        ("obter_perfil_parlamentar", "/parlamentares/1"),
+        ("obter_rede_parlamentar", "/parlamentares/1/rede"),
+    ],
+)
+def test_rotas_individuais_gold_indisponivel_503(monkeypatch, atributo, rota):
+    """Cada leitura individual traduz a indisponibilidade do repositório."""
+    import api.routers.parlamentares as router_module
+    from api.repo import GoldIndisponivel
+
+    def indisponivel(*_args, **_kwargs):
+        raise GoldIndisponivel("offline")
+
+    monkeypatch.setattr(router_module, atributo, indisponivel)
+    with TestClient(app) as client:
+        assert client.get(rota).status_code == 503

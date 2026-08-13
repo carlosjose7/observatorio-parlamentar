@@ -577,7 +577,7 @@
 
 ---
 
-## Sprint 7 — Dashboard (Streamlit)
+## Sprint 7 — Dashboard (Streamlit) — FECHADA
 
 ☑ **`dashboard/client.py`** — cliente HTTP da API REST (RF-05, ADR-026):
    um método por endpoint, com `ApiError` (erro de negócio com `detail`) e
@@ -661,4 +661,72 @@ DQ report e execuções renderizando. Suíte completa **336 passed, 1 skipped**
    reverso) e autenticação se a API servir dado individual. Não bloqueia o
    fechamento funcional; permanece como item explícito de deploy (Sprint 9).
 
-*Versão atual: 2.1 — **Sprint 7 em andamento** — Dashboard Streamlit: cliente da API (RF-05), 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08), UX com erro amigável; config ADR-008 (`config/dashboard.yaml`) e extra `dashboard`. **Auditoria técnica concluída (Gates 1-5):** client HTTP robusto (retry/limites/erros amigáveis), exportações com teto, rede limitada na API (`limite_nos`), CNPJ URL-encoded, E2E HTTP real sem mock — **349 testes verdes** (13 novos: 8 E2E + 5 robustez + anteriores); dívida TLS/auth registrada (ADR-007, Sprint 9). Sprint 6.5 fechada (QA approved). ADRs 001-033.*
+*Versão atual: 2.2 — **Sprint 7 — DONE / QA APPROVED** — Dashboard Streamlit: cliente da API (RF-05), 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08), UX com erro amigável; config ADR-008 (`config/dashboard.yaml`) e extra `dashboard`. **Auditoria técnica concluída (Gates 1-5):** client HTTP robusto (retry/limites/erros amigáveis), exportações com teto, rede limitada na API (`limite_nos`), CNPJ URL-encoded, E2E HTTP real sem mock — **349 testes verdes** (1 skip Airflow). Dívida técnica registrada e não bloqueante: autenticação/TLS pendentes (ADR-007, Sprint 9). Commit de fechamento: `bdf1cb3`. Sprint 6.5 fechada (QA approved). Sprint 7 fechada (349). ADRs 001-033.*
+
+---
+
+## Sprint 8 — Testes e Qualidade — EM ANDAMENTO
+
+**Objetivo:** elevar a confiança dos módulos de maior risco, preservar a
+cobertura global em pelo menos 80% e transformar cobertura/lint em gates locais
+reprodutíveis. Baseline de abertura: **349 passed, 1 skipped (Airflow)** e
+**88%** de cobertura global.
+
+### Prioridade 1 — contratos Gold e persistência Bronze
+
+- ☑ **Contratos de `pipeline/gold.py`** — testes unitários de validação e
+  rejeição dos contratos Pydantic da camada Gold (tipos, campos obrigatórios,
+  regras de nulidade e valores inválidos). O dbt continua validado pelos testes
+  de integração já existentes em `tests/pipeline/test_gold_*.py`; este item não
+  introduz um segundo orquestrador dbt.
+- ☑ **`pipeline/storage.py`** — cobertura dos dois backends e dos ramos de
+  persistência: diretório vazio, projeção de colunas, deduplicação mensal/anual,
+  chave nula, arquivo de controle e serialização MinIO com cliente fake.
+
+### Prioridade 2 — gate de qualidade
+
+- ☑ **Ruff** — adicionado ao extra `dev`, configurado com o conjunto inicial
+  de erros de execução (`E4`, `E7`, `E9`, `F`) e validado por `python -m ruff
+  check .`. A migração de regras estritas de estilo/import ordering permanece
+  deliberadamente separada para não misturar uma reformatação massiva.
+- ☑ **Coverage** — declarado `fail_under = 80` e incluído `dashboard` no source
+  monitorado, sem mascarar módulos por exclusões novas; ajustar somente após a
+  suíte permanecer acima do limiar.
+
+### Prioridade 3 — lacunas remanescentes
+
+- ☑ Elevar a cobertura de `watermark.py`, `pseudonymize.py`,
+  `senado/transform.py` e routers de parlamentares/fornecedores: stores JSON/
+  Airflow fake e namespace, falhas fail-fast do HMAC, carga Senado vazia e
+  delegação Silver, e degradação Gold→503 em todas as rotas individuais.
+- ☑ Critérios de anomalia — `analytics/anomalies/anomalies.py` confirmado em
+  **100%** na reexecução limpa do gate de fechamento. O 87% registrado era
+  artefato de medição: um `.coverage` acumulado de execuções anteriores excluía
+  os testes de fronteira/persistência que já existiam
+  (`test_fornecedor_coluna_ausente_ou_lote_vazio_nao_acusa`,
+  `test_empresa_nova_com_base_vazia_nao_acusa`,
+  `test_valores_identicos_com_dimensao_vazia_nao_acusa`,
+  `test_avaliar_criterios_vazio_preserva_schema`,
+  `test_avaliar_criterios_degrada_sem_dimensao_ou_fornecedor`,
+  `test_escrita_outliers_vazia_nao_abre_duckdb`). Nenhum teste novo necessário.
+
+### Resultado da terceira entrega (gate consolidado de fechamento)
+
+Suíte completa reexecutada com `.coverage` limpo: **374 passed, 1 skipped
+(Airflow)** e cobertura global de **93,58%**. Módulos em 100%:
+`gold.py`, `watermark.py`, `pseudonymize.py`, `senado/transform.py`, routers
+de parlamentares/fornecedores, `anomalies.py`. `storage.py` em 99% (1 ramo
+parcial) e `dashboard` em 100% (`app.py`)/90%/62% (`ui.py`).
+
+### Critérios de aceite
+
+- ☑ Suíte completa verde: **374 passed, 1 skipped** (Airflow opcional), em
+  33min52s (gate de fechamento, medição limpa).
+- ☑ Cobertura total de **93,58%** (limiar >= 80%) com relatório por módulo.
+- ☑ `python -m ruff check .` verde e `pytest --cov` falha abaixo do limiar
+  configurado.
+- ☑ Contratos de dados Gold e comportamento de storage exercitados sem MinIO
+  real ou rede externa.
+
+*Abertura registrada em 13/08/2026. A alteração pré-existente em
+`docs/architecture/arch_er.md` permanece fora do escopo desta sprint.*

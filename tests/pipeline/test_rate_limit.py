@@ -181,7 +181,7 @@ def test_bucket_respeita_transicao_dia_noite_sem_recriar():
     assert dormidas[-1] == pytest.approx(60 / (400 * 0.85), abs=0.01)
 
 
-def _spy_limiter(chamadas: list[str]) -> "_SpyLimiter":
+def _spy_limiter(chamadas: list[str]):
     class _SpyLimiter(RateLimiter):
         def aguardar(self) -> None:
             chamadas.append("aguardar")

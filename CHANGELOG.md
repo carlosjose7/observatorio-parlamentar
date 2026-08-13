@@ -8,7 +8,48 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 7 — Dashboard (Streamlit) — EM ANDAMENTO
+## Sprint 8 — Testes e Qualidade — EM ANDAMENTO
+
+### Adicionado
+- **`tests/pipeline/test_gold_contracts.py`** — cobertura de todos os contratos
+  Pydantic Gold, com casos válidos e campos obrigatórios; `pipeline/gold.py`
+  alcançou 100% de cobertura.
+- **`tests/pipeline/test_storage.py`** — Local/MinIO fake, deduplicação mensal
+  e anual, arquivo de controle e seleção de backend; `storage.py` alcançou 99%.
+- **Gates locais** — Ruff no extra `dev` (`python -m ruff check .`) e
+  `fail_under = 80` no coverage, agora incluindo `dashboard`.
+
+### Corrigido
+- Imports não utilizados e nomes mortos apontados pelo conjunto inicial do
+  Ruff, preservando o comportamento dos testes existentes.
+
+### Segunda entrega
+- **Watermark** — cobertura dos stores JSON, namespace e Airflow fake (import
+  lazy e serialização), sem depender da instalação opcional do Airflow.
+- **Pseudonimização** — regressões para CPF vazio, chave HMAC ausente e lotes
+  sem CPF, que não devem consultar segredo.
+- **Senado e API** — carga Bronze→Silver vazia/delegada e tradução uniforme de
+  indisponibilidade da Gold em HTTP 503 nas rotas individuais de parlamentares
+  e fornecedores.
+
+Recorte validado: **57 passed**; os cinco módulos priorizados desta etapa
+atingiram 100% de cobertura.
+
+### Terceira entrega (gate consolidado de fechamento)
+
+Suíte completa reexecutada com `.coverage` limpo — **374 passed, 1 skipped
+(Airflow)** e cobertura global de **93,58%** (em 33min52s). `anomalies.py`
+confirmado em 100%: o valor de 87% anteriormente registrado era artefato de
+medição (`.coverage` acumulado de execuções anteriores), não uma lacuna real —
+os testes de fronteira/persistência já cobriam os ramos listados.
+
+Resultado parcial da Sprint 8: **374 passed, 1 skipped (Airflow)**, cobertura
+global **93,58%**. O conjunto estrito de regras de estilo/import ordering do
+Ruff foi conscientemente postergado para uma migração própria.
+
+---
+
+## Sprint 7 — Dashboard (Streamlit) — FECHADA
 
 ### Adicionado
 - **`dashboard/client.py`** — cliente HTTP da API REST (RF-05, ADR-026):
@@ -81,6 +122,18 @@ Correções de robustez/segurança/performance após revisão de Tech Lead:
 ### Resultado da auditoria
 Suíte completa: **349 passed, 1 skipped** (13 novos dos gates: 8 E2E HTTP +
 5 robustez + anteriores). `tests/api/` 58 passed (limite_nos compatível).
+
+### Fechamento da Sprint 7
+**Sprint 7 — DONE / QA APPROVED.** Dashboard Streamlit completo: 10 páginas
+(visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias,
+ML/risco, qualidade, metadados), cliente HTTP (RF-05), exportações
+CSV/Excel/PDF (RF-08), config externa via `config/dashboard.yaml` (ADR-008).
+Auditoria técnica (Gates 1-5) concluída: client HTTP robusto, exportações
+com teto, rede limitada na API e no dashboard, CNPJ URL-encoded, E2E HTTP
+real sem mock. **349 testes verdes** (1 skip Airflow, mesmo padrão da
+Sprint 6.5). Dívida técnica registrada e não bloqueante: autenticação/TLS
+pendentes (ADR-007, a resolver na Sprint 9). Commit de fechamento:
+`bdf1cb3`. ADRs vigentes: 001-033.
 
 ---
 

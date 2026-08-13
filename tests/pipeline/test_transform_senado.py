@@ -230,3 +230,43 @@ class TestCarregarParlamentarSenado:
         from pipeline.senado.transform import carregar_silver_parlamentar
 
         assert carregar_silver_parlamentar(LocalParquetStorage(root), "run-0001") is None
+
+
+def test_carregar_despesa_retorna_none_com_bronze_vazio(tmp_path):
+    """Não tenta abrir DuckDB quando não há CEAPS a promover."""
+    from pipeline.senado.transform import carregar_silver_despesa
+
+    storage = LocalParquetStorage(tmp_path / "bronze")
+    assert carregar_silver_despesa(storage, "run-sem-dados") is None
+
+
+def test_carregar_despesa_mapeia_e_delega_para_silver(monkeypatch):
+    """A carga usa chave de deduplicação e campos críticos do contrato."""
+    import pipeline.senado.transform as transform
+
+    class StorageFake:
+        def read_dir(self, diretorio):
+            assert diretorio == transform.DIRETORIO_BRONZE
+            return _df_bronze()
+
+    chamado = {}
+
+    def carregar_fake(df, tabela, run_id, chaves_dedup, campos_criticos):
+        chamado.update(
+            tabela=tabela,
+            run_id=run_id,
+            chaves_dedup=chaves_dedup,
+            campos_criticos=campos_criticos,
+            linhas=len(df),
+        )
+        return "resultado"
+
+    monkeypatch.setattr(transform, "carregar_tabela_silver", carregar_fake)
+    assert transform.carregar_silver_despesa(StorageFake(), "run-1") == "resultado"
+    assert chamado == {
+        "tabela": "silver_despesa",
+        "run_id": "run-1",
+        "chaves_dedup": ["fonte", "cod_documento"],
+        "campos_criticos": ["valor_liquido", "nome_fornecedor", "data_documento"],
+        "linhas": 1,
+    }

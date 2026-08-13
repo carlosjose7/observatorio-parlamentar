@@ -20,7 +20,6 @@ from analytics.features import (
     Feature,
     FeatureCategoria,
     FeatureRegistry,
-    REGISTRY_PATH,
     carregar_registry,
 )
 
