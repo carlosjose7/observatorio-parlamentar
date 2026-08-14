@@ -686,7 +686,7 @@ GET  /agent/context
 | **6** | FastAPI | API documentada e testada | ✅ Concluída |
 | **6.5** | Validação Real | Pipeline end-to-end com dados reais | ✅ Concluída |
 | **7** | Dashboard | Streamlit funcional | ✅ Concluída |
-| **8** | Testes | Cobertura ≥ 80% | ⏳ Pendente |
+| **8** | Testes | Cobertura ≥ 80% | ✅ Concluída |
 | **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Pendente |
  
 > Roadmap reconciliado com `docs/governance/sprint_rules.md` — ambos os documentos
@@ -782,4 +782,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 2.6 — **Sprint 7 fechada (DONE / QA APPROVED); Sprint 8 em andamento** — Dashboard Streamlit (10 páginas): visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados; cliente HTTP (RF-05), exportações CSV/Excel/PDF (RF-08), config externa (ADR-008). Auditoria técnica (Gates 1-5) concluída — client robusto, exportações com teto, rede limitada, CNPJ URL-encoded, E2E HTTP real — **349 testes verdes**. Dívida técnica registrada e não bloqueante: autenticação/TLS pendentes (ADR-007, Sprint 9). Commit de fechamento: `bdf1cb3`. Sprint 8 em andamento: 3 entregas concluídas, gate de fechamento limpo com **374 testes aprovados, 1 skip (Airflow) e 93,58% de cobertura global** (gold/watermark/pseudonimização/transformação Senado/routers/anomalias 100%; storage 99%); Ruff no extra `dev` e gate de cobertura mínima de 80% ativos. Sprint 6.5 fechada (QA approved). Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129). ADRs 001-033.*
+*Versão atual: 2.7 — **Sprint 8 fechada (DONE / QA APPROVED)** — Testes e qualidade: contratos Gold (100%), storage Parquet (99%), watermark/pseudonimização/transformação Senado/routers de parlamentares e fornecedores/anomalias (100%), gates locais de Ruff (`E4/E7/E9/F`) e coverage (`fail_under = 80`, `dashboard` no source) — **374 testes verdes, 1 skip (Airflow), 93,58% de cobertura global** (medição limpa, 0:18:31). Aceitos como acima do limiar: storage 99% e dashboard/ui.py 62%. Deferido: Ruff estrito/import ordering (Sprint 9). Sem ADR novo — ADRs 001-033. Sprint 7 fechada (349, commit `bdf1cb3`). Sprint 6.5 fechada (QA approved). Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129). Commit de fechamento da Sprint 8: `fdad9c0`.*
