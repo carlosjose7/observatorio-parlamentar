@@ -687,7 +687,7 @@ GET  /agent/context
 | **6.5** | Validação Real | Pipeline end-to-end com dados reais | ✅ Concluída |
 | **7** | Dashboard | Streamlit funcional | ✅ Concluída |
 | **8** | Testes | Cobertura ≥ 80% | ✅ Concluída |
-| **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Pendente |
+| **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Em andamento |
  
 > Roadmap reconciliado com `docs/governance/sprint_rules.md` — ambos os documentos
 > agora concordam em 12 sprints, sem fusão entre Testes (8) e
@@ -782,4 +782,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 2.7 — **Sprint 8 fechada (DONE / QA APPROVED)** — Testes e qualidade: contratos Gold (100%), storage Parquet (99%), watermark/pseudonimização/transformação Senado/routers de parlamentares e fornecedores/anomalias (100%), gates locais de Ruff (`E4/E7/E9/F`) e coverage (`fail_under = 80`, `dashboard` no source) — **374 testes verdes, 1 skip (Airflow), 93,58% de cobertura global** (medição limpa, 0:18:31). Aceitos como acima do limiar: storage 99% e dashboard/ui.py 62%. Deferido: Ruff estrito/import ordering (Sprint 9). Sem ADR novo — ADRs 001-033. Sprint 7 fechada (349, commit `bdf1cb3`). Sprint 6.5 fechada (QA approved). Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129). Commit de fechamento da Sprint 8: `a0c151d` (progresso anterior da Sprint 8 registrado em `fdad9c0`).*
+*Versão atual: 2.8 — **Sprint 9 em andamento** — abertura com ADR-034 aceito (execução diária do pipeline via `systemd timer` na VPS Oracle; GitHub Actions restrito a CI). CI real: `.github/workflows/ci.yml` (Gitleaks + Ruff + pytest --cov com gate 80%) substituindo o placeholder `pipeline.yml`. Sprints 1-8 fechadas (374 testes, 93,58% cobertura). ADRs 001-034.*

@@ -2040,4 +2040,77 @@ Consequências:
 
 ---
 
-<!-- Continue with further ADRs -->
+ADR-034
+Título: Estratégia de execução diária do pipeline — cron na VPS Oracle (sem CD via GitHub Actions)
+
+Status:
+Aceito
+
+Contexto:
+A Sprint 9 exige que o pipeline seja executado diariamente em
+produção (PROJECT_CONTEXT.md §13, sprint_rules — "GitHub Actions
+(CI/CD com execução diária)"). Duas opções foram avaliadas:
+
+- Opção A — Schedule no GitHub Actions (`on: schedule`), rodando o
+  pipeline completo em runner efêmero do GitHub.
+- Opção B — Cron/systemd timer na própria VPS Oracle Cloud, disparando
+  `docker compose --profile pipeline` localmente.
+
+ADR-007 já decidiu explicitamente que "Pipeline sempre executa na
+Oracle Cloud" e que o perfil `pipeline` (postgres + airflow-webserver
++ airflow-scheduler) é ativado apenas durante a execução do pipeline
+diário, não continuamente. A Opção A contradiria essa decisão sem
+justificativa nova: runners do GitHub Actions são efêmeros e sem
+estado — não têm acesso a `./data` (Bronze/Silver/Gold persistidos em
+DuckDB local) nem ao `minio_data` (volume Docker local), exigindo
+transporte desses dados a cada execução (upload/download de
+artefatos), o que reescreveria a estratégia de persistência já
+implementada nas Sprints 2-4 sem ganho real.
+
+Decisão:
+1. Adotar a Opção B: `systemd timer` (preferencial sobre `crontab`,
+   por integração nativa com logs via `journalctl` e melhor
+   tratamento de falhas) na VPS Oracle, agendado para horário fixo
+   diário (ex: 03:00 America/Sao_Paulo, fora do horário de pico de
+   consultas à API/dashboard).
+2. O timer executa uma sequência controlada por script
+   (`scripts/run_pipeline_daily.sh`):
+   a. `docker compose --profile pipeline up -d postgres
+      airflow-webserver airflow-scheduler`
+   b. Aguarda o scheduler disparar e concluir o DAG diário
+      (`pipeline/dags/pipeline_dag.py`), com timeout configurável.
+   c. `docker compose --profile pipeline down` ao término — os
+      containers do perfil `pipeline` não ficam residentes,
+      preservando o modelo de custo/recursos de ADR-007.
+3. Dados persistidos (`./data/bronze`, `./data/silver`, `./data/gold`,
+   `minio_data`) sobrevivem ao ciclo up/down, pois são volumes Docker
+   montados fora dos containers efêmeros do perfil `pipeline`.
+4. GitHub Actions permanece restrito a **CI** (testes, lint, secret
+   scanning — Gates 1-4 da Sprint 9), sem responsabilidade de
+   execução do pipeline ou de deploy automatizado a cada push. Não há
+   CD no sentido estrito: a API/dashboard já rodam continuamente na
+   VPS (ADR-007); a "execução diária" exigida pelo roadmap é batch
+   agendado, não deploy.
+
+Consequências:
+- Nenhuma mudança na estratégia de persistência Bronze/Silver/Gold
+  (ADR-001, ADR-007) — dados continuam locais à VPS.
+- `scripts/run_pipeline_daily.sh` e a unit `systemd`
+  correspondente (`observatorio-pipeline.timer` /
+  `observatorio-pipeline.service`) passam a ser artefatos de infra
+  versionados em `infra/`, com provisionamento documentado em
+  `infra/cloud-config.yaml` e/ou guia de deploy do README.
+- Falhas na execução diária exigem monitoramento externo ao GitHub
+  Actions (o timer roda fora do GitHub) — observabilidade via
+  `structlog` + logs do `systemd`/`journalctl`; alertas automáticos
+  continuam fora do escopo do MVP (backlog futuro, já registrado em
+  README §IV).
+- GitHub Actions (`pipeline.yml`) precisa ser renomeado/reestruturado
+  para refletir seu escopo real de CI (ex: `ci.yml`), evitando o nome
+  `pipeline.yml` sugerir execução do pipeline de dados — ajuste a ser
+  feito no item 1 da Sprint 9.
+- Se o escopo evoluir para múltiplas VPS/réplicas, o cron local deixa
+  de ser suficiente e exigiria um orquestrador externo — não é
+  necessidade do MVP.
+
+---

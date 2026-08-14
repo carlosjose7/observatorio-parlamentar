@@ -763,3 +763,47 @@ no source) — **374 testes verdes, 1 skip (Airflow), 93,58% de cobertura global
 limiar). Deferido: Ruff estrito/import ordering (Sprint 9). Sem ADR novo.
 Commit de fechamento: `fdad9c0`. Sprint 7 fechada (349). Sprint 6.5 fechada
 (QA approved). ADRs 001-033.*
+
+---
+
+## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+
+**Objetivo:** ativar CI real (testes/lint/secret scan em todo PR), executar o
+pipeline diariamente em produção (ADR-034), completar README e guias de
+instalação/deploy/operação, e fechar dívidas registradas.
+
+### Gate 1 — CI real (substitui o placeholder)
+
+- [ ] Renomear `.github/workflows/pipeline.yml` → `ci.yml` (escopo real é CI,
+  não execução de pipeline de dados — ADR-034).
+- [ ] Job de testes: `pytest --cov` (gate `fail_under = 80` ativo) em
+  ubuntu-latest, com instalação do extra `dev` e dependências de pipeline/API.
+- [ ] Job de lint: `python -m ruff check .` (conjunto `E4/E7/E9/F`).
+- [ ] Gitleaks como *required status check* na branch protection de `develop`
+  (configuração no GitHub Settings; documentada, sem artefato de código).
+
+### Gate 2 — Execução diária (ADR-034, Opção B)
+
+- [ ] `scripts/run_pipeline_daily.sh` — sobe perfil `pipeline`, aguarda
+  conclusão do DAG com timeout, desce ao término.
+- [ ] Units `systemd` (`observatorio-pipeline.timer`/`.service`) em `infra/`.
+- [ ] Documentar provisionamento no `infra/cloud-config.yaml` e/ou guia de
+  deploy. Monitoramento: `journalctl` + `structlog` (alertas fora do MVP).
+
+### Gate 3 — Ruff estrito (dívida deferida na Sprint 8)
+
+- [ ] Migração das regras `I` (import ordering) e estilo com porta de entrada
+  controlada (não reformatação massiva acoplada).
+
+### Gate 4 — Documentação
+
+- [ ] `README.md` §II.6 (observabilidade detalhada) e §III (explicação do case
+  completo, agora que Sprints 1-8 estão fechadas).
+- [ ] Guias de instalação, deploy e operação (VPS Oracle + Docker Compose).
+- [ ] Revisão final do `docker-compose.yml`: healthchecks, `.env.example`
+  atualizado.
+
+*Versão atual: 2.4 — **Sprint 9 em andamento** — abertura com ADR-034 aceito
+(execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
+Gates 1-4 planejados acima. Baseline herdada da Sprint 8: 374 testes, 93,58%
+cobertura, Ruff `E4/E7/E9/F`, ADRs 001-034.*
