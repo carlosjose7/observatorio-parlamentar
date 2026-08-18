@@ -93,6 +93,8 @@ def _executar_gold(**context):
     RAIZ = Path(__file__).resolve().parents[2]
     GOLD = RAIZ / "pipeline" / "gold"
     codigo = (
+        "import json\n"
+        "import sys\n"
         f"sys.path.insert(0, {str(RAIZ)!r})\n"
         f"sys.path.insert(0, {str(GOLD)!r})\n"
         "from dbt.cli.main import dbtRunner\n"

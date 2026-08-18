@@ -9,6 +9,9 @@ runcmd:
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable --now docker
+  # Habilita o usuário ubuntu a usar o Docker sem sudo (o .service do
+  # pipeline roda com Group=docker — sem isso, permission denied no socket).
+  - usermod -aG docker ubuntu
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw limit 22/tcp

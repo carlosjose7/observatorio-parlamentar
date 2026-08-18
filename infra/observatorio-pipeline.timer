@@ -1,0 +1,12 @@
+# Timer systemd da execucao diaria do pipeline (ADR-034).
+# Dispara observatorio-pipeline.service as 03:00 America/Sao_Paulo.
+[Unit]
+Description=Observatorio Parlamentar - timer diario do pipeline (03:00 America/Sao_Paulo)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
