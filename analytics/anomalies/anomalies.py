@@ -31,7 +31,7 @@ tabela Gold `expense_outliers` (model regular com `schema.yml`, ADR-021).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
@@ -496,7 +496,7 @@ def escrever_expense_outliers_duckdb(
     from pipeline.config import get_pipeline_version
 
     pipeline_version = pipeline_version or get_pipeline_version()
-    agora = datetime.now(timezone.utc).isoformat()
+    agora = datetime.now(UTC).isoformat()
     colunas_resultado = [c for c in resultado.columns if c not in COLUNAS_AUDITORIA]
     carga = resultado.assign(
         run_id=run_id,

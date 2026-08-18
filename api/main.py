@@ -1,14 +1,13 @@
 from fastapi import FastAPI
 
-from pipeline.config import get_api
-
-from api.routers.parlamentares import router as router_parlamentares
-from api.routers.fornecedores import router as router_fornecedores
-from api.routers.anomalias import router as router_anomalias
-from api.routers.rede import router as router_rede
-from api.routers.qualidade import router as router_qualidade
-from api.routers.pipeline import router as router_pipeline
 from api.routers.agent import router as router_agent
+from api.routers.anomalias import router as router_anomalias
+from api.routers.fornecedores import router as router_fornecedores
+from api.routers.parlamentares import router as router_parlamentares
+from api.routers.pipeline import router as router_pipeline
+from api.routers.qualidade import router as router_qualidade
+from api.routers.rede import router as router_rede
+from pipeline.config import get_api
 
 config = get_api()
 

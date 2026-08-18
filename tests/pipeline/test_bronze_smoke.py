@@ -9,7 +9,7 @@ entre runs (Opção 1 — read-merge-write) e gravação de `pipeline_runs`
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -602,7 +602,7 @@ def test_camara_primeira_carga_trunca_janela_no_modo_validacao(monkeypatch):
     real puxaria a janela integral desde `mes_inicio` (11 anos) mesmo no modo
     validação.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     from uuid import uuid4
 
     import pipeline.bronze as bronze
@@ -611,7 +611,7 @@ def test_camara_primeira_carga_trunca_janela_no_modo_validacao(monkeypatch):
     run_meta = LoadMetadata(
         run_id=uuid4(),
         pipeline_version="0.1.0",
-        execution_timestamp=datetime(2026, 8, 10, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 8, 10, tzinfo=UTC),
         source_version="",
     )
 
@@ -651,7 +651,7 @@ def test_incremental_camara_avanca_mes_seguinte_ao_watermark(ambiente):
     run1 = run_pipeline(
         storage=ambiente["storage"], store=ambiente["store"], client=client,
         retry_settings=RETRY_TESTS,
-        execution_timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 8, 5, tzinfo=UTC),
     )
     meses1 = sorted({int(r["mes"]) for r in requisicoes if "mes" in r})
     assert meses1 == [7, 8]  # backfill de 07/2026 até o mês da execução
@@ -661,7 +661,7 @@ def test_incremental_camara_avanca_mes_seguinte_ao_watermark(ambiente):
     run2 = run_pipeline(
         storage=ambiente["storage"], store=ambiente["store"], client=client,
         retry_settings=RETRY_TESTS,
-        execution_timestamp=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 9, 5, tzinfo=UTC),
     )
     meses2 = sorted({int(r["mes"]) for r in requisicoes if "mes" in r})
     assert meses2 == [9]  # apenas o mês seguinte ao watermark, nada além
@@ -675,7 +675,7 @@ def test_incremental_camara_reextrai_mes_corrente_quando_proximo_nao_existe(ambi
     run1 = run_pipeline(
         storage=ambiente["storage"], store=ambiente["store"],
         client=_cliente_mock(), retry_settings=RETRY_TESTS,
-        execution_timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 8, 5, tzinfo=UTC),
     )
     assert run1.watermark_camara == "08/2026"
 
@@ -684,7 +684,7 @@ def test_incremental_camara_reextrai_mes_corrente_quando_proximo_nao_existe(ambi
         storage=ambiente["storage"], store=ambiente["store"],
         client=_cliente_mock(camara_requisicoes=requisicoes),
         retry_settings=RETRY_TESTS,
-        execution_timestamp=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 8, 20, tzinfo=UTC),
     )
     meses = sorted(int(r["mes"]) for r in requisicoes if "mes" in r)
     assert meses == [8]  # reextrai 08/2026; nada pede 09/2026
@@ -701,7 +701,7 @@ def test_incremental_emendas_reextrai_ano_corrente_sem_ano_futuro(ambiente):
     run1 = run_pipeline(
         storage=ambiente["storage"], store=ambiente["store"], client=client,
         retry_settings=RETRY_TESTS,
-        execution_timestamp=datetime(2026, 8, 5, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 8, 5, tzinfo=UTC),
     )
     anos1 = sorted({int(r["params"]["ano"]) for r in requisicoes if "ano" in r["params"]})
     assert anos1 == [2026]
@@ -711,7 +711,7 @@ def test_incremental_emendas_reextrai_ano_corrente_sem_ano_futuro(ambiente):
     run2 = run_pipeline(
         storage=ambiente["storage"], store=ambiente["store"], client=client,
         retry_settings=RETRY_TESTS,
-        execution_timestamp=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        execution_timestamp=datetime(2026, 8, 20, tzinfo=UTC),
     )
     anos2 = sorted({int(r["params"]["ano"]) for r in requisicoes if "ano" in r["params"]})
     assert anos2 == [2026]  # próximo (2027) ainda não existe → reextrai 2026

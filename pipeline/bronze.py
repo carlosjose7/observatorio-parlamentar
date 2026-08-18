@@ -16,7 +16,7 @@ Entrada usada pelas tasks do Airflow DAG (hoje placeholder): a task instancia
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -71,7 +71,7 @@ def _novo_run_meta(execution_timestamp: datetime | None = None) -> LoadMetadata:
     return LoadMetadata(
         run_id=uuid.uuid4(),
         pipeline_version=get_pipeline_version(),
-        execution_timestamp=execution_timestamp or datetime.now(timezone.utc),
+        execution_timestamp=execution_timestamp or datetime.now(UTC),
         source_version="",
     )
 

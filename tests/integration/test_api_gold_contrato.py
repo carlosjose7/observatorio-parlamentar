@@ -32,8 +32,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline.config import load_env_settings
 from api.main import app
+from pipeline.config import load_env_settings
 
 _RAIZ = Path(__file__).resolve().parents[2]
 _GOLD = _RAIZ / "pipeline" / "gold"

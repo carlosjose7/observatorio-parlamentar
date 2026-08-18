@@ -8,6 +8,38 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+
+### Adicionado
+- **ADR-034** — execução diária do pipeline via `systemd timer` na VPS Oracle
+  (Opção B); GitHub Actions restrito a CI (sem CD).
+- **`ci.yml`** (substitui `pipeline.yml` placeholder) — Gitleaks + Ruff +
+  `pytest --cov` com gate 80% em PR/push em `develop`/`main`. No CI o Airflow
+  existe → `test_dag.py` roda como barreira real (379 testes esperados).
+- **`scripts/run_pipeline_daily.sh`** — sobe perfil `pipeline` (postgres +
+  scheduler), healthcheck `list-import-errors`, unpause explícito, trigger com
+  `run_id` determinístico, polling via `list-runs --output json` (compatível
+  com Airflow 2.9), `down` garantido no trap EXIT.
+- **`infra/observatorio-pipeline.service`/`.timer`** — oneshot às 03:00
+  America/Sao_Paulo, `Persistent=true`.
+- **Gate 3 — Ruff estrito:** habilitados `I`, `W292`, `UP017/UP035/UP037`;
+  auto-fix aplicado (113 correções). Deferidos: `E501` (massivo), `B904/B905`
+  (semânticos).
+- **Gate 4 — Documentação:** `README.md` §II.6 (observabilidade) e §III
+  (case com dados reais), `docs/guia_deploy_operacao.md`, healthchecks no
+  `docker-compose.yml`.
+
+### Corrigido
+- **`pipeline_dag.py::_executar_gold`** — `NameError` latente: o snippet do
+  subprocesso dbt usava `json.dumps`/`sys.path` sem importar `json`/`sys`
+  (quebraria o Gold em produção). Import adicionados ao snippet.
+
+Resultado parcial da Sprint 9: Gates 1–4 implementados (Gate 2 aguarda
+validação na VPS; Gate 5/TLS bloqueado pelo DNS). **374 passed, 1 skipped
+(Airflow) local; 93,59% cobertura; Ruff verde.**
+
+---
+
 ## Sprint 8 — Testes e Qualidade — FECHADA
 
 ### Adicionado

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac as hmac_module
-from typing import Iterable
+from collections.abc import Iterable
 
 from pipeline.config import get_env
 

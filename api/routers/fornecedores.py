@@ -15,8 +15,6 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, HTTPException, Query
 
-from pipeline.config import get_api
-
 from api.repo import (
     GoldIndisponivel,
     listar_fornecedores,
@@ -28,6 +26,7 @@ from api.schemas.fornecedores import (
     ListaParlamentaresFornecedor,
     PerfilFornecedor,
 )
+from pipeline.config import get_api
 
 logger = structlog.get_logger()
 

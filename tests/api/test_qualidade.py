@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from pipeline.config import load_env_settings
 from api.main import app
+from pipeline.config import load_env_settings
 
 
 def test_relatorio_lista_execucoes_recentes_primeiro(_cliente):

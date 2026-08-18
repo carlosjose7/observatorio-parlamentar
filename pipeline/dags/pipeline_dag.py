@@ -1,6 +1,7 @@
+from datetime import datetime, timedelta
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime, timedelta
 
 from pipeline.bronze import run_pipeline
 from pipeline.camara.transform import (

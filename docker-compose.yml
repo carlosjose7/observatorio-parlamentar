@@ -82,6 +82,12 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-airflow}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -117,7 +123,8 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -148,7 +155,8 @@ services:
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - observatorio-net
     restart: unless-stopped

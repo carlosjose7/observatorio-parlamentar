@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-import pandas as pd
-import pytest
 from decimal import Decimal
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 import pipeline.config as config
 from pipeline.normalize import normalizar_nome_proprio, parse_decimal_ptbr

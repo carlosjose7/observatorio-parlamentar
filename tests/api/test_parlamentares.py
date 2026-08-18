@@ -17,8 +17,8 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline.config import load_env_settings
 from api.main import app
+from pipeline.config import load_env_settings
 
 
 def _dinheiro(valor: float) -> Decimal:

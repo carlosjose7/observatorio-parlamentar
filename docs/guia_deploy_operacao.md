@@ -1,0 +1,175 @@
+# Guia de Deploy e Operação
+# Observatório Parlamentar — Docker Compose, execução diária e operação
+
+> **Status:** Sprint 9 (em validação)
+> **Objetivo:** documentar o deploy do Observatório Parlamentar — local e na
+> VPS Oracle —, a execução diária do pipeline (ADR-034) e a operação
+> rotineira do ambiente.
+> **Complementar:** `docs/guia_provisionamento_oci.md` cobre o provisionamento
+> da infraestrutura OCI (instância, Docker, firewall); este guia cobre o
+> código e a operação.
+
+---
+
+## 1. Visão geral dos serviços
+
+O `docker-compose.yml` organiza a stack em dois grupos:
+
+| Perfil | Serviços | Quando roda |
+|---|---|---|
+| `default` | nginx, api, dashboard, minio | Sempre ativos (produção/desenvolvimento) |
+| `pipeline` | postgres, airflow-webserver, airflow-scheduler | Apenas durante a execução do pipeline (ADR-007) |
+
+O reverse proxy nginx roteia:
+- `/api/*` e `/docs` → FastAPI (porta 8000)
+- `/` → Streamlit (porta 8501)
+- `/minio/` → MinIO Console (porta 9001)
+
+---
+
+## 2. Deploy local (desenvolvimento)
+
+**Pré-requisitos:** Docker + Docker Compose v2, Python 3.11+.
+
+1. **Preparar o `.env`:**
+   ```bash
+   cp .env.example .env
+   ```
+   Preencha as credenciais reais: `CPF_HMAC_SECRET_KEY`, `CGU_API_KEY`,
+   `MINIO_ROOT_PASSWORD`, `POSTGRES_PASSWORD`, `AIRFLOW_FERNET_KEY`,
+   `AIRFLOW_ADMIN_PASSWORD`. O `.env` nunca é versionado.
+
+2. **Subir a stack:**
+   ```bash
+   docker compose up -d          # nginx, api, dashboard, minio
+   docker compose build --parallel
+   ```
+   Dashboard: http://localhost · API Docs: http://localhost/docs ·
+   MinIO Console: http://localhost/minio
+
+3. **Rodar o pipeline (perfil `pipeline`):**
+   ```bash
+   docker compose --profile pipeline up -d postgres airflow-webserver airflow-scheduler
+   ```
+   Airflow: http://localhost:8080 (credenciais `AIRFLOW_ADMIN_USER/_PASSWORD`).
+
+4. **Testes e lint:**
+   ```bash
+   pip install -e ".[dev,api,pipeline,dashboard,analytics]"
+   python -m ruff check .
+   python -m pytest --cov
+   ```
+
+---
+
+## 3. Deploy na VPS Oracle (produção)
+
+**Pré-requisitos:** instância provisionada (ver `docs/guia_provisionamento_oci.md`),
+Docker instalado, `ubuntu` no grupo `docker`, chave SSH e `.env` na VPS.
+
+1. **Validar acesso e sudo sem senha** (uma vez):
+   ```bash
+   ssh -i ~/.ssh/observatorio_parlamentar_oci ubuntu@<IP> "sudo -n true && echo OK"
+   ```
+   Se falhar, configure o sudo passwordless antes de prosseguir.
+
+2. **Provisionar o grupo docker** (uma vez, se a VPS foi criada antes do
+   ajuste no `cloud-config.yaml`):
+   ```bash
+   ssh -i ~/.ssh/observatorio_parlamentar_oci ubuntu@<IP> "sudo usermod -aG docker ubuntu"
+   # reconecte a sessão SSH para o grupo surtir efeito
+   ```
+
+3. **Executar o deploy** (sincroniza arquivos via rsync, instala as units
+   systemd do pipeline e sobe os containers):
+   ```bash
+   bash scripts/deploy.sh <IP_DA_VPS> [caminho_da_chave_ssh]
+   ```
+   O script:
+   - `[1/6]` verifica a conexão SSH
+   - `[2/6]` cria `~/observatorio-parlamentar` na VPS
+   - `[3/6]` sincroniza o projeto (rsync, excluindo `.env`, `data/`, `.git/`)
+   - `[4/6]` instala/atualiza `observatorio-pipeline.service` e `.timer`
+   - `[5/6]` constrói imagens e sobe o perfil `default`
+   - `[6/6]` verifica o status dos containers
+
+---
+
+## 4. Execução diária do pipeline (ADR-034)
+
+**Decisão (ADR-034):** a execução diária roda na VPS via `systemd timer`,
+não no GitHub Actions (que fica restrito a CI). Dados persistidos
+(`./data/`, `minio_data`, `postgres_data`) sobrevivem ao ciclo up/down.
+
+- **Timer:** `observatorio-pipeline.timer` dispara
+  `observatorio-pipeline.service` às **03:00 America/Sao_Paulo**,
+  com `Persistent=true` (recupera execução perdida) e
+  `RandomizedDelaySec=120`.
+- **Service (oneshot):** roda `scripts/run_pipeline_daily.sh` como usuário
+  `ubuntu`, sem retry automático. O script:
+  1. Sobe `postgres` + `airflow-scheduler` (sem webserver — execução batch);
+  2. Aguarda o Airflow ficar pronto (`airflow dags list-import-errors`);
+  3. Despausa o DAG `observatorio_pipeline`
+     (`DAGS_ARE_PAUSED_AT_CREATION=True` — unpause explícito é obrigatório);
+  4. Dispara com `run_id` determinístico e acompanha o estado via
+     `airflow dags list-runs --output json` até `success`;
+  5. Garante `docker compose --profile pipeline down` ao final (trap EXIT).
+
+**Comandos de operação do timer:**
+```bash
+systemctl list-timers observatorio-pipeline.timer   # próxima execução
+systemctl status observatorio-pipeline.service      # resultado da última
+journalctl -u observatorio-pipeline.service -n 100  # logs da execução
+sudo systemctl start observatorio-pipeline.service  # disparo manual
+```
+
+**Timeouts configuráveis (env vars, ADR-008):**
+`AIRFLOW_READY_TIMEOUT_SEC` (180s), `POLL_INTERVAL_SEC` (30s),
+`DAG_TIMEOUT_SEC` (5400s — deve ser menor que `TimeoutStartSec=6000` do
+service).
+
+---
+
+## 5. Operação rotineira
+
+### 5.1 Atualizar o deploy
+Reexecute `bash scripts/deploy.sh <IP> [chave]` — o rsync sincroniza o
+código, o passo `[4/6]` atualiza as units systemd e o `[5/6]` reconstrói
+imagens quando o `Dockerfile`/dependências mudam.
+
+### 5.2 Verificar saúde dos serviços
+```bash
+docker compose ps
+docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'
+```
+
+### 5.3 Verificar a última execução do pipeline
+```bash
+journalctl -u observatorio-pipeline.service -n 50
+docker compose exec airflow-scheduler airflow dags list-runs --dag-id observatorio_pipeline --output json
+```
+
+### 5.4 Inspecionar o Gold (DuckDB)
+```bash
+docker compose exec api python -c "
+import duckdb
+con = duckdb.connect('data/gold/observatorio.duckdb', read_only=True)
+print(con.execute('select run_id, status from pipeline_runs order by execution_timestamp desc limit 5').fetchall())
+"
+```
+
+---
+
+## 6. Segurança
+
+- **Segredos:** apenas via `.env` na VPS (nunca versionado); o CI usa
+  GitHub Secrets para Gitleaks.
+- **Pseudonimização:** CPF é hasheado na Silver (ADR-033); a API só expõe
+  o hash. MinIO exposto apenas em `127.0.0.1` na máquina host.
+- **Firewall:** Security List OCI + UFW local permitem apenas 22/80/443
+  (ver guia de provisionamento). TLS (Let's Encrypt) é o Gate 5 da
+  Sprint 9 — até lá, o tráfego em `:80` é sem criptografia.
+
+---
+
+*Atualizado ao final da Sprint 9 (Gates 2–5).*

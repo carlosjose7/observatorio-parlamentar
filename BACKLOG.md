@@ -774,36 +774,69 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Gate 1 — CI real (substitui o placeholder)
 
-- [ ] Renomear `.github/workflows/pipeline.yml` → `ci.yml` (escopo real é CI,
+- ☑ Renomear `.github/workflows/pipeline.yml` → `ci.yml` (escopo real é CI,
   não execução de pipeline de dados — ADR-034).
-- [ ] Job de testes: `pytest --cov` (gate `fail_under = 80` ativo) em
-  ubuntu-latest, com instalação do extra `dev` e dependências de pipeline/API.
-- [ ] Job de lint: `python -m ruff check .` (conjunto `E4/E7/E9/F`).
-- [ ] Gitleaks como *required status check* na branch protection de `develop`
+- ☑ Job de testes: `pytest --cov` (gate `fail_under = 80` ativo) em
+  ubuntu-latest, com instalação dos extras `api,pipeline,dashboard,
+  analytics,dev`. Nota: no CI o Airflow existe → `test_dag.py` roda como
+  barreira real (5 testes), total esperado **379 passed, 0 skipped**.
+- ☑ Job de lint: `python -m ruff check .`.
+- ☐ Gitleaks como *required status check* na branch protection de `develop`
   (configuração no GitHub Settings; documentada, sem artefato de código).
+  **Nota:** requer ajuste manual de branch protection (Gates em Settings).
 
 ### Gate 2 — Execução diária (ADR-034, Opção B)
 
-- [ ] `scripts/run_pipeline_daily.sh` — sobe perfil `pipeline`, aguarda
-  conclusão do DAG com timeout, desce ao término.
-- [ ] Units `systemd` (`observatorio-pipeline.timer`/`.service`) em `infra/`.
-- [ ] Documentar provisionamento no `infra/cloud-config.yaml` e/ou guia de
-  deploy. Monitoramento: `journalctl` + `structlog` (alertas fora do MVP).
+- ☑ `scripts/run_pipeline_daily.sh` — sobe perfil `pipeline` (só
+  postgres+scheduler), healthcheck `list-import-errors`, unpause explícito,
+  trigger com `run_id` determinístico, polling via `list-runs --output json`
+  (compatível com Airflow 2.9, que exige `execution_date` no `dags state`),
+  `down` garantido no trap EXIT; timeouts via env vars.
+- ☑ Units `systemd` (`observatorio-pipeline.timer`/`.service`) em `infra/`
+  (oneshot, 03:00 America/Sao_Paulo, `Persistent=true`).
+- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`;
+  instalação/atualização das units no `deploy.sh` (passo `[4/6]`).
+- ☑ **Bugfix latente:** `pipeline_dag.py::_executar_gold` usava
+  `json.dumps`/`sys.path` no subprocesso do dbt sem importá-los
+  (`NameError` em produção) — `import json`/`import sys` adicionados.
+- ☐ **Validação real na VPS pendente** (padrão do projeto: não fechar gate
+  sem validação). Testar `sudo -n true && echo OK`; se a VPS já existia,
+  rodar `sudo usermod -aG docker ubuntu` manualmente.
 
 ### Gate 3 — Ruff estrito (dívida deferida na Sprint 8)
 
-- [ ] Migração das regras `I` (import ordering) e estilo com porta de entrada
-  controlada (não reformatação massiva acoplada).
+- ☑ Migração controlada: habilitados `I` (import ordering), `W292`
+  (newline EOF), `UP017/UP035/UP037` (modernizações mecânicas seguras);
+  auto-fix aplicado (113 correções). Deferidos para porta própria: `E501`
+  (line-too-long — exigiria reformatação massiva) e `B904/B905`
+  (semânticas, revisão manual).
+- ☑ Validado: `ruff check .` verde; suíte completa **374 passed, 1 skipped
+  (Airflow), 93,59% cobertura**.
 
 ### Gate 4 — Documentação
 
-- [ ] `README.md` §II.6 (observabilidade detalhada) e §III (explicação do case
-  completo, agora que Sprints 1-8 estão fechadas).
-- [ ] Guias de instalação, deploy e operação (VPS Oracle + Docker Compose).
-- [ ] Revisão final do `docker-compose.yml`: healthchecks, `.env.example`
-  atualizado.
+- ☑ `README.md` §II.6 (observabilidade detalhada — structlog, run_id,
+  DQ report, pipeline_runs, alertas deferidos) e §III (explicação do case
+  com números reais da validação E2E e dashboard).
+- ☑ Guias de instalação, deploy e operação: `docs/guia_deploy_operacao.md`
+  (Docker Compose, deploy VPS, execução diária ADR-034, operação) — somado
+  ao `docs/guia_provisionamento_oci.md` já existente.
+- ☑ Revisão do `docker-compose.yml`: healthcheck no `postgres` +
+  `depends_on` condicional em webserver/scheduler. `.env.example` já
+  documenta credenciais obrigatórias.
 
-*Versão atual: 2.4 — **Sprint 9 em andamento** — abertura com ADR-034 aceito
-(execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
-Gates 1-4 planejados acima. Baseline herdada da Sprint 8: 374 testes, 93,58%
-cobertura, Ruff `E4/E7/E9/F`, ADRs 001-034.*
+### Gate 5 — TLS (autenticação/TLS — dívida da Sprint 7, ADR-007)
+
+- ☐ Nginx com HTTPS via Let's Encrypt/certbot — **bloqueado até o registro A
+  de `observatorio-parlamentar.com.br` apontar para a VPS Oracle** (certbot
+  falha a validação HTTP-01 sem DNS resolvendo). Até lá, tráfego em `:80`
+  sem criptografia (dado público agregado — risco aceito e documentado).
+
+*Versão atual: 2.5 — **Sprint 9 em andamento** — ADR-034 aceito (execução
+diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
+**Progresso:** Gate 1 (ci.yml: Gitleaks+Ruff+pytest, 379 testes esperados no
+CI), Gate 2 (script diário + units systemd + usermod docker + bugfix NameError
+do DAG; **aguardando validação na VPS**), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037
+habilitados, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia de
+deploy/operação + healthchecks docker-compose). Gate 5 (TLS) **bloqueado até
+DNS apontar para a VPS**. ADRs 001-034.*

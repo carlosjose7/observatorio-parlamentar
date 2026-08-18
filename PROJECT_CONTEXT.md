@@ -782,4 +782,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 2.8 — **Sprint 9 em andamento** — abertura com ADR-034 aceito (execução diária do pipeline via `systemd timer` na VPS Oracle; GitHub Actions restrito a CI). CI real: `.github/workflows/ci.yml` (Gitleaks + Ruff + pytest --cov com gate 80%) substituindo o placeholder `pipeline.yml`. Sprints 1-8 fechadas (374 testes, 93,58% cobertura). ADRs 001-034.*
+*Versão atual: 2.9 — **Sprint 9 em andamento** — ADR-034 aceito (execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI). Progresso: Gate 1 (ci.yml com Gitleaks+Ruff+pytest, 379 testes esperados no CI), Gate 2 (script diário + units systemd + bugfix NameError do DAG — aguardando validação na VPS), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia deploy/operação + healthchecks). Gate 5 (TLS) bloqueado até DNS apontar para a VPS. Sprints 1-8 fechadas. ADRs 001-034.*

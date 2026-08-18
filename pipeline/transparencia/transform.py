@@ -30,12 +30,12 @@ import pandas as pd
 import structlog
 
 from pipeline.contracts import resolve_tipo_documento
-from pipeline.pseudonymize import pseudonymize_cpf_column
 from pipeline.normalize import (
     normalizar_nome_proprio,
     parse_date_multi_format,
     parse_decimal_ptbr,
 )
+from pipeline.pseudonymize import pseudonymize_cpf_column
 from pipeline.silver import ResultadoCargaSilver, carregar_tabela_silver
 from pipeline.storage import Storage
 

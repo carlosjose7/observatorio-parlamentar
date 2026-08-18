@@ -32,15 +32,15 @@ chaveado por `(run_id, periodo)` (mesmo padrão de anomalies/network).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
 import structlog
 
+from analytics.features import carregar_registry
 from analytics.parliamentarians.analytics import normalizar_minmax
 from pipeline.config import SCORES_RISCO, get_analytics
-from analytics.features import carregar_registry
 
 logger = structlog.get_logger()
 
@@ -395,7 +395,7 @@ def escrever_risk_scores_duckdb(
     from pipeline.config import get_env, get_pipeline_version
 
     pipeline_version = pipeline_version or get_pipeline_version()
-    agora = datetime.now(timezone.utc).isoformat()
+    agora = datetime.now(UTC).isoformat()
     colunas_negocio = [c for c in scores.columns if c not in COLUNAS_AUDITORIA]
     carga = scores.assign(
         run_id=run_id,

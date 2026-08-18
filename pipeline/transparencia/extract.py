@@ -14,8 +14,9 @@ a 180/min) e `request_json` consulta o token antes de cada requisição.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 import structlog

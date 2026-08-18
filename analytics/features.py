@@ -90,7 +90,7 @@ class Feature(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _exigir_tabela_quando_persistente(self) -> "Feature":
+    def _exigir_tabela_quando_persistente(self) -> Feature:
         """Feature persistente sem origem concreta é feature órfã (ADR-028.5)."""
         if self.categoria != FeatureCategoria.FUNCAO and not self.tabela:
             raise ValueError(
@@ -113,7 +113,7 @@ class FeatureRegistry(BaseModel):
     features: list[Feature] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _validar_unicidade_nomes(self) -> "FeatureRegistry":
+    def _validar_unicidade_nomes(self) -> FeatureRegistry:
         """Nomes de feature são únicos no registry (ADR-028.3)."""
         nomes = [f.nome for f in self.features]
         duplicados = sorted({n for n in nomes if nomes.count(n) > 1})

@@ -16,15 +16,11 @@ from __future__ import annotations
 
 import functools
 import json
+from pathlib import Path
 
 import duckdb
 import structlog
-from pathlib import Path
 
-from pipeline.config import REPO_ROOT, get_api, get_env
-from pipeline.normalize import normalizar_nome_proprio
-
-from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
 from api.schemas.agent import (
     AgentAnomalias,
     AgentContext,
@@ -32,8 +28,8 @@ from api.schemas.agent import (
     AgentParlamentar,
     AnomaliaPorAno,
     AnomaliaPorCriterio,
-    AnomaliaTop,
     AnomaliasParlamentar,
+    AnomaliaTop,
     FornecedorTop,
     MetricasFornecedor,
     MetricasGlobais,
@@ -43,8 +39,7 @@ from api.schemas.agent import (
     ResumoQualidade,
     RiscoParlamentar,
 )
-from api.schemas.qualidade import LinhaQualidade, RelatorioQualidade
-from api.schemas.rede import ComunidadeItem, ListaComunidades
+from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
 from api.schemas.fornecedores import (
     FornecedorContexto,
     FornecedorResumo,
@@ -53,7 +48,6 @@ from api.schemas.fornecedores import (
     ParlamentarFornecedor,
     PerfilFornecedor,
 )
-from api.schemas.pipeline import ExecucaoPipeline, PipelineStatus
 from api.schemas.parlamentares import (
     ArestaRede,
     GastoItem,
@@ -65,6 +59,11 @@ from api.schemas.parlamentares import (
     PerfilParlamentar,
     RedeParlamentar,
 )
+from api.schemas.pipeline import ExecucaoPipeline, PipelineStatus
+from api.schemas.qualidade import LinhaQualidade, RelatorioQualidade
+from api.schemas.rede import ComunidadeItem, ListaComunidades
+from pipeline.config import REPO_ROOT, get_api, get_env
+from pipeline.normalize import normalizar_nome_proprio
 
 logger = structlog.get_logger()
 

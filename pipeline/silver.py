@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -359,7 +359,7 @@ def carregar_tabela_silver(
         chaves_negocio=chaves_dedup,
     )
     linha.registros_deduplicados = len(removidas)
-    linha.execution_timestamp = datetime.now(timezone.utc)
+    linha.execution_timestamp = datetime.now(UTC)
 
     # O gate recebe todo o DataFrame deduplicado; as linhas em quarentena
     # são reextraídas do conjunto original por índices já isolados internamente.

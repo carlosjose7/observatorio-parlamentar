@@ -7,7 +7,8 @@ downloads de exportação (RF-08) e barra lateral padrão com filtros globais.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import pandas as pd
 import streamlit as st

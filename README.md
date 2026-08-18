@@ -1,11 +1,9 @@
 # Plataforma de Inteligência Parlamentar Brasileira
- 
-> **Status deste documento:** rascunho vivo, iniciado na Sprint 0B.
-> Seções marcadas como `[PENDENTE]` serão preenchidas conforme as
-> sprints correspondentes forem concluídas. Este README é o
-> documento de apresentação do case para a banca avaliadora —
-> distinto do `PROJECT_CONTEXT.md`, que é a fonte de verdade técnica
-> interna do projeto.
+
+> **Status deste documento:** completo, atualizado ao final da Sprint 9.
+> Este README é o documento de apresentação do case para a banca
+> avaliadora — distinto do `PROJECT_CONTEXT.md`, que é a fonte de
+> verdade técnica interna do projeto.
  
 ---
  
@@ -162,35 +160,108 @@ def pseudonymize_cpf(cpf: str) -> str:
 ```
  
 ### II.6 Observabilidade
- 
-`[PENDENTE — a ser detalhado na Sprint 0B/2]`
- 
-Direção já definida: logging estruturado (`structlog`) em todos os
-módulos do pipeline, Data Quality Report gerado a cada execução do
-Silver, e `run_id`/`pipeline_version`/`execution_timestamp` em toda
-carga para rastreabilidade. Falta formalizar: métricas de duração
-por etapa do DAG, taxa de sucesso histórica e estratégia de alertas
-(ex: falha de extração, queda abrupta de volume ingerido).
- 
+
+A observabilidade é tratada em quatro camadas complementares:
+
+**1. Logging estruturado (`structlog`).** Todos os módulos do pipeline
+(`bronze.py`, `silver.py`, `quality.py`, extract/transform das fontes,
+`utils.py`) emitem logs estruturados via `structlog` com `run_id`,
+`fonte` e contexto da etapa. O formato é configurado em
+`config/pipeline.yaml` (`logging.formato: json`), com
+`TimeStamper(utc=True)` e renderização JSON em produção /
+console em dev (`pipeline/logging.py`).
+
+**2. Rastreabilidade por execução (RF-12).** Toda carga é gravada com o
+trio `run_id` / `pipeline_version` / `execution_timestamp` (padrão
+`COLUNAS_AUDITORIA`), permitindo reprojetar o estado do dado em qualquer
+ponto da cadeia. O `run_id` nasce na Bronze, atravessa a Silver via XCom
+do Airflow e chega ao Gold — a mesma execução é rastreável de ponta a
+ponta.
+
+**3. Data Quality Report.** A cada execução da Silver, o
+`pipeline/quality.py` avalia nulos críticos, quarentena e deduplicação,
+persistindo o relatório em `data_quality_report` (ADR-015/031). O
+relatório é promovido à Gold pelo dbt e exposto via
+`GET /qualidade/relatorio` — o dashboard mostra o resumo na página de
+Qualidade.
+
+**4. Controle de execuções (`pipeline_runs`).** A tabela Gold
+`pipeline_runs` (ADR-019) registra o status de cada execução
+(`success`/`partial`/`failed`), as fontes com erro e os watermarks por
+fonte. É consumida por `GET /pipeline/status` e pela página Metadados do
+dashboard.
+
+**Estratégia de alertas (deferida — registrada no BACKLOG §IV):** a
+detecção de falha de extração, queda abrupta de volume e degradação de
+qualidade é observável via logs e `pipeline_runs`, mas **alertas
+proativos** (e-mail/Webhook) ficam fora do escopo do MVP. A execução
+diária em produção (ADR-034, Sprint 9) roda sob `systemd timer` com
+logs em `journalctl` — a falha é registrada no estado do service e
+visível na auditoria da execução.
+
 ---
- 
+
 ## III. Explicação sobre o Case Desenvolvido
- 
-`[PENDENTE]`
- 
-Esta seção descreverá o funcionamento real do pipeline implementado
-— exemplos de execução, dados efetivamente extraídos e processados,
-telas do dashboard, respostas da API — e só pode ser escrita com
-conteúdo verídico à medida que as sprints de implementação (2 a 7)
-forem concluídas. Documentar aqui, agora, um comportamento ainda não
-implementado passaria uma imagem incorreta do estágio real do
-projeto para a banca.
- 
-O que já pode ser afirmado com precisão nesta fase (Sprint 0B):
-todas as decisões arquiteturais que guiarão essa implementação estão
-formalizadas em ADRs (`ADR.md`) e no `PROJECT_CONTEXT.md`, seguindo
-o ciclo proposta → revisão → aprovação → avanço.
- 
+
+> Seções II.1–II.5 descrevem a arquitetura projetada; esta seção
+> documenta o que foi **efetivamente implementado e validado** nas
+> Sprints 2–8.
+
+### III.1 O que foi construído
+
+O pipeline end-to-end descrito na arquitetura medalhão está **implementado
+e validado com dados reais** das quatro fontes oficiais (Câmara, Senado,
+CGU Transparência e CGU Cartão), com execução comprovada na validação E2E
+da Sprint 6.5:
+
+| Camada | Realidade implementada |
+|---|---|
+| **Bronze** | Extração incremental (watermark) das APIs/bases públicas, persistência em Parquet particionado por `ano/mes` no MinIO, retry com backoff exponencial (ADR-009), rate limiting por fonte. Validação real: 4 fontes `success` em modo validação. |
+| **Silver** | Limpeza, padronização multi-fonte (`normalize.py`), deduplicação independente por camada (ADR-013), validação com Pandera, pseudonimização de CPF via HMAC-SHA256 (ADR-033) e Data Quality Report. Validação real: Câmara 9.350 + Senado 63.874 registros de despesa; parlamentares 514 + 162; cartão ~120 mil; emenda 45.799. |
+| **Gold** | Star Schema (Fact Constellation) via dbt Core sobre DuckDB, com SCD Type 2 em `dim_parlamentar` (ADR-017), quarentena por construção (ADR-018), `pipeline_runs` (ADR-019) e tabelas analíticas (ADR-021). Validação real: `dbt build` **PASS=224, ERROR=0**, 12 execuções em `pipeline_runs`. |
+| **Analytics** | Anomalias estatísticas (Z-score + Isolation Forest, ADR-002), scorecard de risco (ADR-027/029), análise de redes parlamentar↔fornecedor (ADR-030), feature store (ADR-028). |
+| **API** | FastAPI REST com 30+ endpoints, OpenAPI/Swagger, paginação/filtros, e endpoints agent-ready (`/agent/*`, ADR-032) para consumo por LLMs — validada contra o Gold real do dbt via teste de contrato pipeline→Gold→API. |
+| **Dashboard** | Streamlit com 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08). |
+
+### III.2 Números reais da validação
+
+Os valores abaixo foram produzidos na **validação end-to-end com dados
+reais** (Sprint 6.5) e renderizados no dashboard contra o DuckDB de
+desenvolvimento (Sprint 7):
+
+- **Volume processado:** 8.983 transações de despesa, **R$ 4,5 milhões**
+  em gasto total, 4.319 fornecedores e 432 parlamentares no recorte
+  validado.
+- **Qualidade:** relatório de qualidade gerado por execução com
+  percentual de nulos críticos, quarentena e deduplicação.
+- **Confiança do pipeline:** suíte automatizada com **374 testes verdes**
+  (1 skip opcional do Airflow), cobertura de **93,6%**, lint Ruff verde e
+  gate de cobertura `fail_under = 80` ativo (Sprint 8).
+
+### III.3 Exemplo de fluxo real
+
+1. O DAG `observatorio_pipeline` (Airflow) dispara diariamente
+   (Bronze → Silver → Gold), com execução controlada por `run_id`.
+2. A Bronze extrai incrementos por watermark; a Silver valida com
+   Pandera, deduplica e pseudonimiza CPFs; a Gold roda `dbt build`
+   materializando o Star Schema.
+3. A camada analítica calcula anomalias, risco e rede; tudo é exposto
+   pela FastAPI.
+4. O dashboard consome a API e renderiza KPIs, grafos e exportações —
+   dados reais, sem mock.
+
+### III.4 Deploy e operação
+
+Para instalar, fazer deploy e operar o ambiente, consulte
+[`docs/guia_deploy_operacao.md`](docs/guia_deploy_operacao.md)
+(Docker Compose, deploy na VPS Oracle, execução diária via systemd —
+ADR-034) e [`docs/guia_provisionamento_oci.md`](docs/guia_provisionamento_oci.md)
+(provisionamento da infraestrutura Oracle Cloud).
+
+> **Avaliação da banca:** consulte também o `PROJECT_CONTEXT.md` (fonte de
+> verdade técnica, com ADRs 001-034), o `ADR.md` (decisões arquiteturais
+> formalizadas) e o `BACKLOG.md` (rastro completo das sprints 0A–9).
+
 ---
  
 ## IV. Melhorias e Considerações Finais

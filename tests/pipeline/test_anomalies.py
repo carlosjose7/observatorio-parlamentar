@@ -27,13 +27,13 @@ from analytics.anomalies.anomalies import (
     IF_CONTAMINACAO,
     IF_LIMIAR_SCORE,
     avaliar_criterios,
+    contagem_anomalias,
     criterio_dia_sem_sessao,
     criterio_empresa_nova,
     criterio_fornecedor_poucos_clientes,
     criterio_valores_identicos,
     criterio_zscore,
     escrever_expense_outliers_duckdb,
-    contagem_anomalias,
     executar_carga_outliers,
 )
 

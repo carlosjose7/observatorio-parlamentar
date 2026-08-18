@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline.config import load_env_settings
 from api.main import app
+from pipeline.config import load_env_settings
 
 
 def test_agente_parlamentar_reune_perfil_metricas_risco(_cliente):

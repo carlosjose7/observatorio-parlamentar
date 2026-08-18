@@ -282,7 +282,7 @@ class RiskSettings(_StrictModel):
     )
 
     @model_validator(mode="after")
-    def _validar_pesos(self) -> "RiskSettings":
+    def _validar_pesos(self) -> RiskSettings:
         if set(self.pesos) != set(SCORES_RISCO):
             raise ValueError(
                 f"risk.pesos deve conter exatamente {set(SCORES_RISCO)} — recebido {set(self.pesos)}"

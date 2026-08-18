@@ -30,14 +30,14 @@ de estratégia incremental via ADR de superseding (nunca ajuste cego).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
 import structlog
 
-from pipeline.config import get_analytics
 from analytics.features import carregar_registry
+from pipeline.config import get_analytics
 
 logger = structlog.get_logger()
 
@@ -473,7 +473,7 @@ def escrever_rede_duckdb(
     from pipeline.config import get_pipeline_version
 
     pipeline_version = pipeline_version or get_pipeline_version()
-    agora = datetime.now(timezone.utc).isoformat()
+    agora = datetime.now(UTC).isoformat()
     # Completa colunas de auditoria (idempotente: frames já completados pelos
     # `_df_*_do_periodo` são apenas reordenados) — mesmo contrato do
     # `escrever_expense_outliers_duckdb` (ADR-026).
@@ -551,7 +551,7 @@ def executar_carga_ml_rede(
     from pipeline.config import get_pipeline_version
 
     pipeline_version = get_pipeline_version()
-    agora = datetime.now(timezone.utc).isoformat()
+    agora = datetime.now(UTC).isoformat()
 
     dfs_arestas: list[pd.DataFrame] = []
     dfs_nos: list[pd.DataFrame] = []

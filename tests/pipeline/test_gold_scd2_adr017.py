@@ -177,11 +177,11 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
     (ADR-008); o projeto dbt não declara o número e o test `fk_orphan_pct`
     exige a var (falha se ausente). Igual à DAG futura do Gold.
     """
+    import json
+
     from dbt.cli.main import dbtRunner
 
     from pipeline.config import get_dbt_vars
-
-    import json
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
@@ -452,11 +452,11 @@ def _test_fk_orphan(tmp_path, monkeypatch) -> dict[str, str]:
     Injeta `--vars` de `config/pipeline.yaml` (fonte única, ADR-008) — a var
     `fk_orfas_threshold_pct` é exigida pelo test e não existe no projeto dbt.
     """
+    import json
+
     from dbt.cli.main import dbtRunner
 
     from pipeline.config import get_dbt_vars
-
-    import json
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
