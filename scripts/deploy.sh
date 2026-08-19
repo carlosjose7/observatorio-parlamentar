@@ -17,7 +17,7 @@ fi
 
 VPS_IP="$1"
 SSH_KEY="${2:-$HOME/.ssh/observatorio_parlamentar_oci}"
-SSH_DEST="ubuntu@${VPS_IP}"
+SSH_DEST="opc@${VPS_IP}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo -e "${YELLOW}┌─────────────────────────────────────────────────────────┐${NC}"
