@@ -44,7 +44,9 @@ ssh -i "$SSH_KEY" "$SSH_DEST" "
 "
 
 echo "Recarregando o nginx para ativar HTTPS..."
-ssh -i "$SSH_KEY" "$SSH_DEST" "docker compose exec nginx nginx -s reload"
+# Reinicia (não só reload) para o entrypoint re-selecionar o config:
+# com o cert presente, ele troca bootstrap.conf -> default.conf (HTTP+HTTPS).
+ssh -i "$SSH_KEY" "$SSH_DEST" "docker compose restart nginx"
 
 echo ""
 echo "Concluído! Valide: https://observatorio-parlamentar.com.br"
