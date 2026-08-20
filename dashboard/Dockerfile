@@ -2,10 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dashboard]"
-
 COPY . .
+# Instala APÓS copiar o código para o editable install descobrir os pacotes
+# (se instalado antes, o finder fica com MAPPING vazio e o import quebra no
+# Streamlit, cujo sys.path aponta para o diretório das páginas).
+RUN pip install --no-cache-dir -e ".[dashboard]"
 
 EXPOSE 8501
 
