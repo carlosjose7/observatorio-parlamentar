@@ -20,4 +20,4 @@ Restart=no
 TimeoutStartSec=6000
 
 [Install]
-WantedBy=timers.target
+WantedBy=multi-user.target
