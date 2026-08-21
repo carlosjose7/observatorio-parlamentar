@@ -138,8 +138,9 @@ def _conectar_duckdb():
     onde `data/silver/` ainda não existe) — `duckdb.connect` não cria
     diretórios e falharia com IO Error.
     """
-    import duckdb
     from pathlib import Path
+
+    import duckdb
 
     caminho = Path(get_env().duckdb_database_path)
     caminho.parent.mkdir(parents=True, exist_ok=True)
@@ -147,55 +148,70 @@ def _conectar_duckdb():
 
 
 def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
-    """Cria a tabela com o schema inferido se ainda não existir; se a tabela
-    já existe, **migra o schema legado** adicionando as colunas novas presentes
-    no DataFrame (corretivo QA BUG-004).
+    """Cria a tabela com o schema declarativo (se mapeado) ou inferido; se a
+    tabela já existe, **migra o schema legado** adicionando as colunas novas
+    presentes no DataFrame. Nunca faz CREATE/DROP destrutivo nem perde dados.
 
-    Antes: `CREATE TABLE IF NOT EXISTS` + INSERT posicional — uma tabela
-    legada (de uma versão anterior da Silver com menos colunas) fazia o INSERT
-    posicional falhar ou gravar dados desalinhados, sem nenhuma migração. Agora
-    colunas que faltam são adicionadas via `ALTER TABLE ADD COLUMN` com o tipo
-    que o DuckDB infere para o DataFrame (mesmo tipo do CREATE). Nunca faz
-    CREATE/DROP destrutivo nem perde dados existentes.
+    Schema explícito (`pipeline.schemas_silver`): as tabelas Silver têm os
+    tipos DuckDB e descrições declarados no código — evita a inferência
+    frágil do DuckDB (coluna de texto integralmente nula era inferida como
+    `INTEGER`, derrubando o INSERT de outra fonte com ConversionException) e
+    documenta o catálogo via `COMMENT ON`. Tabelas de controle
+    (`data_quality_report`, `quarantine_*`, `dedup_removidas_*`) seguem com
+    inferência (colunas internas, sem risco).
 
-    Corretivo QA (E2E Sprint 6.5): colunas `object` do pandas são normalizadas
-    para `string` antes da inferência — uma coluna de texto integralmente nula
-    (ex: `nome_parlamentar` da Câmara) era inferida como `INTEGER` pelo DuckDB,
-    derrubando o INSERT da outra fonte (Senado) com `ConversionException`.
-
-    Corretivo QA (E2E HML 21/08/2026): normalizar para `string` não basta —
-    o DuckDB infere uma coluna `string` integralmente nula como `INTEGER`
-    ainda assim. Depois do CREATE, conferimos o tipo inferido contra o dtype
-    do DataFrame: colunas de texto (object/string) que foram inferidas como
-    numéricas são corrigidas para VARCHAR via ALTER COLUMN.
+    Migração de schema legado (corretivo QA BUG-004): colunas que faltam são
+    adicionadas via `ALTER TABLE ADD COLUMN` com o tipo que o DuckDB infere
+    para o DataFrame (mesmo tipo do CREATE). Colunas `object` do pandas são
+    normalizadas para `string` antes da inferência.
     """
-    definicao = df.copy()
-    for col in definicao.columns:
-        if definicao[col].dtype.kind == "O":
-            definicao[col] = definicao[col].astype("string")
-    con.register("tmp_define", definicao)
-    con.execute(
-        f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
-    )
+    from pipeline.schemas_silver import descricao_para_tabela, schema_para_tabela
 
-    # Corrige inferência incorreta: coluna de texto (object/string) inferida
-    # como numérica porque todos os valores são nulos na primeira carga.
-    tipos_inferidos = {
-        linha[0]: linha[1]
-        for linha in con.execute(f"DESCRIBE {tabela}").fetchall()
-    }
-    numericos = {"INTEGER", "BIGINT", "DOUBLE", "FLOAT", "HUGEINT", "SMALLINT"}
-    for col in definicao.columns:
-        if definicao[col].dtype.kind in ("O", "U", "S"):
-            if tipos_inferidos.get(col) in numericos:
-                con.execute(f'ALTER TABLE {tabela} ALTER COLUMN "{col}" TYPE VARCHAR')
-                logger.warning(
-                    "correcao_tipo_texto",
-                    tabela=tabela,
-                    coluna=col,
-                    tipo_inferido=tipos_inferidos.get(col),
-                )
+    esquema = schema_para_tabela(tabela)
 
+    if esquema is not None:
+        # DDL explícito: CREATE TABLE IF NOT EXISTS com tipos declarados.
+        cols_ddl = ", ".join(
+            f'"{col}" {tipo}' for col, (tipo, _desc) in esquema.items()
+        )
+        con.execute(f"CREATE TABLE IF NOT EXISTS {tabela} ({cols_ddl})")
+        descricao = descricao_para_tabela(tabela)
+        if descricao:
+            con.execute(
+                f"COMMENT ON TABLE {tabela} IS "
+                f"'{descricao.replace(chr(39), chr(39) * 2)}'"
+            )
+    else:
+        definicao = df.copy()
+        for col in definicao.columns:
+            if definicao[col].dtype.kind == "O":
+                definicao[col] = definicao[col].astype("string")
+        con.register("tmp_define", definicao)
+        con.execute(
+            f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
+        )
+
+        # Corrige inferência incorreta: coluna de texto (object/string) inferida
+        # como numérica porque todos os valores são nulos na primeira carga.
+        tipos_inferidos = {
+            linha[0]: linha[1]
+            for linha in con.execute(f"DESCRIBE {tabela}").fetchall()
+        }
+        numericos = {"INTEGER", "BIGINT", "DOUBLE", "FLOAT", "HUGEINT", "SMALLINT"}
+        for col in definicao.columns:
+            if definicao[col].dtype.kind in ("O", "U", "S"):
+                if tipos_inferidos.get(col) in numericos:
+                    con.execute(
+                        f'ALTER TABLE {tabela} ALTER COLUMN "{col}" TYPE VARCHAR'
+                    )
+                    logger.warning(
+                        "correcao_tipo_texto",
+                        tabela=tabela,
+                        coluna=col,
+                        tipo_inferido=tipos_inferidos.get(col),
+                    )
+
+    # Migração de schema legado: adiciona colunas novas presentes no DataFrame.
     existentes = {
         linha[0]
         for linha in con.execute(
@@ -204,20 +220,28 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
         ).fetchall()
     }
     novos = [col for col in df.columns if col not in existentes]
-    if not novos:
-        return
+    if novos:
+        tipos = {
+            linha[0]: linha[1]
+            for linha in con.execute("DESCRIBE SELECT * FROM tmp_define").fetchall()
+        }
+        for col in novos:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipos[col]}")
+        logger.info(
+            "migracao_schema_silver",
+            tabela=tabela,
+            colunas_adicionadas=novos,
+        )
 
-    tipos = {
-        linha[0]: linha[1]
-        for linha in con.execute("DESCRIBE SELECT * FROM tmp_define").fetchall()
-    }
-    for col in novos:
-        con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipos[col]}")
-    logger.info(
-        "migracao_schema_silver",
-        tabela=tabela,
-        colunas_adicionadas=novos,
-    )
+    # Aplica comentários de coluna do schema declarativo (se mapeado).
+    if esquema is not None:
+        for col, (_tipo, desc) in esquema.items():
+            if col not in existentes:
+                continue
+            con.execute(
+                f"COMMENT ON COLUMN {tabela}.{col} IS "
+                f"'{desc.replace(chr(39), chr(39) * 2)}'"
+            )
 
 
 def _insert_por_nome(con, tabela: str, registro: str, colunas: list[str]) -> None:
