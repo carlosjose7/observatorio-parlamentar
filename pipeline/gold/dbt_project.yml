@@ -34,6 +34,12 @@ vars:
 
 models:
   observatorio_gold:
+    # Persiste as `description:` dos schema.yml de volta ao catálogo DuckDB
+    # (COMMENT ON TABLE/COLUMN) — a documentação das tabelas Gold viaja com o
+    # dado, consultável em duckdb_tables()/duckdb_columns() e exposta à API.
+    +persist_docs:
+      relation: true
+      columns: true
     dimensions:
       +materialized: table
     facts:
