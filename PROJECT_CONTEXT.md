@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: Sprint 1 (ADRs 010-012 registrados; dimensão institucional, constelação de fatos e watermark/versionamento consolidados)
+> Última atualização: **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-033. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).
  
 ---
  
@@ -40,7 +40,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 **RF-03** — O sistema deve calcular e expor os 5 scores de risco e o `risk_index` composto (§9, ADR-003) para cada parlamentar.
 **RF-04** — O sistema deve detectar anomalias de despesa segundo os 6 critérios formais (§10, ADR-002), exigindo ≥2 critérios simultâneos.
 **RF-05** — O sistema deve expor endpoints REST documentados (OpenAPI/Swagger) para consumo por dashboard e agentes de IA (§11).
-**RF-06** — O sistema deve pseudonimizar CPFs de fornecedores PF via HMAC-SHA256 antes de qualquer persistência (§17, ADR-004).
+**RF-06** — O sistema deve pseudonimizar CPFs de fornecedores PF via HMAC-SHA256 na camada Silver (fronteira de pseudonimização; a Bronze mantém o dado bruto equivalente-público sob acesso restrito — §17, ADR-004/ADR-033).
 **RF-07** — O sistema deve gerar automaticamente Data Dictionary, diagramas Mermaid e relatório HTML ao final do pipeline.
 **RF-08** — O sistema deve permitir exportação de dados em CSV, Excel e PDF a partir do dashboard.
 **RF-09** — O sistema deve calcular índice de concentração de fornecedores (HHI) por parlamentar/partido/estado.
@@ -57,7 +57,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | **Performance** | API deve responder em < 500ms (p95) para endpoints de consulta simples; < 2s para endpoints com agregação/rede |
 | **Disponibilidade** | Pipeline diário via GitHub Actions com taxa de sucesso ≥ 95%; dashboard com disponibilidade best-effort (Streamlit Community Cloud, sem SLA formal) |
 | **Escalabilidade** | Arquitetura deve suportar crescimento incremental de dados (10+ anos de histórico) sem reescrita de camadas Bronze/Silver |
-| **Segurança/LGPD** | Nenhum dado pessoal sensível (CPF) em texto claro em qualquer camada (ADR-004); apenas dados públicos oficiais |
+| **Segurança/LGPD** | Nenhum CPF em texto claro nas camadas consumíveis (Silver/Gold/API) — pseudonimização HMAC-SHA256 na Silver (ADR-004/033); a Bronze mantém o dado bruto equivalente-público sob acesso restrito; apenas dados públicos oficiais |
 | **Observabilidade** | Logging estruturado (`structlog`) em todos os módulos; relatório de qualidade de dados gerado a cada execução |
 | **Manutenibilidade** | Cobertura de testes ≥ 80% (Pytest); zero hardcode — configuração externa via `config/*.yaml`/`.env` |
 | **Reprodutibilidade** | Qualquer execução anterior deve ser reproduzível a partir de `run_id` e `pipeline_version` |
@@ -241,56 +241,86 @@ observatorio-parlamentar/
 ├── .github/
 │   └── workflows/
 │       └── pipeline.yml              # CI/CD (placeholder, Sprint 9)
-├── api/                              # FastAPI (scaffold, Sprint 6)
+├── api/                              # FastAPI (Sprint 6 — Ondas 1–4 completas)
 │   ├── routers/
 │   │   ├── __init__.py
-│   │   ├── parlamentares.py          # ┐
-│   │   ├── fornecedores.py           # │ Sprint 6
-│   │   ├── anomalias.py              # │
-│   │   ├── rede.py                   # │
-│   │   └── agent.py                  # ┘
+│   │   ├── parlamentares.py
+│   │   ├── fornecedores.py
+│   │   ├── anomalias.py
+│   │   ├── rede.py
+│   │   ├── qualidade.py
+│   │   ├── pipeline.py
+│   │   └── agent.py                  # agent-ready (ADR-032, Onda 4)
 │   ├── schemas/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── parlamentares.py
+│   │   ├── fornecedores.py
+│   │   ├── anomalias.py
+│   │   ├── rede.py
+│   │   ├── qualidade.py
+│   │   ├── pipeline.py
+│   │   └── agent.py
 │   ├── __init__.py
 │   ├── Dockerfile
-│   ├── dependencies.py               # Sprint 6
+│   ├── repo.py                       # camada read-only sobre o Gold (ADR-026)
 │   └── main.py
-├── pipeline/                         # ETL (scaffold, Sprint 2-4)
+├── pipeline/                         # ETL (Sprint 3: Bronze + motor Silver; caminho de carga Silver — ADR-023, Sprint 4; Gold)
 │   ├── camara/
 │   │   ├── __init__.py
-│   │   ├── extract.py                # ┐ Sprint 2
-│   │   └── transform.py              # ┘
+│   │   ├── extract.py                # Sprint 2
+│   │   ├── schemas.py                # Sprint 1
+│   │   └── transform.py              # ADR-023 (Sprint 4) — silver_despesa
 │   ├── senado/
 │   │   ├── __init__.py
-│   │   ├── extract.py                # ┐ Sprint 2
-│   │   └── transform.py              # ┘
+│   │   ├── extract.py                # Sprint 2
+│   │   ├── schemas.py                # Sprint 1
+│   │   └── transform.py              # ADR-023 (Sprint 4) — silver_despesa
 │   ├── transparencia/
 │   │   ├── __init__.py
-│   │   ├── extract.py                # ┐ Sprint 2
-│   │   └── transform.py              # ┘
+│   │   ├── extract.py                # Sprint 2
+│   │   ├── schemas.py                # Sprint 1
+│   │   └── transform.py              # ADR-023 (Sprint 4) — silver_cartao/silver_emenda
+│   ├── gold/                         # dbt (ADR-018) — Sprint 4
+│   │   ├── models/
+│   │   │   ├── sources.yml           # DuckDB Silver main.* como source (ADR-019)
+│   │   │   ├── dimensions/           # dim_fornecedor(+quarantine), dim_categoria_despesa(+quarantine), dim_data
+│   │   │   ├── control/              # pipeline_runs (incremental)
+│   │   │   ├── fatos/
+│   │   │   └── analytics/
+│   │   ├── profiles.yml
+│   │   └── dbt_project.yml
 │   ├── dags/
 │   │   └── pipeline_dag.py
 │   ├── __init__.py
 │   ├── Dockerfile
+│   ├── contracts.py                  # Sprint 1
 │   ├── bronze.py                     # Sprint 2
-│   ├── silver.py                     # Sprint 3
-│   ├── gold.py                       # Sprint 4
-│   ├── quality.py                    # Sprint 3
-│   ├── analytics.py                  # Sprint 5
-│   ├── network.py                    # Sprint 5
-│   ├── features.py                   # Sprint 5
+│   ├── watermark.py                  # Sprint 2
+│   ├── storage.py                    # Sprint 2
+│   ├── runs.py                       # Sprint 2
 │   ├── utils.py
 │   ├── config.py
-│   └── pipeline.py                   # Entrypoint principal
-├── analytics/                        # Módulos analíticos (scaffold, Sprint 5)
-│   ├── suppliers/
-│   │   └── __init__.py
+│   ├── normalize.py                  # Sprint 3
+│   ├── silver.py                     # Sprint 3
+│   ├── pseudonymize.py               # ADR-033 — HMAC-SHA256 de CPF aplicado na Silver
+│   ├── gold.py                       # Sprint 4
+│   ├── quality.py                    # Sprint 3
+│   ├── parlamento.py                 # Sprint 3
+│   └── logging_config.py
+├── analytics/                        # Módulos analíticos (Sprint 5)
+│   ├── features.py                   # Contrato da Feature Store (ADR-028)
 │   ├── parliamentarians/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── analytics.py              # Onda 1 — estatística descritiva e correlações
+│   │   └── risk.py                   # Onda 4 — scores de risco e risk_index
 │   ├── anomalies/
-│   │   └── __init__.py
-│   └── network/
-│       └── __init__.py
+│   │   ├── __init__.py
+│   │   └── anomalies.py              # Onda 2 — detecção de anomalias (§10/ADR-002)
+│   ├── network/
+│   │   ├── __init__.py
+│   │   └── network.py                # Onda 3 — grafo bipartido parlamentar↔fornecedor
+│   └── suppliers/
+│       └── __init__.py               # scaffold
 ├── dashboard/                        # Streamlit (scaffold, Sprint 7)
 │   ├── pages/
 │   │   ├── .gitkeep
@@ -537,24 +567,33 @@ Todas as visualizações devem consumir essas definições. Nunca recalcular inl
 ---
  
 ## 9. Índices de Risco
+  
+Cada índice é documentado matematicamente no `ADR.md` (fórmulas de
+referência nos ADRs 027 e 003).
+
+| Índice | Descrição | Fórmula (ADR-027) |
+|---|---|---|
+| `supplier_concentration_score` | Concentração de gastos em poucos fornecedores | `norm(hhi_p)`, `hhi_p = Σ_{f∈F_p} (v_{p,f}/V_p)²` (ADR-021) |
+| `political_exposure_score` | Exposição a fornecedores compartilhados com muitos parlamentares | `norm(média_{f∈F_p} (n_f − 1))`, `n_f = nº de parlamentares que usam f` |
+| `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares | `norm(média_{f∈F_p} dep_f)`, HHI por fornecedor `dep_f = Σ_p (v_{p,f}/Σ_{p'}v_{p',f})²` |
+| `expense_anomaly_score` | Proporção de despesas anômalas do parlamentar | `norm(a_p)`, `a_p = |despesas anômalas de p| / |despesas de p|`; anomalia = ≥2 dos 6 critérios (§10/ADR-002) |
+| `network_influence_score` | PageRank no grafo parlamentar-fornecedor | `norm(pr_p)`, PageRank bipartido (Onda 3, ADR-030) |
+| `risk_index` | Média ponderada normalizada dos 5 scores acima (ver ADR-003) | `Σ_i w_i · score_i(p)`, `w_i = 0.2` |
+
+> **Nota (ADR-029 — Aceito):** `expense_anomaly_score` é definido pela
+> proporção de despesas que satisfazem a regra de anomalia (§10), na qual
+> o Isolation Forest é **um dos 6 critérios** (score < −0.1), não o score
+> em si — coerente com ADR-002.
  
-Cada índice deve ser documentado matematicamente no `ADR.md`.
- 
-| Índice | Descrição |
-|---|---|
-| `supplier_concentration_score` | Concentração de gastos em poucos fornecedores |
-| `political_exposure_score` | Exposição a fornecedores compartilhados com muitos parlamentares |
-| `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares |
-| `expense_anomaly_score` | Z-score normalizado das despesas individuais |
-| `network_influence_score` | PageRank no grafo parlamentar-fornecedor |
-| `risk_index` | Média ponderada normalizada dos 5 scores acima (ver ADR-003) |
- 
-### Fórmula do Risk Index (ADR-003 — Aceito)
- 
+### Fórmula do Risk Index (ADR-003 — Aceito, revisado pelo ADR-029)
+
 Todos os scores individuais são normalizados via Min-Max para o
 intervalo [0,1] antes da ponderação. Pesos uniformes (0.2 cada) são
-o baseline da Sprint 0B — não definitivos, sujeitos a revisão na
-Sprint 5 com base em validação empírica.
+o **baseline vigente** — configuraveis em `config/analytics.yaml`
+(`risk.pesos`, fonte única ADR-008); a revisão não ocorre na Sprint 5,
+mas após a Sprint 6.5, quando existir ≥12 meses de `fact_despesa` real
+no Gold (ADR-029). Pesos só mudam por ADR de amendment do ADR-003,
+nunca por operação manual.
  
 ```
 risk_index = 0.2 * norm(supplier_concentration_score)
@@ -639,16 +678,16 @@ GET  /agent/context
 |---|---|---|---|
 | **0A** | Descoberta | Visão, personas, casos de uso, escopo | ✅ Concluída |
 | **0B** | Arquitetura | Stack, diretórios, diagramas, convenções | ✅ Concluída |
-| **1** | Modelagem | Schema completo + contratos de dados | ⏳ Pendente |
-| **2** | Bronze + Extração | Pipeline de ingestão funcionando | ⏳ Pendente |
-| **3** | Silver + Qualidade | Dados limpos + relatório Pandera | ⏳ Pendente |
-| **4** | Gold Layer | Star schema populado | ⏳ Pendente |
-| **5** | Analytics + ML + Redes | Tabelas analíticas + scores de risco | ⏳ Pendente |
-| **6** | FastAPI | API documentada e testada | ⏳ Pendente |
-| **6.5** | Validação Real | Pipeline end-to-end com dados reais | ⏳ Pendente |
-| **7** | Dashboard | Streamlit funcional | ⏳ Pendente |
-| **8** | Testes | Cobertura ≥ 80% | ⏳ Pendente |
-| **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Pendente |
+| **1** | Modelagem | Schema completo + contratos de dados | ✅ Concluída |
+| **2** | Bronze + Extração | Pipeline de ingestão funcionando | ✅ Concluída |
+| **3** | Silver + Qualidade | Dados limpos + relatório Pandera | ✅ Concluída |
+| **4** | Gold Layer | Star schema populado | ✅ Concluída |
+| **5** | Analytics + ML + Redes | Tabelas analíticas + scores de risco | ✅ Concluída |
+| **6** | FastAPI | API documentada e testada | ✅ Concluída |
+| **6.5** | Validação Real | Pipeline end-to-end com dados reais | ✅ Concluída |
+| **7** | Dashboard | Streamlit funcional | ✅ Concluída |
+| **8** | Testes | Cobertura ≥ 80% | ✅ Concluída |
+| **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Em andamento |
  
 > Roadmap reconciliado com `docs/governance/sprint_rules.md` — ambos os documentos
 > agora concordam em 12 sprints, sem fusão entre Testes (8) e
@@ -671,6 +710,15 @@ GET  /agent/context
 | Constantes | `UPPER_SNAKE_CASE` | `MAX_RETRY_ATTEMPTS` |
 | Arquivos Python | `snake_case.py` | `extract.py` |
 | Branches Git | `sprint/{numero}-{descricao}` | `sprint/2-bronze-extract` |
+
+**Ciclo de vida de branches:**
+
+- **Permanentes:** `main` (estável/produção) e `develop` (integração).
+- **Temporárias:** branches de sprint (`sprint/{numero}-{descricao}`) são
+  criadas no início de cada sprint para isolar o trabalho em andamento e são
+  **deletadas após o merge em `develop`** com aprovação (ciclo da sprint,
+  `sprint_rules.md`). Não acumular branches fechadas — o histórico permanece
+  no `git log`. Exceções só com justificativa registrada em ADR.
  
 ---
  
@@ -714,8 +762,11 @@ GET  /agent/context
   descontinuado por vulnerabilidade a ataque de força
   bruta/rainbow table, dado que o espaço de CPFs válidos é finito
   e computável.
-- Nenhum CPF em texto claro é persistido em qualquer camada,
-  incluindo Bronze — hash aplicado no momento da extração.
+- Nenhum CPF em texto claro é persistido na Gold nem exposto pela API — a
+  pseudonimização acontece no transform Silver (`pipeline/pseudonymize.py`,
+  ADR-033), antes de o dado chegar ao Gold. Bronze/Silver internamente
+  dependem do dado bruto equivalente-público (CPF vem de fonte pública) e o
+  hash é a fronteira de exposição.
 - Chave HMAC deve ter plano de rotação documentado (ex: anual), com
   re-hash de dados históricos quando a chave for rotacionada.
 - Dados pessoais de terceiros não públicos: mascarar.
@@ -731,4 +782,4 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 1.1 — Sprint 1 em andamento (modelo dimensional completo com constelação de fatos, ADRs 001-012, contratos de interface, ER e estratégia de versionamento)*
+*Versão atual: 2.9 — **Sprint 9 em andamento** — ADR-034 aceito (execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI). Progresso: Gate 1 (ci.yml com Gitleaks+Ruff+pytest, 379 testes esperados no CI), Gate 2 (script diário + units systemd + bugfix NameError do DAG — aguardando validação na VPS), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia deploy/operação + healthchecks). Gate 5 (TLS) bloqueado até DNS apontar para a VPS. Sprints 1-8 fechadas. ADRs 001-034.*

@@ -1,0 +1,186 @@
+version: 2
+
+# Contrato de qualidade do fato de despesa (ADR-022).
+#
+# DUAS camadas de integridade referencial convivem, por DESIGN — não remover uma
+# como "redundante":
+#
+#   1. `relationships` (genérico, `severity: warn`): binário — qualquer órfão
+#      (ex: PK duplicada na dimensão, ref trocada) é sintoma de erro estrutural
+#      de modelagem. Dispara com UM órfão.
+#   2. `fk_orphan_pct` (genérico custom, `severity: warn`): métrica de saúde
+#      operacional consumida pelo Data Quality Report (ADR-022.3a) — computa a
+#      razão órfãos/total do fato e SÓ dispara quando ela ultrapassa o threshold
+#      `fk_orfas_threshold_pct`, cuja FONTE ÚNICA é `config/pipeline.yaml`
+#      (`data_quality.fk_orfa_threshold_pct`, via `get_dbt_vars()` — ADR-008;
+#      o projeto dbt não declara o número).
+
+models:
+  - name: desp_parlamento
+    description: >
+      Ponte despesa × parlamentar RESOLVIDO sem ambiguidade (padrão ADR-017):
+      câmara por id natural, senado por nome normalizado, versão de
+      dim_parlamentar vigente em `data_documento`. Chave (fonte, cod_documento).
+    columns:
+      - name: fonte
+        tests:
+          - not_null
+      - name: cod_documento
+        tests:
+          - not_null
+      - name: id_parlamentar
+        description: Chave natural (por fonte) da versão casada.
+        tests:
+          - not_null
+      - name: surrogate_key
+        description: Versão exata de dim_parlamentar usada no matching (auditoria ADR-017).
+        tests:
+          - not_null
+      - name: n_candidatos
+        tests:
+          - not_null
+
+  - name: desp_parlamento_quarantine
+    description: Despesas de parlamentar não promovido, com motivo explícito (ADR-017/018).
+    columns:
+      - name: motivo
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'parlamentar_ambiguo'
+                - 'parlamentar_fora_cobertura'
+                - 'parlamentar_nao_resolvido'
+                - 'data_nao_resolvida'
+
+  - name: fact_despesa
+    description: >
+      Fato de despesas parlamentares de parlamentar resolvido (ADR-012). Grão:
+      uma despesa. Nasce com os JOINs reais das quatro dimensões
+      (parlamentar/órgão/fornecedor/categoria + data); o restante fica em
+      fact_despesa_quarantine (ADR-018), incluindo orgao_nao_resolvido
+      (ADR-022.1) e fornecedor_nao_resolvido (ADR-022.3a).
+    columns:
+      - name: id_despesa
+        description: Surrogate determinístico do fato (row_number sobre a resolução ordenada). Não é identificador externo durável (nota ADR-020).
+        tests:
+          - unique
+          - not_null
+      - name: id_parlamentar
+        description: Chave natural da versão de dim_parlamentar vigente em data_documento (ADR-017). NOT NULL — identidade do evento.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+      - name: surrogate_key
+        description: Versão exata de dim_parlamentar vigente em data_documento (auditoria ADR-017). FK 1:1 — prova a versão, não apenas o id (dims SCD2 têm várias versões por id).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: surrogate_key
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: surrogate_key
+              config:
+                severity: warn
+      - name: id_fornecedor
+        description: dim_fornecedor da despesa (ADR-011) — CNPJ claro, CPF por HMAC da UDF.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+      - name: id_orgao
+        description: dim_orgao da despesa (CD=1/SF=2), derivada via JOIN por sigla da fonte (sem literal hardcoded).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_orgao')
+              field: id_orgao
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_orgao')
+              field: id_orgao
+              config:
+                severity: warn
+      - name: cod_tipo
+        description: dim_categoria_despesa — substr(md5(upper(tipo_despesa)),1,12), mesmo determinismo da dimensão.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_categoria_despesa')
+              field: cod_tipo
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_categoria_despesa')
+              field: cod_tipo
+              config:
+                severity: warn
+      - name: data_sk
+        description: dim_data — YYYYMMDD de data_documento.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_data')
+              field: data_sk
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_data')
+              field: data_sk
+              config:
+                severity: warn
+      - name: cod_documento
+        tests:
+          - not_null
+      - name: valor_liquido
+        description: >
+          Valor líquido da despesa (≥ 0). Não-negatividade preservada do gate
+          Silver (ADR-013) e reafirmada aqui (ADR-022.3a) — é a premissa do
+          HHI em `supplier_concentration`/`supplier_dependency_score`
+          (ADR-027.3); estornos/cancelamentos não são representados como
+          valores negativos na promoção.
+        tests:
+          - not_null
+          - nao_negativo:
+              config:
+                severity: warn
+      - name: valor_glosa
+        tests:
+          - not_null
+
+  - name: fact_despesa_quarantine
+    description: Despesas não promovidas, não descartadas (ADR-017/018) — inclui motivos de FK (órgão/fornecedor/categoria/data).
+    columns:
+      - name: motivo_quarentena
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'parlamentar_ambiguo'
+                - 'parlamentar_fora_cobertura'
+                - 'parlamentar_nao_resolvido'
+                - 'fornecedor_nao_resolvido'
+                - 'orgao_nao_resolvido'
+                - 'categoria_nao_resolvida'
+                - 'data_nao_resolvida'

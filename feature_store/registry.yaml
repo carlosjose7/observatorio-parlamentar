@@ -1,2 +1,82 @@
-# Feature registry schema will be finalized in Sprint 5.
-features: []
+# Feature registry — fonte única de metadados de features (ADR-028).
+# Validado por analytics/features.py (Pydantic) na carga e em testes.
+# Campos obrigatórios (ADR-028.3): nome, descricao, formula, origem,
+# tipo, categoria, ultima_atualizacao, consumidores. Feature de categoria
+# agregado/ml/composicao exige `tabela`; apenas `funcao` dispensa.
+#
+# Referências de fórmula: ADR-027 (fórmulas dos 5 scores, §9), ADR-003
+# (risk_index), ADR-002 (§10 — regra de anomalia), PROJECT_CONTEXT §9.
+features:
+  # ── Funções derivadas (não persistem em tabela Gold) ─────────────
+  - nome: minmax
+    descricao: Normalização Min-Max para o intervalo [0, 1], aplicada a cada score antes da ponderação do risk_index (ADR-003/ADR-027).
+    formula: norm(x) = (x - min_X(x)) / (max_X(x) - min_X(x)), universo X do período
+    origem: calculado
+    tipo: float
+    categoria: funcao
+    ultima_atualizacao: null
+    consumidores: [risk_scores, risk_index]
+  - nome: regra_anomalia
+    descricao: Predicado de anomalia estatística de despesa — satisfaz pelo menos 2 dos 6 critérios do §10 (Z-score > 2.5, Isolation Forest score < -0.1 com contamination 0.05, fornecedor < 3 clientes, empresa < 12 meses, valores idênticos >= 3 no mês, dia sem sessão).
+    formula: anomalia(d) = (count(criterio_k(d) para k=1..6) >= 2)
+    origem: calculado
+    tipo: bool
+    categoria: funcao
+    ultima_atualizacao: null
+    consumidores: [expense_anomaly_score, expense_outliers]
+  # ── Scores individuais (ADR-027, grão período x parlamentar) ────
+  - nome: supplier_concentration_score
+    descricao: Concentração do gasto do parlamentar em poucos fornecedores — HHI por parlamentar/ano (ADR-021) normalizado.
+    formula: norm(hhi_p); hhi_p = SUM_{f in F_p} (v_{p,f}/V_p)^2
+    origem: supplier_concentration
+    tipo: float
+    categoria: agregado
+    tabela: supplier_concentration
+    ultima_atualizacao: null
+    consumidores: [risk_scores, risk_index]
+  - nome: political_exposure_score
+    descricao: Exposição do parlamentar a fornecedores compartilhados com muitos outros parlamentares, normalizada.
+    formula: norm(média_{f in F_p} (n_f - 1)); n_f = nº de parlamentares que usam o fornecedor f
+    origem: fact_despesa
+    tipo: float
+    categoria: agregado
+    tabela: fact_despesa
+    ultima_atualizacao: null
+    consumidores: [risk_scores, risk_index]
+  - nome: supplier_dependency_score
+    descricao: Dependência do fornecedor em relação a poucos parlamentares (HHI por fornecedor), agregada ao parlamentar, normalizada.
+    formula: norm(média_{f in F_p} dep_f); dep_f = SUM_p (v_{p,f}/SUM_{p'}v_{p',f})^2
+    origem: fact_despesa
+    tipo: float
+    categoria: agregado
+    tabela: fact_despesa
+    ultima_atualizacao: null
+    consumidores: [risk_scores, risk_index]
+  - nome: expense_anomaly_score
+    descricao: Proporção de despesas anômalas do parlamentar (≥2 dos 6 critérios, regra_anomalia), normalizada.
+    formula: norm(a_p); a_p = |despesas anômalas de p| / |despesas de p|
+    origem: ml_staging.expense_outliers
+    tipo: float
+    categoria: agregado
+    tabela: expense_outliers
+    ultima_atualizacao: null
+    consumidores: [risk_scores, risk_index]
+  - nome: network_influence_score
+    descricao: PageRank do parlamentar no grafo bipartido parlamentar-fornecedor (ADR-027.5/ADR-030), normalizado.
+    formula: norm(pr_p); pr = PageRank no grafo (arestas = valor gasto)
+    origem: ml_staging.network_nodes
+    tipo: float
+    categoria: ml
+    tabela: network_nodes
+    ultima_atualizacao: null
+    consumidores: [risk_scores, risk_index]
+  # ── Composição final (ADR-003/ADR-029) ─────────────────────────
+  - nome: risk_index
+    descricao: Índice composto de risco por parlamentar — média ponderada normalizada dos 5 scores (§9). Pesos configuráveis em config/analytics.yaml (`risk.pesos`), baseline 0.2 cada.
+    formula: risk_index_p = Σ_{i=1..5} w_i * score_i(p), w_i = 0.2 (baseline, ADR-029)
+    origem: calculado
+    tipo: float
+    categoria: composicao
+    tabela: risk_scores
+    ultima_atualizacao: null
+    consumidores: [dashboard, agente_llm]

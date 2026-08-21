@@ -6,16 +6,30 @@ services:
       dockerfile: nginx/Dockerfile
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       dashboard:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_started
     networks:
       - observatorio-net
     restart: unless-stopped
+
+  # ── Certbot (emissão inicial manual + renovação automática) ──
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done"
 
   # ── Object Storage ──────────────────────────────────────────
   minio:
@@ -45,6 +59,12 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
     depends_on:
       minio:
         condition: service_started
@@ -62,7 +82,7 @@ services:
       - API_URL=http://api:8000
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -71,11 +91,17 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=airflow
-      - ***REMOVED***
-      - POSTGRES_DB=airflow
+      - POSTGRES_USER=${POSTGRES_USER:-airflow}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      - POSTGRES_DB=${POSTGRES_DB:-airflow}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -89,27 +115,36 @@ services:
     entrypoint: >
       bash -c "
       airflow db init &&
-      ***REMOVED*** --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
+      airflow users create --username "$$AIRFLOW_ADMIN_USER" --password "$$AIRFLOW_ADMIN_PASSWORD" --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
       airflow webserver
       "
+    env_file: ${PIPELINE_ENV_FILE:-.env}
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=***REMOVED***
-      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-***REMOVED***}
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      # DAGs em ./pipeline/dags; o pacote `pipeline` fica em /opt/airflow/pipeline
+      # (nunca montar ./pipeline em /opt/airflow/dags — sobrescreve o pacote
+      # instalado pelo pip e quebra `import pipeline`).
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
+      - PYTHONPATH=/opt/airflow
       - AIRFLOW__WEBSERVER__RBAC=True
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
-      - ./pipeline:/opt/airflow/dags
+      - ./pipeline:/opt/airflow/pipeline
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -125,22 +160,29 @@ services:
       airflow db upgrade &&
       airflow scheduler
       "
+    env_file: ${PIPELINE_ENV_FILE:-.env}
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=***REMOVED***
-      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-***REMOVED***}
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
       - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=300
+      # DAGs em ./pipeline/dags; o pacote `pipeline` fica em /opt/airflow/pipeline
+      # (nunca montar ./pipeline em /opt/airflow/dags — sobrescreve o pacote
+      # instalado pelo pip e quebra `import pipeline`).
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
+      - PYTHONPATH=/opt/airflow
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
-      - ./pipeline:/opt/airflow/dags
+      - ./pipeline:/opt/airflow/pipeline
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -154,3 +196,6 @@ networks:
 volumes:
   minio_data:
   postgres_data:
+  certbot-etc:
+  certbot-var:
+  certbot-www:

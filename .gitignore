@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .coverage
 htmlcov/
@@ -28,6 +29,9 @@ notes/
 .airflow/
 target/
 dbt_packages/
+pipeline/gold/target/
+pipeline/gold/logs/
+pipeline/gold/.user.yml
 
 # Generated data and local services
 data/bronze/*

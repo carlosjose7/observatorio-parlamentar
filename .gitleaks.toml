@@ -1,0 +1,33 @@
+# .gitleaks.toml — configuração do Gitleaks (secret scanning)
+#
+# Uso: `gitleaks detect --source .` (local) e no CI (workflow pipeline.yml).
+# Previne regressão da CWE-798: nenhum secret hardcoded volta ao repositório.
+#
+# Regras extras além das built-in do Gitleaks:
+#   - Chaves Fernet do Airflow (base64url 44 chars com `=`).
+#   - Nomes de campo específicos do projeto (CPF_HMAC_SECRET_KEY, CGU_API_KEY,
+#     MINIO_ROOT_PASSWORD, POSTGRES_PASSWORD, AIRFLOW_FERNET_KEY,
+#     AIRFLOW_ADMIN_PASSWORD) — falham mesmo que o valor tenha formato livre.
+
+title = "gitleaks config — observatorio-parlamentar"
+
+[[extendrules]]
+description = "Chave Fernet do Airflow (44 chars base64url com '=')"
+id = "fernet-key"
+regex = '''[A-Za-z0-9_-]{43}='''
+entropy = 3.5
+
+[[rules]]
+id = "projeto-secret-campo"
+description = "Campos de secret do projeto com valor literal (CWE-798)"
+regex = '''(?i)(?:CPF_HMAC_SECRET_KEY|CGU_API_KEY|MINIO_ROOT_PASSWORD|POSTGRES_PASSWORD|AIRFLOW_FERNET_KEY|AIRFLOW_ADMIN_PASSWORD|AIRFLOW__CORE__FERNET_KEY)\s*[:=]\s*["']?[A-Za-z0-9+/._-]{16,}["']?'''
+tags = ["observatorio-parlamentar", "secret"]
+
+[allowlist]
+description = "Placeholders didáticos de .env.example"
+paths = [
+    ".env.example$",
+]
+regexes = [
+    '''(?i)(replace-with|defina|changeme|example|xxx|todo)''',
+]

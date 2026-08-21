@@ -1,0 +1,450 @@
+"""pipeline/bronze.py — orquestração da Sprint 2 (Pipeline Bronze).
+
+Para cada fonte: lê o watermark do store, extrai (extractor puro por fonte),
+grava Parquet com merge/deduplicação por chave natural (read-merge-write,
+versionamento.md §2.2/§2.3) e persiste o novo watermark **após** a escrita
+bem-sucedida (§2.1). Na primeira carga (watermark vazio) aplica a janela
+histórica de `carga_historica` (config/sources.yaml); no modo validação
+(`validacao:` em config/pipeline.yaml) a janela é truncada e o watermark é
+gravado em namespace isolado (Opção B). Ao final, grava `pipeline_runs`.
+
+Entrada usada pelas tasks do Airflow DAG (hoje placeholder): a task instancia
+`AirflowVariableStore` e chama `run_pipeline`. Localmente (dev/testes) usa-se
+`JsonFileStore` + `LocalParquetStorage`, ambos injetáveis.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+import httpx
+import structlog
+
+from pipeline.camara import extract as camara_extract
+from pipeline.config import (
+    DeduplicacaoSettings,
+    RetryDefaultSettings,
+    get_pipeline,
+    get_pipeline_version,
+    get_sources,
+)
+from pipeline.contracts import ExtractResult, LoadMetadata
+from pipeline.logging_config import configure_logging
+from pipeline.runs import PipelineRun, write_pipeline_run
+from pipeline.senado import extract as senado_extract
+from pipeline.storage import Storage, criar_storage
+from pipeline.transparencia import extract as transparencia_extract
+from pipeline.utils import records_to_dataframe
+from pipeline.watermark import (
+    JsonFileStore,
+    NamespaceWatermarkStore,
+    WatermarkState,
+    WatermarkStore,
+)
+
+logger = structlog.get_logger()
+
+FONTES = ["camara", "senado", "transparencia_emendas", "transparencia_cartoes"]
+
+CHAVE_WATERMARK = {
+    "camara": "watermark_camara_despesas",
+    "senado": "watermark_senado",
+    "transparencia_emendas": "watermark_cgu_emenda",
+    "transparencia_cartoes": "watermark_cgu_cartao",
+}
+
+# Dados mestres de parlamentares (Onda 2 — dim_parlamentar, ADR-020). Não faz
+# parte de FONTES (não é fato financeiro, nem entra no PipelineRun/pipeline_runs
+# nesta sprint — pendência de controle registrada em BACKLOG.md/6.5). Particiona-se por
+# Casa (um dia de execução por arquivo), espelhando os dois feeds distintos da
+# dimensão: Câmara (detalhe por deputado) e Senado (lista em exercício).
+DIRETORIO_PARLAMENTO = Path("parlamento")
+SNAPSHOTS_PARLAMENTO = {
+    "camara": DIRETORIO_PARLAMENTO / "camara",
+    "senado": DIRETORIO_PARLAMENTO / "senado",
+}
+
+
+def _novo_run_meta(execution_timestamp: datetime | None = None) -> LoadMetadata:
+    return LoadMetadata(
+        run_id=uuid.uuid4(),
+        pipeline_version=get_pipeline_version(),
+        execution_timestamp=execution_timestamp or datetime.now(UTC),
+        source_version="",
+    )
+
+
+def _deduplicacao(fonte: str) -> DeduplicacaoSettings:
+    fontes = get_sources()
+    if fonte == "camara":
+        return fontes.camara.deduplicacao
+    if fonte == "senado":
+        return fontes.senado.deduplicacao
+    if fonte == "transparencia_emendas":
+        return fontes.transparencia.deduplicacao["emendas"]
+    return fontes.transparencia.deduplicacao["cartoes"]
+
+
+def _particao_por_registro(fonte: str, registro) -> tuple[int, int]:
+    """Extrai (ano, mes) de partição de um registro de Bronze.
+
+    Emendas não possuem mês na fonte — particionam em `mes=0`.
+    """
+    if fonte == "transparencia_emendas":
+        return registro.ano, 0
+    if fonte == "transparencia_cartoes":
+        mes, ano = registro.mes_extrato.split("/")
+        return int(ano), int(mes)
+    return registro.ano, registro.mes
+
+
+def _agrupar_por_particao(fonte: str, registros: list, escopo: str):
+    """Agrupa registros por diretório de escrita `fonte/ano=A/mes=M`.
+
+    `escopo` não altera a escrita (sempre particionada por ano/mês) — apenas
+    o escopo de leitura da deduplicação no storage (`merge_scope`).
+    """
+    grupos: dict[str, list] = {}
+    for registro in registros:
+        ano, mes = _particao_por_registro(fonte, registro)
+        grupos.setdefault(f"{ano}-{mes}", []).append(registro)
+    for chave, recs in grupos.items():
+        ano, mes = chave.split("-")
+        rel = Path(fonte) / f"ano={ano}" / f"mes={mes}"
+        yield rel, recs
+
+
+def _anos_historico(ano_inicio: int, run_meta: LoadMetadata) -> list[int]:
+    """Anos de `ano_inicio` até o ano da execução, inclusive."""
+    return list(range(ano_inicio, run_meta.execution_timestamp.year + 1))
+
+
+def _meses_historico(mes_inicio: str, run_meta: LoadMetadata) -> list[str]:
+    """Meses `MM/AAAA` de `mes_inicio` até o mês da execução, inclusive."""
+    try:
+        mes_i, ano_i = mes_inicio.split("/")
+        inicio = (int(ano_i), int(mes_i))
+    except ValueError as exc:
+        raise ValueError(
+            f"mes_inicio inválido: {mes_inicio!r} (esperado MM/AAAA)"
+        ) from exc
+    fim = (run_meta.execution_timestamp.year, run_meta.execution_timestamp.month)
+    meses: list[str] = []
+    ano, mes = inicio
+    while (ano, mes) <= fim:
+        meses.append(f"{mes:02d}/{ano}")
+        mes += 1
+        if mes > 12:
+            mes, ano = 1, ano + 1
+    return meses
+
+
+def _truncar_validacao(periodos: list) -> list:
+    """Trunca a janela histórica para `limite_periodos` no modo validação."""
+    validacao = get_pipeline().validacao
+    if validacao.habilitado and validacao.limite_periodos is not None:
+        return periodos[: validacao.limite_periodos]
+    return periodos
+
+
+def _proximo_mes_competencia(periodo: str, run_meta: LoadMetadata) -> str:
+    """Período a extrair na execução incremental após `MM/AAAA` (corretivo QA BUG-001).
+
+    Avança para o mês seguinte ao último watermark consolidado; quando o
+    próximo período ainda não existe (o watermark já é o mês corrente da
+    execução), reextrai o mês corrente — a fonte o republica dentro do mês
+    e a deduplicação por chave natural absorve as atualizações. Avanço e
+    reextração nunca ultrapassam o mês da execução.
+    """
+    mes, ano = (int(parte) for parte in periodo.split("/"))
+    mes += 1
+    if mes > 12:
+        mes, ano = 1, ano + 1
+    corrente = (run_meta.execution_timestamp.year, run_meta.execution_timestamp.month)
+    if (ano, mes) > corrente:
+        return f"{corrente[1]:02d}/{corrente[0]}"
+    return f"{mes:02d}/{ano}"
+
+
+def _proximo_ano_competencia(ano: int, run_meta: LoadMetadata) -> int:
+    """Ano a extrair na execução incremental após `ano` (corretivo QA BUG-001).
+
+    Análogo a `_proximo_mes_competencia` para o grão anual das emendas CGU:
+    avança para o ano seguinte e, quando o próximo ano ainda não existe, o
+    ano corrente é reextraído (o dataset anual é republicado — a dedup
+    absorve as correções).
+    """
+    proximo = ano + 1
+    if proximo > run_meta.execution_timestamp.year:
+        return run_meta.execution_timestamp.year
+    return proximo
+
+
+def _camara_filtro_inicial(mes_inicio: str, run_meta: LoadMetadata) -> list[str]:
+    """Meses da primeira carga da Câmara (janela truncada no modo validação).
+
+    Corretivo 6.5: a API da Câmara não aceita `dataInicio`; a extração
+    particiona por mês de competência (`idLegislatura`+`ano`+`mes`). A janela
+    são os meses de `mes_inicio` até o mês da execução; no modo validação,
+    apenas os **últimos** `limite_periodos` meses (a janela histórica de
+    11 anos não faz sentido numa validação). Sem o modo validação, retorna o
+    backfill integral.
+    """
+    meses = _meses_historico(mes_inicio, run_meta)
+    validacao = get_pipeline().validacao
+    if validacao.habilitado and validacao.limite_periodos is not None:
+        return meses[-validacao.limite_periodos :]
+    return meses
+
+
+def _agregar_resultados(resultados: list[ExtractResult]) -> ExtractResult:
+    """Combina extrações de múltiplos períodos (backfill) em um só resultado.
+
+    O novo watermark é o **último** período da lista de entrada — que é
+    cronológica por construção (`_anos_historico`/`_meses_historico`), não
+    lexicográfica. Comparar strings com `max()` quebraria para `MM/AAAA`
+    (ex: "12/2025" > "08/2026"), deixando o incremental preso em dezembro.
+    Registros são concatenados (a deduplicação por chave natural acontece na
+    escrita, storage.py).
+    """
+    if not resultados:
+        return ExtractResult()
+    records = [registro for res in resultados for registro in res.records]
+    topo = resultados[-1]
+    return ExtractResult(
+        records=records,
+        new_watermark=topo.new_watermark,
+        source_version=topo.source_version,
+    )
+
+
+def _extrair(
+    fonte: str,
+    client: httpx.Client,
+    estado: WatermarkState,
+    run_meta: LoadMetadata,
+    retry_settings: RetryDefaultSettings | None,
+) -> ExtractResult:
+    """Extrai uma fonte, aplicando a janela de carga histórica no primeiro run.
+
+    Primeira carga (watermark vazio): Câmara, cartões e Senado/emendas varrem
+    os períodos de `carga_historica` até o período corrente (ano ou mês),
+    truncados para `limite_periodos` no modo validação. Execuções seguintes
+    extraem o **período seguinte** ao watermark consolidado (corretivo QA
+    BUG-001): mês+1 para Câmara/cartões, ano+1 para emendas; quando o próximo
+    período ainda não existe, o período corrente é reextraído (republicação —
+    a deduplicação por chave absorve). O watermark só avança após a escrita.
+    """
+    fontes = get_sources()
+    if fonte == "camara":
+        cfg = fontes.camara
+        ch = cfg.carga_historica
+        if estado.last_watermark is None:
+            if ch and ch.mes_inicio:
+                meses = _camara_filtro_inicial(ch.mes_inicio, run_meta)
+                return _agregar_resultados(
+                    [camara_extract.extract_despesas(cfg, client, m, run_meta, retry_settings) for m in meses]
+                )
+            return camara_extract.extract_despesas(cfg, client, None, run_meta, retry_settings)
+        # Incremental: período seguinte ao watermark consolidado (corretivo QA BUG-001)
+        return camara_extract.extract_despesas(
+            cfg,
+            client,
+            _proximo_mes_competencia(estado.last_watermark, run_meta),
+            run_meta,
+            retry_settings,
+        )
+
+    if fonte == "senado":
+        cfg = fontes.senado
+        ch = cfg.carga_historica
+        if estado.last_watermark is None and ch and ch.ano_inicio is not None:
+            anos = _truncar_validacao(_anos_historico(ch.ano_inicio, run_meta))
+            return _agregar_resultados(
+                [senado_extract.extract_ceaps(cfg, client, run_meta, retry_settings, ano=a) for a in anos]
+            )
+        return senado_extract.extract_ceaps(cfg, client, run_meta, retry_settings)
+
+    cfg = fontes.transparencia
+    if fonte == "transparencia_emendas":
+        ch = (cfg.carga_historica or {}).get("emendas")
+        if estado.last_watermark is None:
+            if ch and ch.ano_inicio is not None:
+                anos = _truncar_validacao(_anos_historico(ch.ano_inicio, run_meta))
+                return _agregar_resultados(
+                    [transparencia_extract.extract_emendas(cfg, client, a, run_meta, retry_settings) for a in anos]
+                )
+            return transparencia_extract.extract_emendas(cfg, client, None, run_meta, retry_settings)
+        # Incremental: ano seguinte ao watermark consolidado (corretivo QA BUG-001)
+        ano = _proximo_ano_competencia(int(estado.last_watermark), run_meta)
+        return transparencia_extract.extract_emendas(cfg, client, ano, run_meta, retry_settings)
+
+    ch = (cfg.carga_historica or {}).get("cartoes")
+    if estado.last_watermark is None:
+        if ch and ch.mes_inicio:
+            meses = _truncar_validacao(_meses_historico(ch.mes_inicio, run_meta))
+            return _agregar_resultados(
+                [transparencia_extract.extract_cartoes(cfg, client, m, run_meta, retry_settings) for m in meses]
+            )
+        return transparencia_extract.extract_cartoes(cfg, client, None, run_meta, retry_settings)
+    # Incremental: mês seguinte ao watermark consolidado (corretivo QA BUG-001)
+    return transparencia_extract.extract_cartoes(
+        cfg,
+        client,
+        _proximo_mes_competencia(estado.last_watermark, run_meta),
+        run_meta,
+        retry_settings,
+    )
+
+
+def _extrair_e_persistir(
+    fonte: str,
+    client: httpx.Client,
+    store: WatermarkStore,
+    storage: Storage,
+    run_meta: LoadMetadata,
+    retry_settings: RetryDefaultSettings | None,
+) -> tuple[str | None, str | None]:
+    """Extrai e persiste uma fonte. Retorna (novo_watermark, erro)."""
+    chave = CHAVE_WATERMARK[fonte]
+    estado = store.get(chave)
+    try:
+        resultado = _extrair(fonte, client, estado, run_meta, retry_settings)
+    except Exception as exc:  # noqa: BLE001 — falha isolada não derruba as demais (§5)
+        logger.error("falha_extracao", fonte=fonte, erro=str(exc))
+        return None, str(exc)
+
+    if resultado.records:
+        dedup = _deduplicacao(fonte)
+        for rel, recs in _agrupar_por_particao(fonte, resultado.records, dedup.escopo):
+            storage.write_merged(rel, records_to_dataframe(recs), dedup.campo, dedup.escopo)
+
+    # Watermark avança somente após a escrita bem-sucedida (versionamento.md §2.1)
+    novo_watermark = resultado.new_watermark or estado.last_watermark
+    store.set(chave, WatermarkState(last_watermark=novo_watermark, run_id=run_meta.run_id))
+    logger.info("fonte_consolidada", fonte=fonte, novo_watermark=novo_watermark)
+    return novo_watermark, None
+
+
+def _extrair_e_persistir_parlamentares(
+    client: httpx.Client,
+    storage: Storage,
+    run_meta: LoadMetadata,
+    retry_settings: RetryDefaultSettings | None,
+) -> tuple[str | None, str | None]:
+    """Extrai os snapshots de dados mestres (Câmara + Senado) e persiste.
+
+    Um arquivo por data de execução em `parlamento/<fonte>/` (`write_file`,
+    sem merge) — o acúmulo de snapshots é deliberado (fonte do versionamento
+    SCD2 de `dim_parlamentar`, ADR-020). Cobrir Câmara E Senado nesta etapa
+    impede que o SCD2/Gold materialize dimensão parcial e que o ADR-017
+    mascare emendas de senador como `autor_nao_resolvido` (BACKLOG.md Onda 2).
+    Cada Casa é extraída e persistida em isolamento (falhas não derrubam a
+    execução — não fazem parte de FONTES).
+    """
+    for fonte, diretorio in SNAPSHOTS_PARLAMENTO.items():
+        try:
+            if fonte == "camara":
+                resultado = camara_extract.extract_deputados(
+                    get_sources().camara, client, run_meta, retry_settings
+                )
+            else:
+                resultado = senado_extract.extract_senadores(
+                    get_sources().senado, client, run_meta, retry_settings
+                )
+        except Exception as exc:  # noqa: BLE001 — falha isolada não derruba a execução
+            logger.error("falha_extracao_parlamentares", fonte=fonte, erro=str(exc))
+            continue
+
+        if resultado.records:
+            df = records_to_dataframe(resultado.records)
+            nome = f"{run_meta.execution_timestamp.date()}.parquet"
+            storage.write_file(diretorio, df, nome)
+            logger.info(
+                "parlamentares_snapshot_salvo",
+                fonte=fonte,
+                registros=len(resultado.records),
+                arquivo=run_meta.execution_timestamp.date().isoformat(),
+            )
+        else:
+            logger.warning("parlamentares_snapshot_vazio", fonte=fonte)
+    return None, None
+
+
+def run_pipeline(
+    storage: Storage | None = None,
+    store: WatermarkStore | None = None,
+    client: httpx.Client | None = None,
+    retry_settings: RetryDefaultSettings | None = None,
+    execution_timestamp: datetime | None = None,
+) -> PipelineRun:
+    """Executa o pipeline Bronze ponta a ponta e grava a linha de controle.
+
+    Args:
+        storage: Persistência Parquet (padrão: `criar_storage()`).
+        store: Armazenamento de watermark (padrão: `JsonFileStore`).
+        client: Cliente HTTP (padrão: novo cliente com timeout configurado).
+        retry_settings: Política de retry (tenacity) para override em testes.
+        execution_timestamp: Momento da execução usado como referência para a
+            janela de carga histórica/incremental e registrado no `run_meta`
+            (corretivo QA BUG-001). Omitido → `datetime.now(timezone.utc)`.
+
+    Returns:
+        PipelineRun com status consolidado e watermarks por fonte.
+    """
+    run_meta = _novo_run_meta(execution_timestamp)
+    configure_logging()
+    if client is None:
+        client = httpx.Client(timeout=httpx.Timeout(get_pipeline().http.request_timeout_seconds))
+    if storage is None:
+        storage = criar_storage()
+    if store is None:
+        store = JsonFileStore()
+
+    if get_pipeline().validacao.habilitado:
+        logger.warning(
+            "modo_validacao_ativado",
+            limite_periodos=get_pipeline().validacao.limite_periodos,
+            namespace="validacao",
+        )
+        store = NamespaceWatermarkStore(store, namespace="validacao")
+
+    watermarks: dict[str, str | None] = {}
+    fontes_com_erro: list[str] = []
+    for fonte in FONTES:
+        novo, erro = _extrair_e_persistir(fonte, client, store, storage, run_meta, retry_settings)
+        if erro is not None:
+            fontes_com_erro.append(fonte)
+        else:
+            watermarks[fonte] = novo
+
+    # Onda 2: snapshot de dados mestres de parlamentares (Câmara + Senado,
+    # dim_parlamentar SCD2). Não integra PipelineRun/pipeline_runs nesta
+    # sprint — apenas loga.
+    _extrair_e_persistir_parlamentares(client, storage, run_meta, retry_settings)
+
+    status = "success"
+    if fontes_com_erro:
+        status = "failed" if len(fontes_com_erro) == len(FONTES) else "partial"
+
+    run = PipelineRun(
+        run_id=run_meta.run_id,
+        pipeline_version=run_meta.pipeline_version,
+        execution_timestamp=run_meta.execution_timestamp,
+        status=status,
+        fontes_com_erro=fontes_com_erro,
+        watermark_camara=watermarks.get("camara"),
+        watermark_senado=watermarks.get("senado"),
+        watermark_cgu_emenda=watermarks.get("transparencia_emendas"),
+        watermark_cgu_cartao=watermarks.get("transparencia_cartoes"),
+    )
+    write_pipeline_run(storage, run)
+    logger.info(
+        "pipeline_bronze_concluido",
+        run_id=str(run.run_id),
+        status=status,
+        fontes_com_erro=fontes_com_erro,
+    )
+    return run

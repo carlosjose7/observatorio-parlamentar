@@ -6,11 +6,12 @@ reutilizados pelos schemas de Bronze, Silver e Gold.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class LoadMetadata(BaseModel):
@@ -28,6 +29,24 @@ class LoadMetadata(BaseModel):
     pipeline_version: str
     execution_timestamp: datetime
     source_version: str
+
+
+@dataclass
+class ExtractResult:
+    """Resultado de uma extração de fonte (Sprint 2 — Pipeline Bronze).
+
+    Attributes:
+        records: Registros Bronze tipados, prontos para persistência.
+        new_watermark: Novo valor de watermark consolidado (maior
+            `dataDocumento`, ano do CSV, mês de extrato etc.), conforme
+            versionamento.md §2.
+        source_version: Versão da fonte no momento da extração
+            (versionamento.md §3).
+    """
+
+    records: list[BaseModel] = field(default_factory=list)
+    new_watermark: str | None = None
+    source_version: str = ""
 
 
 class TipoDocumento(str, Enum):

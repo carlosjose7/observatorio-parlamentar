@@ -1,0 +1,23 @@
+# Unit systemd da execução diária do pipeline (ADR-034).
+# Instalada/atualizada pelo scripts/deploy.sh a cada deploy (idempotente).
+# Roda como usuário `opc` (imagem Oracle Linux), membro do grupo docker
+# (cloud-config.yaml adiciona `opc` ao grupo no provisionamento).
+[Unit]
+Description=Observatorio Parlamentar - execucao diaria do pipeline (ADR-034)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=opc
+Group=docker
+WorkingDirectory=/home/opc/observatorio-parlamentar
+ExecStart=/home/opc/observatorio-parlamentar/scripts/run_pipeline_daily.sh
+# Sem retry automatico: falha recorrente deve ser visivel; a proxima
+# tentativa e o proximo disparo do timer (Persistent=true recupera perdidas).
+Restart=no
+# Margem de seguranca acima do timeout interno do script (DAG_TIMEOUT_SEC=5400s).
+TimeoutStartSec=6000
+
+[Install]
+WantedBy=multi-user.target

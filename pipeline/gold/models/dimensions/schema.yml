@@ -1,0 +1,132 @@
+version: 2
+
+models:
+  - name: dim_data
+    description: Calendário completo, grão diário (gerado, sem fonte).
+    columns:
+      - name: data_sk
+        tests:
+          - unique
+          - not_null
+      - name: data
+        tests:
+          - not_null
+      - name: ano
+        tests:
+          - not_null
+      - name: is_dia_util
+        tests:
+          - not_null
+
+  - name: dim_fornecedor
+    description: >
+      Fornecedores de despesas parlamentares (ADR-011). CNPJ em texto claro,
+      CPF pseudonimizado com HMAC-SHA256 (na Silver, ADR-033 — pipeline/
+      pseudonymize.py; o Gold repassa sem reaplicar hash). Linhas sem
+      identidade resolúvel ficam em dim_fornecedor_quarantine (ADR-018).
+    columns:
+      - name: id_fornecedor
+        tests:
+          - unique
+          - not_null
+      - name: cnpj_cpf_valor
+        description: CNPJ (14 dígitos) ou HMAC-SHA256 do CPF (11 dígitos).
+        tests:
+          - not_null
+      - name: tipo_documento
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CNPJ', 'CPF']
+      - name: nome_fornecedor
+        tests:
+          - not_null
+
+  - name: dim_fornecedor_quarantine
+    description: Linhas de silver_despesa rejeitadas em dim_fornecedor (ADR-018).
+    columns:
+      - name: motivo
+        tests:
+          - not_null
+
+  - name: dim_categoria_despesa
+    description: >
+      Tipos de despesa CEAP (PROJECT_CONTEXT (7). cod_tipo é um código
+      determinístico (MD5) derivado da descrição.
+    columns:
+      - name: cod_tipo
+        description: Chave natural da categoria (12 hex de MD5 da descrição normalizada).
+        tests:
+          - unique
+          - not_null
+      - name: descricao
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_categoria_despesa_quarantine
+    description: Linhas com tipo_despesa ausente (ADR-018).
+    columns:
+      - name: motivo
+        tests:
+          - not_null
+
+  - name: dim_unidade_gestora
+    description: >
+      Unidades Gestoras observadas na fonte CGU (ADR-010), materializada a
+      partir do grão de silver_cartao (ADR-025). Chave natural (fonte_origem, codigo).
+      id_orgao sempre o Poder Executivo genérico (dim_orgao.sigla = EX).
+    columns:
+      - name: id_unidade_gestora
+        description: PK surrogate determinística (row_number).
+        tests:
+          - unique
+          - not_null
+      - name: codigo
+        description: Código da UG na fonte de origem (CGU).
+        tests:
+          - not_null
+      - name: nome
+        tests:
+          - not_null
+      - name: id_orgao
+        description: dim_orgao do órgão — Poder Executivo genérico (sigla EX).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_orgao')
+              field: id_orgao
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_orgao')
+              field: id_orgao
+              config:
+                severity: warn
+      - name: fonte_origem
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CGU']
+
+seeds:
+  - name: dim_orgao
+    description: Órgãos institucionais (Câmara, Senado) — seed de referência (ADR-010).
+    columns:
+      - name: id_orgao
+        tests:
+          - unique
+          - not_null
+      - name: poder
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Legislativo', 'Executivo', 'Judiciário']
+      - name: instituicao
+        tests:
+          - not_null
+      - name: sigla
+        description: Chave natural da dimensão (7) — sigla do órgão (CD, SF).
+        tests:
+          - not_null
+          - unique

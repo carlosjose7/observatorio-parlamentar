@@ -1,20 +1,30 @@
 #cloud-config
+# Cloud-config do Observatório Parlamentar para Oracle Linux 9.8 (OCI).
+# Usuário administrativo da imagem: opc (diferente do Ubuntu, que usa `ubuntu`).
 package_update: true
+packages:
+  - firewalld
 runcmd:
-  - apt-get install -y ca-certificates curl
-  - install -m 0755 -d /etc/apt/keyrings
-  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-  - chmod a+r /etc/apt/keyrings/docker.asc
-  - [sh, -c, 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list']
-  - apt-get update
-  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  # ── Docker CE via repositório oficial para RHEL (OL é compatível com
+  #    RHEL; o script get.docker.com NÃO suporta Oracle Linux) ──────────
+  - dnf -y install dnf-plugins-core
+  - dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+  - dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable --now docker
-  - ufw default deny incoming
-  - ufw default allow outgoing
-  - ufw limit 22/tcp
-  - ufw allow 80/tcp
-  - ufw allow 443/tcp
-  - ufw --force enable
+  # Habilita o usuário opc a usar o Docker sem sudo (o .service do pipeline
+  # roda com Group=docker — sem isso, permission denied no socket).
+  - usermod -aG docker opc
+  # ── Firewall (firewalld — nativo do Oracle Linux) ─────────────────────
+  - systemctl enable --now firewalld
+  # NOTA: o serviço ssh do firewalld NÃO é removido aqui. A restrição de
+  # acesso SSH fica na Security List OCI (IPs de administração). A restrição
+  # extra no firewalld é aplicada manualmente via SSH após a validação do
+  # deploy — evita auto-lockout se uma regra rica falhar no primeiro boot.
+  # HTTP/HTTPS públicos (Gate 5 — TLS via Let's Encrypt).
+  - firewall-cmd --permanent --add-service=http
+  - firewall-cmd --permanent --add-service=https
+  - firewall-cmd --reload
+  # ── Hardening SSH ────────────────────────────────────────────────────
   - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
   - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
   - systemctl restart sshd

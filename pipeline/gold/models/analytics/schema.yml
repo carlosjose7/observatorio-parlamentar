@@ -1,0 +1,336 @@
+version: 2
+
+# Contrato de qualidade dos agregados analíticos (ADR-021/ADR-026, Ondas 3/2).
+# Tabelas analíticas Gold: `supplier_concentration`/`supplier_growth` são
+# agregações puras de `fact_despesa` (schema + dados, sem ML, Onda 3) e
+# `expense_outliers` é materializada a partir de `ml_staging` (ADR-026, Opção
+# A — Python single-writer; dbt apenas materializa o Gold). FKs referenciais
+# (parlamentar/fornecedor/fato) e não-nulidade no mesmo padrão das demais
+# camadas Gold; os testes de integridade referencial usam `severity: warn`
+# (ADR-022.3a).
+
+models:
+  - name: supplier_concentration
+    description: >
+      Índice HHI por parlamentar/ano (métrica `hhi` de PROJECT_CONTEXT §7):
+      concentração do gasto do parlamentar em poucos fornecedores. Grão
+      (ano, id_parlamentar). HHI = SUM(participacao^2), onde participacao =
+      total do fornecedor / total do parlamentar no ano — ∈ (0, 1], 1 = gasto
+      em um único fornecedor.
+    columns:
+      - name: ano
+        tests:
+          - not_null
+      - name: id_parlamentar
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+      - name: num_fornecedores
+        tests:
+          - not_null
+      - name: total_valor
+        tests:
+          - not_null
+      - name: hhi
+        tests:
+          - not_null
+
+  - name: supplier_growth
+    description: >
+      Crescimento de receita pública por fornecedor/ano (YoY contra o ano
+      anterior). Grão (ano, id_fornecedor); `valor_ano_anterior`/`variacao_pct`
+      nulos no primeiro período do fornecedor.
+    columns:
+      - name: ano
+        tests:
+          - not_null
+      - name: id_fornecedor
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+      - name: valor_recebido
+        tests:
+          - not_null
+      - name: valor_ano_anterior
+      - name: variacao_pct
+
+  - name: expense_outliers
+    description: >
+      Despesas classificadas como anomalia estatística (ADR-002/§10 — PELO
+      MENOS 2 dos 6 critérios). Grão: uma despesa anômala. Materializada a
+      partir de `ml_staging.expense_outliers` (ADR-026, Opção A): o staging é
+      escrito exclusivamente por analytics/anomalies/anomalies.py e o dbt só materializa
+      este Gold. `criterio_*`/`num_criterios` documentam por que cada despesa
+      foi sinalizada; `zscore`/`if_score` preservam os scores usados na
+      inferência (ADR-002: contamination 0.05 no treino, threshold < -0.1 na
+      inferência).
+    columns:
+      - name: id_despesa
+        description: Despesa anômala — FK para `fact_despesa`.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('fact_despesa')
+              field: id_despesa
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('fact_despesa')
+              field: id_despesa
+              config:
+                severity: warn
+      - name: id_parlamentar
+        description: Parlamentar responsável pela despesa.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+      - name: id_fornecedor
+        description: Fornecedor da despesa (nullable — nem toda despesa resolve).
+        tests:
+          - relationships:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+      - name: data_sk
+        description: Data da despesa (dia sem sessão é um dos critérios).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_data')
+              field: data_sk
+              config:
+                severity: warn
+      - name: valor_liquido
+        tests:
+          - not_null
+      - name: zscore
+        description: Score Z do critério 1 (µ/σ do histórico do parlamentar).
+      - name: if_score
+        description: Score do Isolation Forest na inferência (critério 2).
+      - name: criterio_zscore
+      - name: criterio_if
+      - name: criterio_fornecedor_poucos_clientes
+      - name: criterio_empresa_nova
+      - name: criterio_valores_identicos
+      - name: criterio_dia_sem_sessao
+      - name: num_criterios
+        description: Quantidade de critérios satisfeitos (>= 2 por construção).
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null
+
+  - name: network_edges
+    description: >
+      Arestas do grafo bipartido parlamentar↔fornecedor (ADR-030, Onda 3):
+      `valor_total` = peso `v_{p,f}` agregado do período. Grão
+      (id_parlamentar, id_fornecedor, periodo) por run; recálculo total por
+      execução (ADR-030.1). Materializada a partir de
+      `ml_staging.network_edges` (ADR-026, Opção A — Python single-writer no
+      staging; dbt só materializa o Gold, com `exists` contra as dimensões —
+      sem inner join porque dim_parlamentar é SCD2, ADR-020).
+    columns:
+      - name: id_parlamentar
+        description: Extremidade parlamentar da aresta — FK dim_parlamentar.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+      - name: id_fornecedor
+        description: Extremidade fornecedor da aresta — FK dim_fornecedor.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
+              config:
+                severity: warn
+      - name: periodo
+        description: Ano do período do grafo (grão ano, §7/ADR-021).
+        tests:
+          - not_null
+      - name: valor_total
+        description: Peso da aresta (valor agregado do período).
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null
+
+  - name: network_nodes
+    description: >
+      Nós do grafo bipartido com métricas de centralidade (ADR-030, Onda 3).
+      Grão (id_no, tipo_no, periodo) por run. `pagerank` = network_influence_score
+      cru (ADR-027.5); `degree_centrality` e `comunidade_id` complementam a
+      análise. `id_no` é NÓ POLIMÓRFICO — `tipo_no` discrimina se referencia
+      dim_parlamentar ou dim_fornecedor (sem FK única; existência garantida no
+      SQL por tipo). Materializada a partir de `ml_staging.network_nodes`
+      (ADR-026, Opção A).
+    columns:
+      - name: id_no
+        description: >
+          Chave numérica do nó (sem prefixo) — referencia dim_parlamentar
+          quando tipo_no = 'parlamentar', dim_fornecedor quando 'fornecedor'.
+        tests:
+          - not_null
+      - name: tipo_no
+        description: parlamentar | fornecedor — discrimina a referência de id_no.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['parlamentar', 'fornecedor']
+      - name: periodo
+        description: Ano do período do grafo.
+        tests:
+          - not_null
+      - name: pagerank
+        description: PageRank do nó no grafo global do período (ADR-027.5/030.1).
+        tests:
+          - not_null
+      - name: degree_centrality
+        description: Degree centrality do nó.
+        tests:
+          - not_null
+      - name: comunidade_id
+        description: Comunidade da detecção (greedy modularity, determinística).
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null
+
+  - name: politician_similarity
+    description: >
+      Similaridade de cosseno entre parlamentares por sobreposição de
+      fornecedores (CU-08, ADR-030.5, Onda 3). Grão (id_parlamentar_a,
+      id_parlamentar_b, periodo) por run, ordem canônica a < b; pares sem
+      sobreposição (similaridade 0) não são persistidos. Materializada a
+      partir de `ml_staging.politician_similarity` (ADR-026, Opção A), com
+      `exists` contra dim_parlamentar (sem inner join por SCD2 do
+      dim_parlamentar, ADR-020).
+    columns:
+      - name: id_parlamentar_a
+        description: Primeiro parlamentar do par (menor id, ordem canônica).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+      - name: id_parlamentar_b
+        description: Segundo parlamentar do par (maior id, ordem canônica).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+      - name: periodo
+        description: Ano do período do grafo (similaridade derivada do mesmo grafo).
+        tests:
+          - not_null
+      - name: num_fornecedores_compartilhados
+        description: Quantidade de fornecedores que os dois parlamentares compartilham.
+        tests:
+          - not_null
+      - name: similaridade
+        description: Cosseno entre os vetores de gasto por fornecedor (0, 1].
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: pipeline_version
+        tests:
+          - not_null
+      - name: execution_timestamp
+        tests:
+          - not_null
+      - name: source_version
+        tests:
+          - not_null

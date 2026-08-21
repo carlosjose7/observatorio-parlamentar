@@ -1,0 +1,112 @@
+"""dashboard/pages/08_ml.py — scores de risco e anomalias ML (agent-ready).
+
+Consome `GET /agent/parlamentar/{id}` (ADR-032): métricas, scores de risco
+(ADR-029) e anomalias de um parlamentar, com top fornecedores. Exportação
+(RF-08).
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+import streamlit as st
+
+from dashboard.client import ApiClient
+from dashboard.ui import carregar_com_feedback, formatar_moeda, tabela_exportavel
+
+st.set_page_config(page_title="ML / Risco", page_icon="🧠", layout="wide")
+st.title("🧠 Scores de Risco (agent-ready)")
+
+client = ApiClient()
+
+
+def _radar(risco: dict) -> None:
+    """Gráfico de radar com os 5 scores de risco (ADR-029)."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    dimensoes = [
+        "supplier_concentration_score",
+        "political_exposure_score",
+        "supplier_dependency_score",
+        "expense_anomaly_score",
+        "network_influence_score",
+    ]
+    valores = [risco.get(d) for d in dimensoes]
+    angulos = np.linspace(0, 2 * np.pi, len(dimensoes), endpoint=False).tolist()
+    valores += valores[:1]
+    angulos += angulos[:1]
+
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    ax.plot(angulos, valores, color="#e74c3c", linewidth=2)
+    ax.fill(angulos, valores, color="#e74c3c", alpha=0.25)
+    ax.set_xticks(angulos[:-1])
+    ax.set_xticklabels([d.replace("_score", "") for d in dimensoes], fontsize=8)
+    ax.set_ylim(0, 1)
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def _render(id_parlamentar: int) -> None:
+    payload = carregar_com_feedback(
+        lambda: client.agent_parlamentar(id_parlamentar),
+        spinner="Carregando perfil de risco...",
+    )
+    if payload is None:
+        return
+
+    st.markdown(f"## {payload.get('nome')} ({payload.get('sigla_partido')}-{payload.get('sigla_uf')})")
+
+    metricas = payload.get("metricas", {})
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total gasto", formatar_moeda(metricas.get("total_gasto")))
+    c2.metric("Transações", metricas.get("num_transacoes"))
+    c3.metric("Fornecedores", metricas.get("num_fornecedores"))
+    c4.metric("HHI recente", f"{metricas.get('hhi_recente', 0):.3f}")
+
+    risco = payload.get("risco")
+    if risco:
+        st.markdown("### Scores de risco")
+        c1, c2 = st.columns(2)
+        with c1:
+            _radar(risco)
+        with c2:
+            st.metric("Risk Index", f"{risco.get('risk_index', 0):.3f}")
+            for d, nome in [
+                ("supplier_concentration_score", "Concentração de fornecedores"),
+                ("political_exposure_score", "Exposição política"),
+                ("supplier_dependency_score", "Dependência de fornecedor"),
+                ("expense_anomaly_score", "Anomalia de despesa"),
+                ("network_influence_score", "Influência na rede"),
+            ]:
+                st.progress(min(1.0, risco.get(d, 0)), text=f"{nome}: {risco.get(d, 0):.2f}")
+
+    anomalias = payload.get("anomalias", {})
+    st.markdown(
+        f"**Anomalias:** {anomalias.get('num_despesas_anomalas', 0)} despesas "
+        f"({anomalias.get('proporcao', 0):.1%})"
+    )
+
+    top = payload.get("top_fornecedores", [])
+    if top:
+        st.markdown("### Top fornecedores")
+        df = pd.DataFrame(top)[
+            ["nome_fornecedor", "total_gasto", "num_transacoes"]
+        ].rename(
+            columns={
+                "nome_fornecedor": "Fornecedor",
+                "total_gasto": "Total",
+                "num_transacoes": "Transações",
+            }
+        )
+        df["Total"] = df["Total"].map(formatar_moeda)
+        tabela_exportavel(df, nome_arquivo=f"risco_{id_parlamentar}")
+
+
+def main() -> None:
+    id_parlamentar = st.number_input(
+        "ID do parlamentar", min_value=1, step=1, value=1,
+    )
+    _render(int(id_parlamentar))
+
+
+main()

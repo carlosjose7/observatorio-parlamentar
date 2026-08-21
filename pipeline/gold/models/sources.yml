@@ -1,0 +1,72 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Camada Silver (DuckDB), populada por pipeline/silver.py via os transform.py
+      (ADR-023). Vive no MESMO arquivo DuckDB da Gold (DUCKDB_DATABASE_PATH,
+      ADR-001/ADR-008). As tabelas são criadas pelo transform do Silver no
+      schema `main` do arquivo — o `schema:` da source é mapeado para cá (sem
+      isso o dbt buscaria em `silver.silver_*`).
+    schema: main
+    tables:
+      - name: silver_despesa
+        description: Despesas normalizadas Câmara + Senado (coluna `fonte`; ADR-016/ADR-023).
+      - name: silver_emenda
+        description: Emendas parlamentares CGU normalizadas (ADR-017).
+      - name: silver_parlamentar
+        description: >
+          Registros as-of de parlamentares Câmara+Senado (fonte `fonte`),
+          snapshot por data — insumo bruto da dimensão SCD Type 2
+          `dim_parlamentar` (ADR-020).
+      - name: silver_cartao
+        description: Transações CPGF CGU normalizados (chave `id`, transform.py).
+      - name: data_quality_report
+        description: Data Quality Report da Silver (ADR-015), por run_id/tabela.
+
+  - name: ml_staging
+    description: >
+      Stage intermediário dos produtos de ML/rede — escrita EXCLUSIVA por
+      Python (`analytics/anomalies/anomalies.py`, `analytics/network/network.py`), single-writer
+      (ADR-026, Opção A). Vive no MESMO arquivo DuckDB da Gold
+      (DUCKDB_DATABASE_PATH) mas em schema próprio — o `schema:` mapeia para
+      cá (sem isso o dbt buscaria em `ml_staging.ml_staging_*`). O dbt apenas
+      consome como source e materializa a Gold (ADR-021 / ADR-026.2); nunca
+      escreve neste schema.
+    schema: ml_staging
+    tables:
+      - name: expense_outliers
+        description: >
+          Despesas avaliadas pela regra de anomalia do §10/ADR-002 — os 6
+          critérios booleanos por despesa + `zscore`/`if_score`, `num_criterios`
+          e `is_anomalia` (≥2 critérios). Populado por analytics/anomalies/anomalies.py
+          (Onda 2). Insumo da Gold `expense_outliers` (anomalias) e do
+          `expense_anomaly_score` (ADR-027).
+      - name: network_edges
+        description: >
+          Arestas do grafo bipartido parlamentar↔fornecedor — peso
+          `valor_total` (v_{p,f} agregado do período, ADR-030). Chaveada por
+          `(run_id, periodo)`; recálculo total por execução (ADR-030.1).
+          Populado por analytics/network/network.py (Onda 3). Insumo da Gold
+          `network_edges`.
+      - name: network_nodes
+        description: >
+          Nós do grafo bipartido com métricas de centralidade — `pagerank`
+          (network_influence_score cru, ADR-027.5), `degree_centrality` e
+          `comunidade_id`. Chaveada por `(run_id, periodo)` (ADR-030.1).
+          Populado por analytics/network/network.py (Onda 3). Insumo da Gold
+          `network_nodes`.
+      - name: politician_similarity
+        description: >
+          Pares de parlamentares com similaridade de cosseno por sobreposição
+          de fornecedores (CU-08, ADR-030.5). Chaveada por
+          `(run_id, periodo)` (ADR-030.1). Populado por analytics/network/network.py
+          (Onda 3). Insumo da Gold `politician_similarity`.
+      - name: risk_scores
+        description: >
+          Scores de risco por parlamentar e o `risk_index` — os 5 scores
+          individuais do ADR-027 (normalizados Min-Max em [0,1], feature
+          `minmax` ADR-028) e a composição ponderada `risk.pesos` de
+          `config/analytics.yaml` (ADR-029). Chaveada por `(run_id, periodo)`,
+          recálculo total por execução. Populado por analytics/parliamentarians/risk.py
+          (Onda 4). Insumo da Gold `risk_scores`.

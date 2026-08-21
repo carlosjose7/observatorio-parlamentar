@@ -1,2 +1,63 @@
-# Runtime and storage settings belong here; do not hardcode them in Python.
-pipeline: {}
+# config/pipeline.yaml
+# Configuração do pipeline (armazenamento, versionamento, agendamento).
+# Segredos ficam em .env, nunca aqui (ADR-008).
+# pipeline_version NÃO é declarado aqui: lido de pyproject.toml via
+# importlib/tomllib em pipeline/config.py — fonte única (RF-12).
+
+pipeline:
+  agendamento:
+    cron: "@daily"
+
+  armazenamento:
+    bronze:
+      tipo: "parquet"
+      bucket_minio: "bronze"
+      particionamento: ["fonte", "ano", "mes"]
+    silver:
+      tipo: "duckdb"
+      caminho_env_var: "DUCKDB_DATABASE_PATH"
+      schema: "silver"
+    gold:
+      tipo: "duckdb"
+      caminho_env_var: "DUCKDB_DATABASE_PATH"
+      schema: "gold"
+
+  minio:
+    endpoint_env_var: "MINIO_ENDPOINT"  # valor com scheme (alinhado ao docker-compose.yml); config.py normaliza para o cliente minio-py
+    usuario_env_var: "MINIO_ROOT_USER"
+    senha_env_var: "MINIO_ROOT_PASSWORD"
+    secure: false  # rede interna Docker (ADR-007)
+
+  http:
+    request_timeout_seconds: 30
+
+  versionamento:
+    metadados_obrigatorios:
+      - run_id
+      - pipeline_version  # obtido de pyproject.toml em runtime, não hardcoded
+      - execution_timestamp
+      - source_version
+    tabela_controle: "pipeline_runs"
+
+  retry_default:
+    max_tentativas: 5
+    espera_exponencial_min_segundos: 2
+    espera_exponencial_max_segundos: 60
+
+  # Qualidade Gold (ADR-022.3a): gate de integridade referencial.
+  # FONTE ÚNICA do threshold: o test genérico dbt `fk_orphan_pct` o recebe via
+  # `--vars` gerado por `pipeline.config.get_dbt_vars()` — o projeto dbt NÃO
+  # declara o número (ADR-008). Alterar aqui propaga para o dbt e os reportes.
+  data_quality:
+    fk_orfa_threshold_pct: 5.0  # % de FK órfã nos fatos que dispara alerta
+
+  logging:
+    nivel_env_var: "LOG_LEVEL"
+    formato: "json"
+
+  # Modo de validação da carga inicial — NUNCA ativo em produção.
+  # Quando habilitado: janela histórica truncada para limite_periodos e
+  # watermark em namespace isolado (ver pipeline/config.py ValidacaoSettings).
+  validacao:
+    habilitado: false
+    limite_periodos: 2

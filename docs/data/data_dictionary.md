@@ -44,10 +44,10 @@ referência versionada em Git.
 | `dim_parlamentar` | Gold | Silver consolidado | Diária | `id_parlamentar` + `surrogate_key` | Engenheiro de Dados |
 | `dim_fornecedor` | Gold | Silver consolidado | Diária | `cnpj_cpf_valor` + `tipo_documento` | Engenheiro de Dados |
 | `dim_orgao` | Gold | Estático/curado | Sob demanda | `sigla` | Engenheiro de Dados |
-| `dim_unidade_gestora` | Gold | CGU/SIAFI | — (inativa v1) | (`fonte_origem`, `codigo`) | Engenheiro de Dados |
+| `dim_unidade_gestora` | Gold | CGU (`silver_cartao`) | Diária | (`fonte_origem`, `codigo`) | Engenheiro de Dados |
 | `fact_despesa` | Gold | Silver consolidado | Diária | `id_despesa` | Engenheiro de Dados |
 | `fact_emenda` | Gold | Silver consolidado | Diária | `id_emenda` | Engenheiro de Dados |
-| `fact_cartao_cpgf` | Gold | Silver consolidado | Diária | `id_transacao` | Engenheiro de Dados |
+| `fact_cartao_cpgf` / `fact_cartao_cpgf_quarantine` | Gold | Silver consolidado | Diária | `id_transacao` / `id` (CGU) | Engenheiro de Dados |
 | `pipeline_runs` | Gold (controle) | Airflow | A cada execução | `run_id` | Engenheiro de Dados |
 | `risk_scores` | Gold | Analytics (Sprint 5) | Diária (pós-batch) | `id_parlamentar` + `data_sk` | Cientista de Dados |
 
@@ -68,11 +68,15 @@ referência versionada em Git.
 |---|---|---|---|---|---|
 | 1 | Legislativo | Câmara dos Deputados | CD | — | — |
 | 2 | Legislativo | Senado Federal | SF | 020001 | 00001 |
+| 3 | Executivo | Poder Executivo | EX | — | — |
 
-> UG/Gestão da Câmara ainda não identificados (pendência aberta,
-> não bloqueia Sprint 1 — grão de `dim_orgao` não depende disso).
+> O `Poder Executivo` (EX) é um órgão **genérico por construção** (ADR-025):
+> a fonte CGU do cartão CPGF não expõe órgão no grão de transação — cada
+> transação é resolvida para `EX` por JOIN em `dim_orgao.sigla` (ADR-022.1,
+> sem literal de id). UG/Gestão da Câmara ainda não identificados (pendência
+> aberta, não bloqueia Sprint 1 — grão de `dim_orgao` não depende disso).
 
-### 2.2 dim_unidade_gestora (ADR-010 — schema criado, tabela inativa na v1)
+### 2.2 dim_unidade_gestora (ADR-010/ADR-025 — ATIVA desde o `fact_cartao_cpgf`)
 
 | Campo | Tipo | Nulos | Descrição |
 |---|---|---|---|
@@ -80,13 +84,18 @@ referência versionada em Git.
 | `codigo` | VARCHAR | 0% | Código da UG na fonte de origem |
 | `gestao` | VARCHAR | nullable | **Aplica-se apenas quando `fonte_origem = 'SIAFI'`** — não preencher para outras fontes |
 | `nome` | VARCHAR | 0% | Ex: `CAMPUS DUQUE DE CAXIAS` |
-| `id_orgao` | BIGINT (FK) | 0% | Referencia `dim_orgao` |
+| `id_orgao` | BIGINT (FK) | 0% | Referencia `dim_orgao` (v1: sempre EX, via JOIN) |
 | `fonte_origem` | VARCHAR | 0% | `SIAFI` \| `CGU` \| `Tesouro Nacional` \| outro |
 
 **Chave natural:** (`fonte_origem`, `codigo`) — nunca `codigo` isolado.
 
-> Tabela sem registros na v1 (ADR-010, item 6). `fact_despesa.id_unidade_gestora`
-> permanece `NULL` até existir RF que justifique este nível de granularidade.
+> Na v1 esta dimensão era schema-only (ADR-010, item 6). Com o
+> `fact_cartao_cpgf` (ADR-012/025) ela passa a ser **materializada a partir do
+> próprio grão de `silver_cartao`** (CGU): as UGs observadas nas transações são
+> o conteúdo da dimensão, permitindo `fact_cartao_cpgf.id_unidade_gestora`
+> NOT NULL (contrato gold.py). Para despesa parlamentar,
+> `fact_despesa.id_unidade_gestora` permanece `NULL` — a Câmara/Senado não
+> expõem UG no grão de despesa.
 
 ### 2.3 dim_fornecedor (schema revisado — ADR-011)
 
@@ -121,6 +130,53 @@ referência versionada em Git.
 | `id_unidade_gestora` | BIGINT (FK) | **100% na v1** | `NULL` até `dim_unidade_gestora` ser ativada (ver §2.2) |
 
 *(demais campos de `fact_despesa` — `valor_liquido`, `valor_glosa`, FKs de `dim_parlamentar`/`dim_fornecedor`/`dim_data` — inalterados em relação a PROJECT_CONTEXT.md §7)*
+
+### 2.5 fact_cartao_cpgf (ADR-012/ADR-025 — Onda 3 do Gold)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_transacao` | BIGINT | 0% | PK surrogate determinístico. Chave de referência externa/entre execuções: `id` nativo da CGU |
+| `id_orgao` | BIGINT (FK) | **0% — NOT NULL** | `dim_orgao` — v1: sempre `Poder Executivo` (sigla `EX`, ADR-025), via JOIN por sigla (ADR-022.1) |
+| `id_unidade_gestora` | BIGINT (FK) | **0% — NOT NULL** | `dim_unidade_gestora` (CGU) — a fonte entrega a UG nativamente no grão |
+| `id_fornecedor` | BIGINT (FK) | **nullable** | `dim_fornecedor` — só preenchido quando o CNPJ/CPF do estabelecimento resolve na dimensão (ADR-011) |
+| `data_sk` | BIGINT (FK) | 0% | `dim_data` — YYYYMMDD de `data_transacao` |
+| `portador_nome` / `portador_ cpf_ mascarado` | VARCHAR | 0% | Próprio da CGU (CPF já mascarado pela fonte) |
+| `valor_transacao` | DECIMAL | 0% | Valor da transação |
+
+*> Grão: **uma transação** CPGF (`silver_cartao`). Não referencia `dim_parlamentar` — o portador pertence estruturalmente ao Executivo; correlação futura com parlamentar exige bridge dedicada (ADR-012.3). Transações cujas FKs de órgão/UG/data não resolvem vão a `fact_cartao_cpgf_quarantine` (ADR-018/022) — motivos `orgao_nao_resolvido`, `unidade_gestora_nao_resolvida`, `data_nao_resolvida`.*
+
+### 2.6 fact_cartao_cpgf_quarantine (ADR-018/022)
+
+> Complemento do fato: transações **não promovidas**, com `motivo_quarentena`
+> explícito (`orgao_nao_resolvido` \| `unidade_gestora_nao_resolvida` \|
+> `data_nao_resolvida`). Nenhuma transação é descartada em silêncio;
+> reconstruível pela chave natural `id` (CGU). `id_fornecedor` NULL **não**
+> gera quarentena — o contrato é nullable (ADR-012) e o lag observado pelos
+> testes `fk_orphan_pct`/`relationships` (ADR-022.3a).
+
+### 2.7 supplier_concentration (ADR-021 — agregado analítico puro)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `ano` | INT | 0% | Ano fiscal (de `dim_data.ano`) |
+| `id_parlamentar` | BIGINT (FK) | 0% | `dim_parlamentar` — chave natural do parlamentar |
+| `num_fornecedores` | BIGINT | 0% | nº de fornecedores distintos do parlamentar no ano |
+| `total_valor` | DECIMAL | 0% | `SUM(valor_liquido)` do parlamentar no ano |
+| `hhi` | DOUBLE | 0% | Índice HHI: `SUM(participacao^2)`, `participacao` = total do fornecedor / total do parlamentar no ano — ∈ (0, 1] |
+
+> Grão: **um parlamentar por ano**. Fonte `fact_despesa` (agregado puro, sem ML — ADR-021); única tabela com a métrica `hhi` isolada para `supplier_concentration_score` (§9).
+
+### 2.8 supplier_growth (ADR-021 — agregado analítico puro)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `ano` | INT | 0% | Ano fiscal (de `dim_data.ano`) |
+| `id_fornecedor` | BIGINT (FK) | 0% | `dim_fornecedor` — id do fornecedor |
+| `valor_recebido` | DECIMAL | 0% | `SUM(valor_liquido)` do fornecedor no ano |
+| `valor_ano_anterior` | DECIMAL | **nulo no 1º período** | receita do fornecedor no ano anterior (YoY) |
+| `variacao_pct` | DOUBLE | **nulo no 1º período** | `(valor_recebido - valor_ano_anterior) / valor_ano_anterior` |
+
+> Grão: ``(ano, id_fornecedor)``. Fonte `fact_despesa` (agregado puro, sem ML — ADR-021).
 
 ---
 
