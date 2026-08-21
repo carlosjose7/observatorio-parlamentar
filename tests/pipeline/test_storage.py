@@ -14,6 +14,13 @@ from pipeline.storage import LocalParquetStorage, MinioParquetStorage
 class FakeMinio:
     def __init__(self):
         self.objects: dict[str, bytes] = {}
+        self.buckets: set[str] = set()
+
+    def bucket_exists(self, bucket):
+        return bucket in self.buckets
+
+    def make_bucket(self, bucket):
+        self.buckets.add(bucket)
 
     def list_objects(self, _bucket, prefix, recursive):
         assert recursive
@@ -78,6 +85,13 @@ def test_factories_escolhem_backend_e_normalizam_endpoint(monkeypatch, tmp_path)
         def __init__(self, host, **kwargs):
             self.host = host
             self.kwargs = kwargs
+
+        def bucket_exists(self, bucket):
+            return False
+
+        def make_bucket(self, bucket):
+            self.buckets = getattr(self, "buckets", set())
+            self.buckets.add(bucket)
 
     env = SimpleNamespace(
         minio_endpoint="https://minio.local:9000",

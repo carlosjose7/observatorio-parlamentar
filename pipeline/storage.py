@@ -107,6 +107,11 @@ class MinioParquetStorage:
     def __init__(self, client, bucket: str):
         self.client = client
         self.bucket = bucket
+        # Garante a existência do bucket (cria se ausente). Sem isso, a
+        # primeira escrita em MinIO falha com NoSuchBucket — corrige o bug
+        # que derrubou a carga Bronze (produção 20/08/2026).
+        if not self.client.bucket_exists(self.bucket):
+            self.client.make_bucket(self.bucket)
 
     def _prefixo(self, rel_dir: Path) -> str:
         return str(rel_dir).replace("\\", "/").lstrip("/") + "/"
