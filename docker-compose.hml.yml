@@ -29,7 +29,8 @@ services:
     env_file: ${MINIO_ENV_FILE:-.env}
     command: server /data --console-address ":9001"
     # Portas do host distintas do PRD (que usa 9000/9001) para coexistência.
-    ports:
+    # !override: substitui (não faz merge com) os ports do docker-compose.yml.
+    ports: !override
       - "127.0.0.1:19000:9000"
       - "127.0.0.1:19001:9001"
 
@@ -43,6 +44,29 @@ services:
       - ./data.hml:/app/data
     ports:
       - "127.0.0.1:18000:8000"
+
+  airflow-webserver:
+    env_file: ${PIPELINE_ENV_FILE:-.env}
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env.hml}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
+      - PYTHONPATH=/opt/airflow
+      - AIRFLOW__WEBSERVER__RBAC=True
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env.hml}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./pipeline:/opt/airflow/pipeline
+      - ./config.hml:/opt/airflow/config
+      - ./data.hml:/opt/airflow/data
+    ports: !override
+      - "127.0.0.1:18080:8080"
 
   airflow-scheduler:
     env_file: ${PIPELINE_ENV_FILE:-.env}
