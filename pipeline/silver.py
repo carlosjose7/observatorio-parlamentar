@@ -162,6 +162,12 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
     para `string` antes da inferência — uma coluna de texto integralmente nula
     (ex: `nome_parlamentar` da Câmara) era inferida como `INTEGER` pelo DuckDB,
     derrubando o INSERT da outra fonte (Senado) com `ConversionException`.
+
+    Corretivo QA (E2E HML 21/08/2026): normalizar para `string` não basta —
+    o DuckDB infere uma coluna `string` integralmente nula como `INTEGER`
+    ainda assim. Depois do CREATE, conferimos o tipo inferido contra o dtype
+    do DataFrame: colunas de texto (object/string) que foram inferidas como
+    numéricas são corrigidas para VARCHAR via ALTER COLUMN.
     """
     definicao = df.copy()
     for col in definicao.columns:
@@ -171,6 +177,24 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
     con.execute(
         f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
     )
+
+    # Corrige inferência incorreta: coluna de texto (object/string) inferida
+    # como numérica porque todos os valores são nulos na primeira carga.
+    tipos_inferidos = {
+        linha[0]: linha[1]
+        for linha in con.execute(f"DESCRIBE {tabela}").fetchall()
+    }
+    numericos = {"INTEGER", "BIGINT", "DOUBLE", "FLOAT", "HUGEINT", "SMALLINT"}
+    for col in definicao.columns:
+        if definicao[col].dtype.kind in ("O", "U", "S"):
+            if tipos_inferidos.get(col) in numericos:
+                con.execute(f'ALTER TABLE {tabela} ALTER COLUMN "{col}" TYPE VARCHAR')
+                logger.warning(
+                    "correcao_tipo_texto",
+                    tabela=tabela,
+                    coluna=col,
+                    tipo_inferido=tipos_inferidos.get(col),
+                )
 
     existentes = {
         linha[0]
