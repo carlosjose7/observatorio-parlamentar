@@ -31,8 +31,12 @@ api = [
 ]
 pipeline = [
     "apache-airflow[postgres]==2.9.3",
-    "dbt-core>=1.7.0",
-    "dbt-duckdb>=1.7.0",
+    # dbt-core e dbt-duckdb devem compartilhar a mesma major.minor: o
+    # adaptador duckdb é versionado acompanhando o dbt-core, e versões
+    # divergentes quebram em runtime (dbt-duckdb 1.11 requer dbt-core 1.9+,
+    # `Capability.MicrobatchConcurrency` — E2E HML 21/08/2026).
+    "dbt-core~=1.8.0",
+    "dbt-duckdb~=1.8.0",
     "duckdb>=1.0.0",
     "minio>=7.2.0",
     "pandera>=0.18.0",
