@@ -132,10 +132,18 @@ class ResultadoCargaSilver:
 
 
 def _conectar_duckdb():
-    """Abre uma conexão DuckDB no caminho de `DUCKDB_DATABASE_PATH`."""
-    import duckdb
+    """Abre uma conexão DuckDB no caminho de `DUCKDB_DATABASE_PATH`.
 
-    return duckdb.connect(get_env().duckdb_database_path)
+    Cria o diretório pai se necessário (ex: primeira carga em ambiente novo
+    onde `data/silver/` ainda não existe) — `duckdb.connect` não cria
+    diretórios e falharia com IO Error.
+    """
+    import duckdb
+    from pathlib import Path
+
+    caminho = Path(get_env().duckdb_database_path)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    return duckdb.connect(str(caminho))
 
 
 def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
