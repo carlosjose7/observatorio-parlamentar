@@ -47,12 +47,11 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values:
-                  - 'parlamentar_ambiguo'
-                  - 'parlamentar_fora_cobertura'
-                  - 'parlamentar_nao_resolvido'
-                  - 'data_nao_resolvida'
+              values:
+                - 'parlamentar_ambiguo'
+                - 'parlamentar_fora_cobertura'
+                - 'parlamentar_nao_resolvido'
+                - 'data_nao_resolvida'
 
   - name: fact_despesa
     description: >
@@ -72,15 +71,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: surrogate_key
@@ -88,15 +85,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: surrogate_key
+              to: ref('dim_parlamentar')
+              field: surrogate_key
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: surrogate_key
+              to: ref('dim_parlamentar')
+              field: surrogate_key
               config:
                 severity: warn
       - name: id_fornecedor
@@ -104,15 +99,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
       - name: id_orgao
@@ -120,15 +113,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
       - name: cod_tipo
@@ -136,15 +127,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_categoria_despesa')
-                field: cod_tipo
+              to: ref('dim_categoria_despesa')
+              field: cod_tipo
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_categoria_despesa')
-                field: cod_tipo
+              to: ref('dim_categoria_despesa')
+              field: cod_tipo
               config:
                 severity: warn
       - name: data_sk
@@ -152,15 +141,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
       - name: cod_documento
@@ -189,12 +176,11 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values:
-                  - 'parlamentar_ambiguo'
-                  - 'parlamentar_fora_cobertura'
-                  - 'parlamentar_nao_resolvido'
-                  - 'fornecedor_nao_resolvido'
-                  - 'orgao_nao_resolvido'
-                  - 'categoria_nao_resolvida'
-                  - 'data_nao_resolvida'
+              values:
+                - 'parlamentar_ambiguo'
+                - 'parlamentar_fora_cobertura'
+                - 'parlamentar_nao_resolvido'
+                - 'fornecedor_nao_resolvido'
+                - 'orgao_nao_resolvido'
+                - 'categoria_nao_resolvida'
+                - 'data_nao_resolvida'

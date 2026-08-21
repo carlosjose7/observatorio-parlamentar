@@ -25,15 +25,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: num_fornecedores
@@ -59,15 +57,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
       - name: valor_recebido
@@ -93,15 +89,13 @@ models:
           - not_null
           - unique
           - relationships:
-              arguments:
-                to: ref('fact_despesa')
-                field: id_despesa
+              to: ref('fact_despesa')
+              field: id_despesa
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('fact_despesa')
-                field: id_despesa
+              to: ref('fact_despesa')
+              field: id_despesa
               config:
                 severity: warn
       - name: id_parlamentar
@@ -109,30 +103,26 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: id_fornecedor
         description: Fornecedor da despesa (nullable — nem toda despesa resolve).
         tests:
           - relationships:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
       - name: data_sk
@@ -140,9 +130,8 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
       - name: valor_liquido
@@ -190,15 +179,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: id_fornecedor
@@ -206,15 +193,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
       - name: periodo
@@ -259,8 +244,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['parlamentar', 'fornecedor']
+              values: ['parlamentar', 'fornecedor']
       - name: periodo
         description: Ano do período do grafo.
         tests:
@@ -303,15 +287,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: id_parlamentar_b
@@ -319,15 +301,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: periodo

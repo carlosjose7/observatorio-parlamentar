@@ -37,8 +37,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['CNPJ', 'CPF']
+              values: ['CNPJ', 'CPF']
       - name: nome_fornecedor
         tests:
           - not_null
@@ -95,23 +94,20 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
       - name: fonte_origem
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['CGU']
+              values: ['CGU']
 
 seeds:
   - name: dim_orgao
@@ -125,8 +121,7 @@ seeds:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['Legislativo', 'Executivo', 'Judiciário']
+              values: ['Legislativo', 'Executivo', 'Judiciário']
       - name: instituicao
         tests:
           - not_null

@@ -41,15 +41,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: id_parlamentar
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
               config:
                 severity: warn
       - name: surrogate_key
@@ -57,15 +55,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: surrogate_key
+              to: ref('dim_parlamentar')
+              field: surrogate_key
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_parlamentar')
-                field: surrogate_key
+              to: ref('dim_parlamentar')
+              field: surrogate_key
               config:
                 severity: warn
       - name: id_orgao
@@ -73,15 +69,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
       - name: data_sk
@@ -89,15 +83,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
       - name: tipo_emenda
@@ -111,10 +103,9 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values:
-                  - 'autor_colegiado'
-                  - 'autor_ambiguo'
-                  - 'autor_fora_cobertura'
-                  - 'autor_nao_resolvido'
-                  - 'orgao_nao_resolvido'
+              values:
+                - 'autor_colegiado'
+                - 'autor_ambiguo'
+                - 'autor_fora_cobertura'
+                - 'autor_nao_resolvido'
+                - 'orgao_nao_resolvido'

@@ -15,8 +15,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['camara', 'senado']
+              values: ['camara', 'senado']
       - name: id_parlamentar
         description: Chave natural por fonte (id_deputado ou id_senador).
         tests:
@@ -44,8 +43,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: [true, false]
+              values: [true, false]
 
   - name: dim_parlamentar_quarantine
     description: Linhas de silver_parlamentar rejeitadas em dim_parlamentar (ADR-018).
@@ -77,5 +75,4 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['autor_colegiado', 'autor_ambiguo', 'autor_fora_cobertura', 'autor_nao_resolvido']
+              values: ['autor_colegiado', 'autor_ambiguo', 'autor_fora_cobertura', 'autor_nao_resolvido']

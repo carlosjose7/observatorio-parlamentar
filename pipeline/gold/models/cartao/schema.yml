@@ -36,15 +36,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_orgao')
-                field: id_orgao
+              to: ref('dim_orgao')
+              field: id_orgao
               config:
                 severity: warn
       - name: id_unidade_gestora
@@ -52,30 +50,26 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_unidade_gestora')
-                field: id_unidade_gestora
+              to: ref('dim_unidade_gestora')
+              field: id_unidade_gestora
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_unidade_gestora')
-                field: id_unidade_gestora
+              to: ref('dim_unidade_gestora')
+              field: id_unidade_gestora
               config:
                 severity: warn
       - name: id_fornecedor
         description: dim_fornecedor do estabelecimento (nullable por contrato — ADR-012; só preenchido quando CNPJ/CPF da fonte resolve na dimensão).
         tests:
           - relationships:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_fornecedor')
-                field: id_fornecedor
+              to: ref('dim_fornecedor')
+              field: id_fornecedor
               config:
                 severity: warn
       - name: data_sk
@@ -83,15 +77,13 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
           - fk_orphan_pct:
-              arguments:
-                to: ref('dim_data')
-                field: data_sk
+              to: ref('dim_data')
+              field: data_sk
               config:
                 severity: warn
       - name: portador_nome
@@ -112,8 +104,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values:
-                  - 'orgao_nao_resolvido'
-                  - 'unidade_gestora_nao_resolvida'
-                  - 'data_nao_resolvida'
+              values:
+                - 'orgao_nao_resolvido'
+                - 'unidade_gestora_nao_resolvida'
+                - 'data_nao_resolvida'

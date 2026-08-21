@@ -15,8 +15,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['success', 'failed', 'partial']
+              values: ['success', 'failed', 'partial']
   - name: data_quality_report
     description: >
       Data Quality Report da Silver (ADR-015) promovido à Gold (ADR-031) —
