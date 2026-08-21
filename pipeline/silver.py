@@ -169,6 +169,14 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
 
     esquema = schema_para_tabela(tabela)
 
+    # Normaliza colunas object para string e registra o DataFrame de referência
+    # para criação/migração de schema (usado em ambos os ramos abaixo).
+    definicao = df.copy()
+    for col in definicao.columns:
+        if definicao[col].dtype.kind == "O":
+            definicao[col] = definicao[col].astype("string")
+    con.register("tmp_define", definicao)
+
     if esquema is not None:
         # DDL explícito: CREATE TABLE IF NOT EXISTS com tipos declarados.
         cols_ddl = ", ".join(
@@ -182,11 +190,6 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
                 f"'{descricao.replace(chr(39), chr(39) * 2)}'"
             )
     else:
-        definicao = df.copy()
-        for col in definicao.columns:
-            if definicao[col].dtype.kind == "O":
-                definicao[col] = definicao[col].astype("string")
-        con.register("tmp_define", definicao)
         con.execute(
             f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
         )
@@ -221,12 +224,18 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
     }
     novos = [col for col in df.columns if col not in existentes]
     if novos:
-        tipos = {
+        # Tipo da coluna nova: declarativo (se a tabela tem schema explícito e a
+        # coluna está nele) ou inferido do DataFrame (tabelas de controle).
+        tipos = {}
+        if esquema is not None:
+            tipos = {col: tipo for col, (tipo, _desc) in esquema.items()}
+        tipos_inferidos = {
             linha[0]: linha[1]
             for linha in con.execute("DESCRIBE SELECT * FROM tmp_define").fetchall()
         }
         for col in novos:
-            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipos[col]}")
+            tipo = tipos.get(col) or tipos_inferidos.get(col)
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipo}")
         logger.info(
             "migracao_schema_silver",
             tabela=tabela,
