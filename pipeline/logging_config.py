@@ -1,4 +1,4 @@
-"""pipeline/logging.py — configuração do logging estruturado (structlog).
+"""pipeline/logging_config.py — configuração do logging estruturado (structlog).
 
 Aplica a seção `logging:` de `config/pipeline.yaml` (ADR-008): o formato
 (`json` por padrão) e o nivel (via env var declarada em `nivel_env_var`).
@@ -7,6 +7,11 @@ declarava `formato: "json"` mas nenhum módulo configurava structlog).
 
 Chamado pelos entrypoints reais do pipeline (Airflow DAG e `run_pipeline`)
 antes da primeira emissão de log.
+
+NOMEADO `logging_config` (não `logging`) de propósito: em produção o
+docker-compose monta `./pipeline:/opt/airflow/dags` com
+`PYTHONPATH=/opt/airflow/dags`, e um módulo chamado `logging` sombrearia o
+stdlib do Python, quebrando o próprio Airflow em import circular.
 """
 
 from __future__ import annotations

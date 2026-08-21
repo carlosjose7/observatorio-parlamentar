@@ -31,7 +31,7 @@ from pipeline.config import (
     get_sources,
 )
 from pipeline.contracts import ExtractResult, LoadMetadata
-from pipeline.logging import configure_logging
+from pipeline.logging_config import configure_logging
 from pipeline.runs import PipelineRun, write_pipeline_run
 from pipeline.senado import extract as senado_extract
 from pipeline.storage import Storage, criar_storage

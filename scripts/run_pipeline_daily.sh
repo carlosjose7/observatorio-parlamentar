@@ -48,9 +48,12 @@ log() {
 
 # ── Cleanup garantido (ADR-007: perfil não fica residente) ──────
 cleanup() {
-    log "Finalizando: docker compose ${COMPOSE_PROFILE_ARGS} down"
+    log "Finalizando: removendo containers do perfil pipeline"
     cd "$PROJECT_DIR"
-    docker compose ${COMPOSE_PROFILE_ARGS} down
+    # `down` removeria TODA a stack (api/dashboard/nginx/minio) — o perfil
+    # precisa de stop+rm escopado aos serviços do pipeline (ADR-007).
+    docker compose stop postgres airflow-scheduler >/dev/null 2>&1 || true
+    docker compose rm -f postgres airflow-scheduler >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 

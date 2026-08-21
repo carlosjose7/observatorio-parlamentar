@@ -89,7 +89,7 @@ def _habilitar_validacao(limite: int) -> None:
 
 def _rodar_bronze() -> str:
     from pipeline.bronze import run_pipeline
-    from pipeline.logging import configure_logging
+    from pipeline.logging_config import configure_logging
     from pipeline.storage import criar_storage
     from pipeline.watermark import JsonFileStore
 

@@ -306,7 +306,7 @@ observatorio-parlamentar/
 │   ├── gold.py                       # Sprint 4
 │   ├── quality.py                    # Sprint 3
 │   ├── parlamento.py                 # Sprint 3
-│   └── logging.py
+│   └── logging_config.py
 ├── analytics/                        # Módulos analíticos (Sprint 5)
 │   ├── features.py                   # Contrato da Feature Store (ADR-028)
 │   ├── parliamentarians/

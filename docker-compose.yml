@@ -118,12 +118,18 @@ services:
       airflow users create --username "$$AIRFLOW_ADMIN_USER" --password "$$AIRFLOW_ADMIN_PASSWORD" --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
       airflow webserver
       "
+    env_file: ${PIPELINE_ENV_FILE:-.env}
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env}
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      # DAGs em ./pipeline/dags; o pacote `pipeline` fica em /opt/airflow/pipeline
+      # (nunca montar ./pipeline em /opt/airflow/dags — sobrescreve o pacote
+      # instalado pelo pip e quebra `import pipeline`).
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
+      - PYTHONPATH=/opt/airflow
       - AIRFLOW__WEBSERVER__RBAC=True
       - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
       - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
@@ -131,7 +137,7 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
-      - ./pipeline:/opt/airflow/dags
+      - ./pipeline:/opt/airflow/pipeline
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
     ports:
@@ -154,6 +160,7 @@ services:
       airflow db upgrade &&
       airflow scheduler
       "
+    env_file: ${PIPELINE_ENV_FILE:-.env}
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
@@ -161,11 +168,16 @@ services:
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
       - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=300
+      # DAGs em ./pipeline/dags; o pacote `pipeline` fica em /opt/airflow/pipeline
+      # (nunca montar ./pipeline em /opt/airflow/dags — sobrescreve o pacote
+      # instalado pelo pip e quebra `import pipeline`).
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
+      - PYTHONPATH=/opt/airflow
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
-      - ./pipeline:/opt/airflow/dags
+      - ./pipeline:/opt/airflow/pipeline
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
     depends_on:

@@ -169,7 +169,7 @@ A observabilidade é tratada em quatro camadas complementares:
 `fonte` e contexto da etapa. O formato é configurado em
 `config/pipeline.yaml` (`logging.formato: json`), com
 `TimeStamper(utc=True)` e renderização JSON em produção /
-console em dev (`pipeline/logging.py`).
+console em dev (`pipeline/logging_config.py`).
 
 **2. Rastreabilidade por execução (RF-12).** Toda carga é gravada com o
 trio `run_id` / `pipeline_version` / `execution_timestamp` (padrão
