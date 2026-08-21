@@ -1,0 +1,19 @@
+# API settings (Sprint 6) — REST read-only sobre a camada Gold (DuckDB).
+# Fonte única de configuração da API (ADR-008): valores são validados em
+# pipeline/config.py:ApiSettings. Nenhuma régua de negócio é hardcoded no
+# código — paginação, limites e identificação da API vivem aqui.
+api:
+  titulo: "Observatório Parlamentar API"
+  versao: "0.1.0"
+  descricao: "API da Plataforma de Inteligência Parlamentar Brasileira"
+  host: "0.0.0.0"
+  porta: 8000
+  # Variável de ambiente que aponta para o DuckDB da camada Gold (leitura).
+  # A API NUNCA lê bronze/silver/analytics (ADR-026).
+  caminho_db_env_var: "DUCKDB_DATABASE_PATH"
+  # Paginação default e teto — limites de recurso da API (RF-04).
+  pagina_padrao: 1
+  limite_padrao: 20
+  limite_maximo: 100
+  # Menor ano consultável — primeiro ano de carga histórica do pipeline (2015).
+  ano_minimo_consulta: 2015

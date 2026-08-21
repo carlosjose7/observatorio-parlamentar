@@ -1,0 +1,67 @@
+# docker-compose.hml.yml — Overlay do ambiente HML (homologação).
+#
+# Uso (na VPS, a partir do repositório):
+#   docker compose -f docker-compose.yml -f docker-compose.hml.yml \
+#     -p hml --env-file .env.hml --profile pipeline \
+#     up -d postgres minio airflow-scheduler api
+#
+# Isolamento do PRD (que roda com o projeto `observatorio-parlamentar`):
+#   - `-p hml`    → volumes nomeados, rede e containers ganham o prefixo `hml_`
+#   - `.env.hml`  → credenciais e caminhos próprios (nunca toca `.env` do PRD)
+#   - `./config.hml`  → pipeline.yaml com `validacao.habilitado: true` e
+#                       `limite_periodos: 2` (janela curta, watermark isolado
+#                       em namespace `validacao:`)
+#   - `./data.hml`    → DuckDB/Parquet do HML (nunca o `./data` do PRD)
+#
+# Serviços herdados do docker-compose.yml com sobrescrita (merge por chave):
+#   postgres, minio, airflow-scheduler, api. Nginx/dashboard/certbot NÃO são
+#   levantados no HML (não há TLS no teste E2E).
+
+services:
+  postgres:
+    env_file: ${PIPELINE_ENV_FILE:-.env}
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-airflow}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env.hml}
+      - POSTGRES_DB=${POSTGRES_DB:-airflow}
+
+  minio:
+    env_file: ${MINIO_ENV_FILE:-.env}
+    command: server /data --console-address ":9001"
+    # Portas do host distintas do PRD (que usa 9000/9001) para coexistência.
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+
+  api:
+    env_file: ${API_ENV_FILE:-.env}
+    environment:
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./data.hml:/app/data
+    ports:
+      - "127.0.0.1:18000:8000"
+
+  airflow-scheduler:
+    env_file: ${PIPELINE_ENV_FILE:-.env}
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:?Defina AIRFLOW_FERNET_KEY no .env.hml}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=300
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
+      - PYTHONPATH=/opt/airflow
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - DUCKDB_DATABASE_PATH=${DUCKDB_DATABASE_PATH:-data/silver/observatorio.duckdb}
+    volumes:
+      - ./pipeline:/opt/airflow/pipeline
+      - ./config.hml:/opt/airflow/config
+      - ./data.hml:/opt/airflow/data
+    ports:
+      - "127.0.0.1:18080:8080"

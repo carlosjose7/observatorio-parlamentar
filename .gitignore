@@ -12,6 +12,7 @@ venv/
 .env
 .env.*
 !.env.example
+!.env.hml.example
 .streamlit/secrets.toml
 *.pem
 *.key
@@ -40,6 +41,7 @@ data/silver/*
 !data/silver/.gitkeep
 data/gold/*
 !data/gold/.gitkeep
+data.hml/
 logs/*
 !logs/.gitkeep
 minio_data/
