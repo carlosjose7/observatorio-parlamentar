@@ -203,7 +203,12 @@ with DAG(
     description="Pipeline principal de ingestão e transformação de dados"
     " parlamentares (Câmara, Senado, CGU)",
     default_args=default_args,
-    schedule="@daily",
+    # Agendamento EXCLUSIVAMENTE externo (ADR-034): o timer systemd
+    # (observatorio-pipeline.timer) dispara o `run_pipeline_daily.sh`, que
+    # despausa e dispara o DAG. `schedule=None` impede o scheduler interno do
+    # Airflow de criar run próprio — sem isso, dois relógios independentes
+    # (systemd + Airflow `@daily`) competiam e duplicavam execuções.
+    schedule=None,
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=["observatorio", "principal"],

@@ -66,8 +66,11 @@ def test_dag_parseia_sem_erros():
 def test_dag_configuracao_basica():
     dag = _dagbag().get_dag("observatorio_pipeline")
     assert dag.dag_id == "observatorio_pipeline"
-    # Airflow 2.9 usa `schedule_interval`; o alias `.schedule` é 2.10+.
-    assert dag.schedule_interval == "@daily"
+    # Agendamento é EXCLUSIVAMENTE externo (ADR-034): o timer systemd dispara
+    # via script (despausa + trigger). `schedule=None` impede o scheduler do
+    # Airflow de criar run próprio — sem isso dois relógios competiam e
+    # duplicavam execuções (fix duplicação 22/08/2026).
+    assert dag.schedule_interval is None
     assert dag.catchup is False
     assert "observatorio" in dag.tags
     assert dag.default_args["retries"] == 1
