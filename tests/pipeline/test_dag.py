@@ -29,6 +29,20 @@ AIRFLOW = pytest.importorskip("airflow")
 from airflow.models import DagBag  # noqa: E402
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _airflow_metadata_db_ready():
+    """Inicializa o metadata DB do Airflow (tabela `dag`, etc.) antes do teste.
+
+    `DagBag.get_dag()` consulta `DagModel` no metadata DB; sem `airflow db
+    init` a tabela `dag` não existe e o teste falha com
+    `sqlite3.OperationalError: no such table: dag` (CI — airflow instalado).
+    Em dev (sem airflow) o módulo é pulado via `importorskip` no topo.
+    """
+    from airflow.utils import db
+
+    db.initdb()
+
+
 def _dagbag() -> DagBag:
     import pathlib
 
@@ -52,7 +66,8 @@ def test_dag_parseia_sem_erros():
 def test_dag_configuracao_basica():
     dag = _dagbag().get_dag("observatorio_pipeline")
     assert dag.dag_id == "observatorio_pipeline"
-    assert dag.schedule == "@daily"
+    # Airflow 2.9 usa `schedule_interval`; o alias `.schedule` é 2.10+.
+    assert dag.schedule_interval == "@daily"
     assert dag.catchup is False
     assert "observatorio" in dag.tags
     assert dag.default_args["retries"] == 1
@@ -61,7 +76,8 @@ def test_dag_configuracao_basica():
 
 def test_dag_tem_tres_tasks():
     dag = _dagbag().get_dag("observatorio_pipeline")
-    assert dag.task_ids == {"executar_bronze", "executar_silver", "executar_gold"}
+    # Airflow 2.9: `task_ids` é lista (set em versões mais novas) — normaliza.
+    assert set(dag.task_ids) == {"executar_bronze", "executar_silver", "executar_gold"}
 
 
 def test_dag_ordem_de_dependencias():
