@@ -33,10 +33,29 @@ Histórico das alterações, organizado por sprint (ver
 - **`pipeline_dag.py::_executar_gold`** — `NameError` latente: o snippet do
   subprocesso dbt usava `json.dumps`/`sys.path` sem importar `json`/`sys`
   (quebraria o Gold em produção). Import adicionados ao snippet.
+- **Duplicação de agendamento (Gate 2):** o DAG tinha `schedule="@daily"`
+  simultaneamente ao timer `systemd` — dois relógios independentes disparando
+  o mesmo pipeline (scheduler interno do Airflow + timer externo), causando
+  execuções concorrentes na primeira tentativa de backfill em produção.
+  Corrigido para `schedule=None` — agendamento passa a ser **exclusivamente
+  externo** via `observatorio-pipeline.timer` (ADR-034). `test_dag.py`
+  atualizado para refletir o novo contrato (`schedule_interval is None`).
+- **Reconciliação de cobertura:** medição anterior de 87% (pós-fixes E2E
+  HML) era resultado de `.coverage` acumulado/sujo entre execuções.
+  Medição limpa (`rm -f .coverage` + suíte completa) no commit `61c4c66`:
+  **374 passed, 93,53% cobertura** — valor de referência para o fechamento
+  da sprint.
 
-Resultado parcial da Sprint 9: Gates 1–4 implementados (Gate 2 aguarda
-validação na VPS; Gate 5/TLS bloqueado pelo DNS). **374 passed, 1 skipped
-(Airflow) local; 93,59% cobertura; Ruff verde.**
+Resultado parcial da Sprint 9 (verificado por auditoria direta em
+`61c4c66`): **Gates 1, 3, 4 e 5 concluídos e comprovados** (CI real rodando,
+Ruff estrito verde, README/guias completos, TLS ao vivo em
+`https://observatorio-parlamentar.com.br`). **Gate 2 (execução diária)
+implementado e corrigido, mas ainda sem validação de execução completa em
+produção** — `pipeline_runs` (controle gravado pela Bronze a cada run)
+segue vazio na VPS (`/api/pipeline/status` retorna `{"total":0}`); os dados
+hoje expostos na Gold (503 parlamentares, R$608M, 490k transações) vêm de
+carga anterior (HML/E2E), não de uma execução do timer já corrigido. Sprint
+9 **permanece EM ANDAMENTO** até essa validação.
 
 ---
 

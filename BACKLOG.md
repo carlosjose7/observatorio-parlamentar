@@ -794,14 +794,27 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `down` garantido no trap EXIT; timeouts via env vars.
 - ☑ Units `systemd` (`observatorio-pipeline.timer`/`.service`) em `infra/`
   (oneshot, 03:00 America/Sao_Paulo, `Persistent=true`).
-- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`;
-  instalação/atualização das units no `deploy.sh` (passo `[4/6]`).
+- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`
+  (posteriormente migrado para Oracle Linux/`opc`/firewalld — ver nota de
+  migração abaixo); instalação/atualização das units no `deploy.sh`.
 - ☑ **Bugfix latente:** `pipeline_dag.py::_executar_gold` usava
   `json.dumps`/`sys.path` no subprocesso do dbt sem importá-los
   (`NameError` em produção) — `import json`/`import sys` adicionados.
-- ☐ **Validação real na VPS pendente** (padrão do projeto: não fechar gate
-  sem validação). Testar `sudo -n true && echo OK`; se a VPS já existia,
-  rodar `sudo usermod -aG docker ubuntu` manualmente.
+- ☑ **Bugfix de duplicação de agendamento:** `schedule="@daily"` no DAG
+  competia com o timer `systemd`, causando execuções concorrentes na
+  primeira tentativa de backfill em produção. Corrigido para
+  `schedule=None` — agendamento exclusivamente externo (mesclado em
+  `61c4c66`, PR #6). `test_dag.py` atualizado.
+- ☐ **Validação real de execução completa na VPS — PENDENTE.** Critério de
+  aceite: timer `enabled`/`active (waiting)` e ao menos 1 execução
+  `SUCCESS` com `pipeline_runs` populado (verificável via
+  `GET /api/pipeline/status`). Estado verificado em 22/08: timer
+  `disabled`/`inactive (dead)` (desligado durante o debug da duplicação,
+  `journalctl` mostra `Deactivated successfully` às 01:01 UTC);
+  `/api/pipeline/status` retorna `{"total":0,"itens":[]}`. Os dados hoje
+  expostos na Gold (503 parlamentares, R$608M) vêm de carga anterior
+  (HML/E2E), não de execução do timer com o fix aplicado. **Gate 2 não
+  pode ser fechado sem essa validação.**
 
 ### Gate 3 — Ruff estrito (dívida deferida na Sprint 8)
 
@@ -810,8 +823,10 @@ instalação/deploy/operação, e fechar dívidas registradas.
   auto-fix aplicado (113 correções). Deferidos para porta própria: `E501`
   (line-too-long — exigiria reformatação massiva) e `B904/B905`
   (semânticas, revisão manual).
-- ☑ Validado: `ruff check .` verde; suíte completa **374 passed, 1 skipped
-  (Airflow), 93,59% cobertura**.
+- ☑ Validado (auditoria direta, `61c4c66`): `ruff check .` verde; suíte
+  completa **374 passed, 93,53% cobertura** (medição limpa, `.coverage`
+  removido antes da execução — substitui a leitura anterior de 93,59%/87%,
+  ambas afetadas por cache de cobertura entre execuções).
 
 ### Gate 4 — Documentação
 
@@ -827,16 +842,24 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Gate 5 — TLS (autenticação/TLS — dívida da Sprint 7, ADR-007)
 
-- ☐ Nginx com HTTPS via Let's Encrypt/certbot — **bloqueado até o registro A
-  de `observatorio-parlamentar.com.br` apontar para a VPS Oracle** (certbot
-  falha a validação HTTP-01 sem DNS resolvendo). Até lá, tráfego em `:80`
-  sem criptografia (dado público agregado — risco aceito e documentado).
+- ☑ Nginx com HTTPS via Let's Encrypt/certbot. Domínio próprio
+  (`observatorio-parlamentar.com.br`, Registro.br) com zona DNS própria
+  (NS `e.sec.dns.br`/`f.sec.dns.br`), registro A raiz + `www` → VPS Oracle.
+  Certificado emitido (CN=`observatorio-parlamentar.com.br`, SAN `www`,
+  expira 18/11/2026), renovação automática via container `certbot`
+  (`certbot renew` a cada 12h). Config Nginx com entrada seletiva
+  (bootstrap :80/ACME vs. SSL :443) evita crash-loop sem certificado.
+  **Verificado por auditoria externa direta** (fetch a
+  `https://observatorio-parlamentar.com.br/` — HTTPS válido, sem redirect
+  para HTTP, App Streamlit servido corretamente).
 
-*Versão atual: 2.5 — **Sprint 9 em andamento** — ADR-034 aceito (execução
-diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
-**Progresso:** Gate 1 (ci.yml: Gitleaks+Ruff+pytest, 379 testes esperados no
-CI), Gate 2 (script diário + units systemd + usermod docker + bugfix NameError
-do DAG; **aguardando validação na VPS**), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037
-habilitados, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia de
-deploy/operação + healthchecks docker-compose). Gate 5 (TLS) **bloqueado até
-DNS apontar para a VPS**. ADRs 001-034.*
+*Versão atual: 2.6 — **Sprint 9 em andamento.** ADR-034 aceito. Auditoria
+direta em `61c4c66` (main = develop, PR #6 mesclado) confirma: **Gates 1, 3,
+4 e 5 concluídos e comprovados** com evidência externa (CI real, Ruff
+estrito 93,53%/374 passed, README/guias completos, TLS ao vivo). **Gate 2
+implementado e com bug de duplicação corrigido (`schedule=None`), mas
+timer `systemd` está desligado na VPS e nenhuma execução completa foi
+registrada em produção** (`pipeline_runs` vazio, verificável via
+`/api/pipeline/status`) — dados atuais da Gold vêm de carga HML/E2E
+anterior, não de execução de produção pós-fix. Sprint 9 não pode ser
+fechada até essa validação. ADRs 001-034.*
