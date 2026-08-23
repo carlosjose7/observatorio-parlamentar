@@ -24,7 +24,9 @@ vars:
   # (E2E Sprint 6.5): o DuckDB resolve globs relativos ao CWD do processo
   # (não ao arquivo do banco) — `../../data/...` a partir do repo root
   # resolvia a 0 arquivos e `pipeline_runs` ficava vazio. Agora relativo ao
-  # repo root. Em produção com MinIO, overridar para o local remoto.
+  # repo root. Em produção/HML o `get_dbt_vars()` (pipeline/config.py)
+  # overrida via `--vars` para o S3 do MinIO (s3://bronze/controle/...)
+  # quando `MINIO_ENDPOINT` está configurado — ver ADR-019.
   bronze_pipeline_runs_dir: "data/bronze/controle/pipeline_runs/*.parquet"
   # Discriminador primário de autoria colegiada (ADR-017.3.a). Valores reais
   # do enum da fonte a confirmar no catálogo — item de seguimento no BACKLOG.
