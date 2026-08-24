@@ -103,6 +103,10 @@ def _executar_gold(**context):
 
     # Garante o schema `ml_staging` vazio (ADR-026) — tabelas de controle.
     _garantir_ml_staging_vazio()
+    # Garante `silver_cartao`/`silver_emenda` vazias quando a CGU não trouxe
+    # dados (ex: janela curta de validação no HML ou fonte sem transações no
+    # período) — o dbt build completo falharia com "table does not exist".
+    _garantir_silver_cgu_vazio()
 
     RAIZ = Path(__file__).resolve().parents[2]
     GOLD = RAIZ / "pipeline" / "gold"
@@ -194,6 +198,45 @@ def _garantir_ml_staging_vazio() -> None:
             "ml_staging_garantido",
             tabelas=len(ML_STAGING_VAZIO),
         )
+    finally:
+        con.close()
+
+
+def _garantir_silver_cgu_vazio() -> None:
+    """Cria `silver_cartao`/`silver_emenda` VAZIAS quando a CGU não trouxe dados.
+
+    A CGU (cartão CPGF/emendas) pode não retornar transações em um período
+    (ex: janela curta de validação no HML, ou fonte sem dados recentes). A
+    Silver então não cria as tabelas, e o `dbt build` completo falha no Gold
+    com "table silver_cartao/silver_emenda does not exist" — mesmo sintoma do
+    `ml_staging` (ADR-026). Schema declarativo de `pipeline/schemas_silver.py`
+    (fonte única): cria a tabela no schema `main` do DuckDB da Silver/Gold.
+    """
+    import os
+
+    import duckdb
+
+    from pipeline.schemas_silver import SCHEMAS_SILVER
+
+    alvos = ("silver_cartao", "silver_emenda")
+    caminho = os.environ["DUCKDB_DATABASE_PATH"]
+    con = duckdb.connect(caminho)
+    try:
+        for tabela in alvos:
+            existentes = {
+                r[0]
+                for r in con.execute(
+                    "select table_name from information_schema.tables"
+                    " where table_schema = 'main'"
+                ).fetchall()
+            }
+            if tabela in existentes:
+                continue
+            colunas = ", ".join(
+                f'"{nome}" {tipo}' for nome, (tipo, _) in SCHEMAS_SILVER[tabela].items()
+            )
+            con.execute(f'create table "{tabela}" ({colunas})')
+        logger.info("silver_cgu_garantido", tabelas=list(alvos))
     finally:
         con.close()
 

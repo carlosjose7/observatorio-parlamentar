@@ -16,7 +16,9 @@ observatorio_gold:
           scope: "s3://bronze"
           key_id: "{{ env_var('MINIO_ACCESS_KEY', env_var('MINIO_ROOT_USER', '')) }}"
           secret: "{{ env_var('MINIO_SECRET_KEY', env_var('MINIO_ROOT_PASSWORD', '')) }}"
-          endpoint: "{{ env_var('MINIO_ENDPOINT', '') }}"
+          # DuckDB espera o endpoint S3 SEM scheme (host:port); o MINIO_ENDPOINT
+          # do compose traz http:// — normaliza aqui.
+          endpoint: "{{ env_var('MINIO_ENDPOINT', '').replace('http://', '').replace('https://', '') }}"
           url_style: path
           use_ssl: false
           region: us-east-1
@@ -32,7 +34,9 @@ observatorio_gold:
           scope: "s3://bronze"
           key_id: "{{ env_var('MINIO_ACCESS_KEY', env_var('MINIO_ROOT_USER', '')) }}"
           secret: "{{ env_var('MINIO_SECRET_KEY', env_var('MINIO_ROOT_PASSWORD', '')) }}"
-          endpoint: "{{ env_var('MINIO_ENDPOINT', '') }}"
+          # DuckDB espera o endpoint S3 SEM scheme (host:port); o MINIO_ENDPOINT
+          # do compose traz http:// — normaliza aqui.
+          endpoint: "{{ env_var('MINIO_ENDPOINT', '').replace('http://', '').replace('https://', '') }}"
           url_style: path
           use_ssl: false
           region: us-east-1
