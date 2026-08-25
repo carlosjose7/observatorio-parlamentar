@@ -29,6 +29,49 @@ _MAX_ARESTAS = 100
 _MAX_NOS_COMUNIDADE = 200
 
 
+def _selecionar_parlamentar() -> dict | None:
+    """Filtros de busca + seletor de parlamentar (side effect: session_state)."""
+    with st.sidebar:
+        st.subheader("Buscar parlamentar")
+        nome = st.text_input("Nome", key="rede_nome")
+        uf = st.text_input("UF (2 letras)", max_chars=2, key="rede_uf")
+        partido = st.text_input("Partido (sigla)", key="rede_partido")
+        buscar = st.button("Buscar", key="rede_buscar")
+
+    if not buscar and "rede_lista" not in st.session_state:
+        st.info("Use a busca na barra lateral para localizar um parlamentar.")
+        return None
+
+    if buscar:
+        payload = carregar_com_feedback(
+            lambda: client.listar_parlamentares(
+                nome=nome or None, uf=uf or None, partido=partido or None,
+                limite=100,
+            ),
+            spinner="Buscando parlamentares...",
+        )
+        st.session_state["rede_lista"] = payload
+        st.session_state["rede_sel"] = None
+
+    payload = st.session_state.get("rede_lista")
+    if not payload:
+        return None
+
+    itens = payload.get("itens", [])
+    if not itens:
+        st.warning("Nenhum parlamentar encontrado com os filtros informados.")
+        return None
+
+    opcoes = {
+        f"{i['nome']} ({i['sigla_partido']}-{i['sigla_uf']})": i["id_parlamentar"]
+        for i in itens
+    }
+    sel = st.selectbox("Parlamentar", list(opcoes.keys()), key="rede_sel")
+    if sel is None:
+        return None
+    return next(i for i in itens if i["id_parlamentar"] == opcoes[sel])
+
+
 def _rede_do_parlamentar(id_parlamentar: int) -> None:
     """Grafo centrado em um parlamentar (limitado a `_MAX_ARESTAS` arestas)."""
     st.subheader("Rede de um parlamentar")
@@ -128,10 +171,10 @@ def _comunidades() -> None:
 def main() -> None:
     abas = st.tabs(["Rede do parlamentar", "Comunidades"])
     with abas[0]:
-        id_parlamentar = st.number_input(
-            "ID do parlamentar", min_value=1, step=1, value=1,
-        )
-        _rede_do_parlamentar(int(id_parlamentar))
+        parlamentar = _selecionar_parlamentar()
+        if parlamentar is not None:
+            st.divider()
+            _rede_do_parlamentar(parlamentar["id_parlamentar"])
     with abas[1]:
         _comunidades()
 

@@ -63,8 +63,8 @@ Write-Host "=======================================" -ForegroundColor Green
 Write-Host "Deploy concluído!" -ForegroundColor Green
 Write-Host "=======================================" -ForegroundColor Green
 Write-Host "Dashboard: http://${VpsIp}" -ForegroundColor Cyan
-Write-Host "API Docs:  http://${VpsIp}/docs" -ForegroundColor Cyan
-Write-Host "MinIO:     http://${VpsIp}/minio" -ForegroundColor Cyan
+Write-Host "API Docs:  http://${VpsIp}/docs (desabilitado se API_DOCS_ENABLED=false)" -ForegroundColor Cyan
+Write-Host "MinIO:     console NAO exposta — acesso via SSH tunnel (127.0.0.1:9001)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Airflow:   http://${VpsIp}:8080" -ForegroundColor Cyan
 Write-Host "           (AIRFLOW_ADMIN_USER/_PASSWORD do .env)" -ForegroundColor Cyan

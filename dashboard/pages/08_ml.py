@@ -1,6 +1,7 @@
 """dashboard/pages/08_ml.py — scores de risco e anomalias ML (agent-ready).
 
-Consome `GET /agent/parlamentar/{id}` (ADR-032): métricas, scores de risco
+Consome `GET /parlamentares` (busca por nome/UF/partido) e
+`GET /agent/parlamentar/{id}` (ADR-032): métricas, scores de risco
 (ADR-029) e anomalias de um parlamentar, com top fornecedores. Exportação
 (RF-08).
 """
@@ -17,6 +18,49 @@ st.set_page_config(page_title="ML / Risco", page_icon="🧠", layout="wide")
 st.title("🧠 Scores de Risco (agent-ready)")
 
 client = ApiClient()
+
+
+def _selecionar_parlamentar() -> dict | None:
+    """Filtros de busca + seletor de parlamentar (side effect: session_state)."""
+    with st.sidebar:
+        st.subheader("Buscar parlamentar")
+        nome = st.text_input("Nome", key="ml_nome")
+        uf = st.text_input("UF (2 letras)", max_chars=2, key="ml_uf")
+        partido = st.text_input("Partido (sigla)", key="ml_partido")
+        buscar = st.button("Buscar", key="ml_buscar")
+
+    if not buscar and "ml_lista" not in st.session_state:
+        st.info("Use a busca na barra lateral para localizar um parlamentar.")
+        return None
+
+    if buscar:
+        payload = carregar_com_feedback(
+            lambda: client.listar_parlamentares(
+                nome=nome or None, uf=uf or None, partido=partido or None,
+                limite=100,
+            ),
+            spinner="Buscando parlamentares...",
+        )
+        st.session_state["ml_lista"] = payload
+        st.session_state["ml_sel"] = None
+
+    payload = st.session_state.get("ml_lista")
+    if not payload:
+        return None
+
+    itens = payload.get("itens", [])
+    if not itens:
+        st.warning("Nenhum parlamentar encontrado com os filtros informados.")
+        return None
+
+    opcoes = {
+        f"{i['nome']} ({i['sigla_partido']}-{i['sigla_uf']})": i["id_parlamentar"]
+        for i in itens
+    }
+    sel = st.selectbox("Parlamentar", list(opcoes.keys()), key="ml_sel")
+    if sel is None:
+        return None
+    return next(i for i in itens if i["id_parlamentar"] == opcoes[sel])
 
 
 def _radar(risco: dict) -> None:
@@ -103,10 +147,11 @@ def _render(id_parlamentar: int) -> None:
 
 
 def main() -> None:
-    id_parlamentar = st.number_input(
-        "ID do parlamentar", min_value=1, step=1, value=1,
-    )
-    _render(int(id_parlamentar))
+    parlamentar = _selecionar_parlamentar()
+    if parlamentar is None:
+        return
+    st.divider()
+    _render(parlamentar["id_parlamentar"])
 
 
 main()
