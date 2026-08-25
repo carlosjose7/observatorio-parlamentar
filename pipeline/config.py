@@ -491,6 +491,9 @@ class EnvSettings(BaseSettings):
     airflow_fernet_key: str = ""
     duckdb_database_path: str = "data/silver/observatorio.duckdb"
     log_level: str = "INFO"
+    # Documentação interativa da API (/docs, /redoc, /openapi.json) — desabilite
+    # em produção atrás do nginx para não autodocumentar a superfície de ataque.
+    api_docs_enabled: bool = True
 
 
 # ── Loaders ──────────────────────────────────────────────────────
