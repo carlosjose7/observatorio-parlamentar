@@ -13,6 +13,8 @@ venv/
 .env.*
 !.env.example
 !.env.hml.example
+!.env.api.example
+!.env.dashboard.example
 .streamlit/secrets.toml
 *.pem
 *.key

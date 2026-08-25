@@ -35,7 +35,8 @@ services:
       - "127.0.0.1:19001:9001"
 
   api:
-    env_file: ${API_ENV_FILE:-.env}
+    # HML: defina API_ENV_FILE=.env.hml no --env-file (padrão .env.api, como PRD)
+    env_file: ${API_ENV_FILE:-.env.api}
     environment:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}

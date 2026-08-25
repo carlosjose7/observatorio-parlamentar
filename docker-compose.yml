@@ -56,13 +56,17 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
-    env_file: ${API_ENV_FILE:-.env}
+    # Env mínimo (.env.api): a API só lê o DuckDB Gold (ADR-026). Credenciais
+    # MinIO chegam via `environment` abaixo, interpoladas do .env do projeto.
+    env_file: ${API_ENV_FILE:-.env.api}
     environment:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+     # :ro — fronteira de leitura (ADR-026) também no mount: a API nunca
+     # escreve no Gold, nem sob comprometimento do container.
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -83,7 +87,9 @@ services:
     build:
       context: .
       dockerfile: dashboard/Dockerfile
-    env_file: ${DASHBOARD_ENV_FILE:-.env}
+    # Env mínimo (.env.dashboard): o dashboard só precisa apontar para a API —
+    # nunca recebe segredos de MinIO/CGU/HMAC (superprivilégio eliminado).
+    env_file: ${DASHBOARD_ENV_FILE:-.env.dashboard}
     environment:
       - API_URL=http://api:8000
     depends_on:
