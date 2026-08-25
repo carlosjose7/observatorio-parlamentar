@@ -879,6 +879,20 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `https://observatorio-parlamentar.com.br/` — HTTPS válido, sem redirect
   para HTTP, App Streamlit servido corretamente).
 
+### Acompanhamento pós-fechamento (não bloqueante)
+
+- ☐ **Higiene operacional:** ambiente HML derrubado em 25/08 (containers,
+  rede e volumes `hml_*` removidos) para liberar recursos da VPS e eliminar
+  ambiguidade de observação. HML nunca deve ficar residente por design
+  (mesmo princípio do Gate 5); o `scripts/run_hml_e2e.sh` sobe/derruba sob
+  demanda.
+- ☐ **Observação de `/api/pipeline/status`:** durante o `dbt build`
+  (single-writer do DuckDB + leitura `read_only` da API), o endpoint pode
+  retornar `total:0` momentaneamente. Verificado por 4 camadas independentes
+  (DuckDB ground truth, API interna, URL pública via nginx/TLS, fetch
+  externo) — sempre converge para `total:3` após o build. Não é bug; se
+  virar queixa de consumidor, considerar retry/read replica.
+
 *Versão atual: 2.7 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito.
 Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates 1–5
 concluídos e comprovados** com evidência externa (CI real, Ruff estrito
