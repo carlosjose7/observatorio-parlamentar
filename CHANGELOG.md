@@ -11,6 +11,28 @@ Histórico das alterações, organizado por sprint (ver
 ## Pós-Sprint 9 — Hotfix em produção
 
 ### Corrigido
+- **`KeyError: None` em `dashboard/pages/05_fornecedor.py`:** o seletor de
+  fornecedor (`st.selectbox(..., key="forn_sel")`) é precedido, no fluxo de
+  nova busca, por `st.session_state["forn_sel"] = None` — reset válido do
+  Streamlit para forçar seleção vazia após uma nova busca, já usado com
+  segurança em `02_parlamentar.py`. Diferente de `02_parlamentar.py`,
+  porém, `05_fornecedor.py` não tinha a guarda `if sel is None: return
+  None` após o `st.selectbox`, então `opcoes[sel]` explodia com
+  `KeyError: None` no primeiro render pós-busca (antes do usuário
+  interagir com o dropdown). Auditados os demais `selectbox` do
+  dashboard (`03_partido.py`, `04_estado.py`) — não usam esse padrão de
+  reset via `key`, não afetados. Corrigido replicando a guarda já
+  validada em produção em `02_parlamentar.py`. Sem teste de regressão
+  automatizado ainda — o projeto não usa `streamlit.testing.AppTest` para
+  as páginas (`tests/dashboard/` cobre `client.py`/`ui.py`, não as
+  páginas); registrado como pendência no BACKLOG.
+- **Documentação retroativa — `.gitattributes` (commit `1b54475`):** o
+  fix de CRLF nos scripts shell (`nginx/entrypoint.sh` crashava com
+  `exit 127` no rebuild via checkout Windows) foi commitado sem entrada
+  correspondente aqui, apesar do próprio `.gitattributes` referenciar
+  "Ver CHANGELOG". Registrado agora: `.gitattributes` (`*.sh text
+  eol=lf`) garante LF em todo `.sh` versionado, eliminando a
+  reintrodução de CRLF em checkouts Windows.
 - **Decimal serializado como string em JSON:** campos monetários da API
   (`valor_liquido`, `valor_glosa`, `valor_liquido_total`, `total_gasto`)
   eram tipados como `Decimal` puro nos schemas Pydantic; o Pydantic v2

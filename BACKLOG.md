@@ -881,6 +881,25 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Acompanhamento pós-fechamento (não bloqueante)
 
+- ☑ **Bugfix em produção — `KeyError: None` em `05_fornecedor.py`:**
+  seletor de fornecedor (`st.selectbox(key="forn_sel")`) quebrava no
+  primeiro render após uma busca, pois o reset
+  `st.session_state["forn_sel"] = None` (padrão já usado com segurança em
+  `02_parlamentar.py`) não tinha a guarda `if sel is None: return None`
+  correspondente. Corrigido replicando a guarda de `02_parlamentar.py`.
+  `03_partido.py`/`04_estado.py` auditados e não afetados (não usam esse
+  padrão de reset). Ruff limpo.
+- ☐ **Cobertura de regressão para páginas Streamlit:** o projeto não usa
+  `streamlit.testing.AppTest` — `tests/dashboard/` cobre apenas
+  `client.py`/`ui.py`. Dois bugs consecutivos em produção
+  (`02_parlamentar.py`/Decimal, `05_fornecedor.py`/seletor) só foram
+  pegos manualmente. Avaliar introduzir `AppTest` ao menos para o fluxo
+  busca→seleção das páginas 02, 05 e 07 (mesmo padrão de widget).
+- ☑ **Documentação retroativa — CRLF/`.gitattributes` (commit
+  `1b54475`):** fix já em produção (rebuild do nginx crashava com `exit
+  127` por CRLF em `nginx/entrypoint.sh` originado de checkout Windows);
+  faltava o registro em CHANGELOG.md referenciado pelo próprio
+  `.gitattributes`. Adicionado retroativamente.
 - ☑ **Bugfix em produção — Decimal serializado como string JSON:**
   `GastoItem.valor_liquido`/`valor_glosa` (`api/schemas/parlamentares.py`),
   `AnomaliaItem.valor_liquido` (`api/schemas/anomalias.py`) e
