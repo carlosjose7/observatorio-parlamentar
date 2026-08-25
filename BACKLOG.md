@@ -881,6 +881,15 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Acompanhamento pós-fechamento (não bloqueante)
 
+- ☑ **UX fix em produção — busca por ID cru em `08_ml.py`/`06_rede.py`:**
+  reportado como bug (usuário precisava saber o `id_parlamentar` de cor;
+  qualquer ID incorreto retornava "Parlamentar N não encontrado" sem
+  caminho de descoberta). Ambas páginas substituídas pelo mesmo
+  fluxo de busca por nome/UF/partido + `st.selectbox` já usado em
+  `02_parlamentar.py`/`05_fornecedor.py` — sem endpoint novo
+  (`client.listar_parlamentares` reaproveitado). Varredura confirmou que
+  nenhuma outra página do dashboard usa `number_input` para ID.
+
 - ☑ **Bugfix em produção — `KeyError: None` em `05_fornecedor.py`:**
   seletor de fornecedor (`st.selectbox(key="forn_sel")`) quebrava no
   primeiro render após uma busca, pois o reset
@@ -891,10 +900,11 @@ instalação/deploy/operação, e fechar dívidas registradas.
   padrão de reset). Ruff limpo.
 - ☐ **Cobertura de regressão para páginas Streamlit:** o projeto não usa
   `streamlit.testing.AppTest` — `tests/dashboard/` cobre apenas
-  `client.py`/`ui.py`. Dois bugs consecutivos em produção
-  (`02_parlamentar.py`/Decimal, `05_fornecedor.py`/seletor) só foram
-  pegos manualmente. Avaliar introduzir `AppTest` ao menos para o fluxo
-  busca→seleção das páginas 02, 05 e 07 (mesmo padrão de widget).
+  `client.py`/`ui.py`. Três problemas de UX/bug consecutivos em produção
+  (`02_parlamentar.py`/Decimal, `05_fornecedor.py`/seletor,
+  `08_ml.py`+`06_rede.py`/busca por ID) só foram pegos por uso manual.
+  Avaliar introduzir `AppTest` ao menos para o fluxo busca→seleção, hoje
+  replicado em 4 páginas (02, 05, 06, 08) sem teste automatizado.
 - ☑ **Documentação retroativa — CRLF/`.gitattributes` (commit
   `1b54475`):** fix já em produção (rebuild do nginx crashava com `exit
   127` por CRLF em `nginx/entrypoint.sh` originado de checkout Windows);

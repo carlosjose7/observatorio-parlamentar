@@ -11,6 +11,23 @@ Histórico das alterações, organizado por sprint (ver
 ## Pós-Sprint 9 — Hotfix em produção
 
 ### Corrigido
+- **Busca por ID cru em `08_ml.py` e `06_rede.py` (reportado como bug de
+  UX):** as duas páginas exigiam que o usuário informasse o
+  `id_parlamentar` numérico diretamente (`st.number_input`), sem busca
+  por nome — inconsistente com o padrão já estabelecido em
+  `02_parlamentar.py`/`05_fornecedor.py`, e causava erro genérico
+  (`Erro na consulta: Parlamentar {id} não encontrado`) para qualquer ID
+  que o usuário não soubesse de cor. Corrigido substituindo o
+  `number_input` pelo mesmo fluxo de busca+seleção (nome/UF/partido →
+  `st.selectbox`) já usado em `02_parlamentar.py`, reaproveitando
+  `client.listar_parlamentares` — sem endpoint novo. `08_ml.py` usa a
+  sidebar (`ml_*` como prefixo de `session_state`, isolado das outras
+  páginas); `06_rede.py` idem (`rede_*`), aplicado dentro da aba "Rede
+  do parlamentar" (a aba "Comunidades" não depende de ID). Varredura
+  completa por `number_input` no restante de `dashboard/pages/` não
+  encontrou mais ocorrências do padrão. Sem novo ADR — alinhamento de UX
+  a um padrão já em produção, não decisão arquitetural nova.
+
 - **`KeyError: None` em `dashboard/pages/05_fornecedor.py`:** o seletor de
   fornecedor (`st.selectbox(..., key="forn_sel")`) é precedido, no fluxo de
   nova busca, por `st.session_state["forn_sel"] = None` — reset válido do
