@@ -17,10 +17,9 @@ existe, é leitura direta sobre `fact_despesa`/dimensões.
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.schemas._common import Moeda
 from pipeline.contracts import TipoDocumento
 
 _PadroesComuns = ConfigDict(extra="forbid")
@@ -63,7 +62,7 @@ class PerfilFornecedor(_ContratoResposta):
     nome_fornecedor: str
     id_municipio: int | None = None
     num_despesas: int = Field(..., description="Nº de despesas promovidas do fornecedor")
-    valor_liquido_total: Decimal = Field(..., description="Soma de valor_liquido das despesas")
+    valor_liquido_total: Moeda = Field(..., description="Soma de valor_liquido das despesas")
 
 
 class FornecedorContexto(_ContratoResposta):
@@ -82,7 +81,7 @@ class ParlamentarFornecedor(_ContratoResposta):
     nome: str
     sigla_partido: str
     sigla_uf: str
-    total_gasto: Decimal = Field(..., description="Soma de valor_liquido do parlamentar no fornecedor")
+    total_gasto: Moeda = Field(..., description="Soma de valor_liquido do parlamentar no fornecedor")
     num_despesas: int
 
 

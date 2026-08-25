@@ -2095,6 +2095,12 @@ Decisão:
 Consequências:
 - Nenhuma mudança na estratégia de persistência Bronze/Silver/Gold
   (ADR-001, ADR-007) — dados continuam locais à VPS.
+- **O DAG deve declarar `schedule=None`** (sem `schedule_interval`): o
+  agendamento é exclusivamente o timer systemd (script despausa + dispara
+  o DAG). Com `schedule="@daily"` haveria DOIS relógios independentes
+  (systemd + scheduler interno do Airflow) competindo e duplicando
+  execuções — falha observada no backfill de 22/08/2026 e corrigida no
+  `pipeline/dags/pipeline_dag.py` (ver teste `test_dag_configuracao_basica`).
 - `scripts/run_pipeline_daily.sh` e a unit `systemd`
   correspondente (`observatorio-pipeline.timer` /
   `observatorio-pipeline.service`) passam a ser artefatos de infra

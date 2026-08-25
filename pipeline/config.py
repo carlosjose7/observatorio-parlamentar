@@ -491,6 +491,9 @@ class EnvSettings(BaseSettings):
     airflow_fernet_key: str = ""
     duckdb_database_path: str = "data/silver/observatorio.duckdb"
     log_level: str = "INFO"
+    # Documentação interativa da API (/docs, /redoc, /openapi.json) — desabilite
+    # em produção atrás do nginx para não autodocumentar a superfície de ataque.
+    api_docs_enabled: bool = True
 
 
 # ── Loaders ──────────────────────────────────────────────────────
@@ -582,9 +585,20 @@ def get_dbt_vars() -> dict[str, str]:
     consumo via `var`.
     """
     pipeline = get_pipeline()
-    return {
+    env = get_env()
+    vars_ = {
         "fk_orfas_threshold_pct": str(pipeline.data_quality.fk_orfa_threshold_pct),
     }
+    # ADR-019 em produção: a Bronze grava o controle `pipeline_runs` no
+    # MinIO (storage MinIO, ADR-007) — o glob local do dbt_project.yml
+    # resolveria 0 arquivos. Quando o MinIO está configurado (produção/HML),
+    # injeta o caminho S3 (path-style); senão o default local vale (dev).
+    if env.minio_endpoint:
+        vars_["bronze_pipeline_runs_dir"] = (
+            f"s3://{pipeline.armazenamento.bronze.bucket_minio}/"
+            "controle/pipeline_runs/*.parquet"
+        )
+    return vars_
 
 
 def get_env() -> EnvSettings:

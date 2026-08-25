@@ -10,17 +10,19 @@ contrato estrutural do schema.
 `_StrictModel` do ADR-008): qualquer campo não declarado aqui é rejeitado no
 parse, impedindo vazamento de metadados internos do Gold para o cliente.
 
-Moeda é `Decimal`, preservando a leitura de `fact_despesa.valor_liquido`
-(contrato `pipeline/gold.py:FactDespesa`) até o encoder JSON da API.
+Moeda é `Decimal` internamente, preservando a leitura de
+`fact_despesa.valor_liquido` (contrato `pipeline/gold.py:FactDespesa`); o
+tipo `Moeda` (`api/schemas/_common.py`) garante que o encoder JSON da API
+emita número, não string (bugfix pós-Sprint 9 — ver CHANGELOG).
 """
 
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.schemas._common import Moeda
 from pipeline.contracts import TipoDocumento
 
 _PadroesComuns = ConfigDict(extra="forbid")
@@ -72,8 +74,8 @@ class GastoItem(_ContratoResposta):
     )
     nome_fornecedor: str
     tipo_documento: TipoDocumento
-    valor_liquido: Decimal
-    valor_glosa: Decimal
+    valor_liquido: Moeda
+    valor_glosa: Moeda
 
 
 class GastosParlamentar(_ContratoResposta):

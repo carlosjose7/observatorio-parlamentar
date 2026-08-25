@@ -5,7 +5,38 @@ observatorio_gold:
       type: duckdb
       path: "{{ env_var('DUCKDB_DATABASE_PATH', 'data/silver/observatorio.duckdb') }}"
       threads: 4
+      # httpfs permite ao DuckDB ler o controle `pipeline_runs` do MinIO
+      # (ADR-019 em produção). O secret S3 aponta para o MinIO interno
+      # (path-style); com credenciais vazias (dev) o secret é inerte.
+      extensions:
+        - httpfs
+      secrets:
+        - type: s3
+          name: minio_observatorio
+          scope: "s3://bronze"
+          key_id: "{{ env_var('MINIO_ACCESS_KEY', env_var('MINIO_ROOT_USER', '')) }}"
+          secret: "{{ env_var('MINIO_SECRET_KEY', env_var('MINIO_ROOT_PASSWORD', '')) }}"
+          # DuckDB espera o endpoint S3 SEM scheme (host:port); o MINIO_ENDPOINT
+          # do compose traz http:// — normaliza aqui.
+          endpoint: "{{ env_var('MINIO_ENDPOINT', '').replace('http://', '').replace('https://', '') }}"
+          url_style: path
+          use_ssl: false
+          region: us-east-1
     prod:
       type: duckdb
       path: "{{ env_var('DUCKDB_DATABASE_PATH') }}"
       threads: 4
+      extensions:
+        - httpfs
+      secrets:
+        - type: s3
+          name: minio_observatorio
+          scope: "s3://bronze"
+          key_id: "{{ env_var('MINIO_ACCESS_KEY', env_var('MINIO_ROOT_USER', '')) }}"
+          secret: "{{ env_var('MINIO_SECRET_KEY', env_var('MINIO_ROOT_PASSWORD', '')) }}"
+          # DuckDB espera o endpoint S3 SEM scheme (host:port); o MINIO_ENDPOINT
+          # do compose traz http:// — normaliza aqui.
+          endpoint: "{{ env_var('MINIO_ENDPOINT', '').replace('http://', '').replace('https://', '') }}"
+          url_style: path
+          use_ssl: false
+          region: us-east-1

@@ -59,6 +59,8 @@ def _selecionar_fornecedor() -> dict | None:
         for i in itens
     }
     sel = st.selectbox("Fornecedor", list(opcoes.keys()), key="forn_sel")
+    if sel is None:
+        return None
     return next(i for i in itens if i["cnpj_cpf_valor"] == opcoes[sel])
 
 

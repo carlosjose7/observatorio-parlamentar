@@ -8,7 +8,114 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+## Segurança — Hardening pós-auditoria (25/08/2026)
+
+### Segurança
+- **Console MinIO removida do proxy público:** `location /minio/` publicava a
+  console administrativa do object storage (login com credenciais root) para a
+  internet, anulando o bind local `127.0.0.1:9001`. Acesso operacional agora é
+  exclusivamente via SSH tunnel (`nginx/default.conf`, `nginx/bootstrap.conf`).
+- **Rate limit por IP no nginx:** `limit_req` (10r/s, burst 20, nodelay) e
+  `limit_conn` nas rotas `/api/`, `/docs`, `/openapi.json` e dashboard — mitiga
+  brute force e DoS de aplicação.
+- **Headers de segurança** com flag `always`: HSTS (1 ano, includeSubDomains),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: strict-origin-when-cross-origin`.
+- **WebSocket do Streamlit:** `proxy_read_timeout` de 86400s (24h) → 60s; o
+  ping nativo do Streamlit (30s) mantém a conexão viva — fecha vetor slowloris.
+- **Containers não-root:** imagens da API e do dashboard criam usuário dedicado
+  (uid 10001) em vez de rodar como root.
+- **`no-new-privileges:true`** em todos os serviços do compose (antes só o
+  MinIO tinha).
+- **Volume da API read-only:** `./data:/app/data:ro` — a fronteira de leitura
+  do ADR-026 vale também no mount; nem sob RCE o container altera o Gold.
+- **Env mínimo por serviço:** a API lê `.env.api` e o dashboard `.env.dashboard`
+  (templates commitados). O dashboard não recebe mais `CGU_API_KEY`,
+  `CPF_HMAC_SECRET_KEY`, `POSTGRES_PASSWORD` nem credenciais Airflow — RCE no
+  Streamlit não vira comprometimento total de segredos.
+- **Admin do Airflow sem senha na linha de comando:** entrypoint custom que
+  passava `--password "$AIRFLOW_ADMIN_PASSWORD"` (visível em `ps aux`) foi
+  substituído pelo mecanismo oficial da imagem (`_AIRFLOW_DB_MIGRATE` +
+  `_AIRFLOW_WWW_USER_CREATE/_AIRFLOW_WWW_USER_USERNAME/PASSWORD/EMAIL`);
+  criação idempotente e falhas visíveis. `AIRFLOW_ADMIN_EMAIL` configurável.
+- **Rotação de segredos em HML** executada antes do deploy (console MinIO
+  estava pública → credenciais tratadas como comprometidas): MinIO root,
+  Postgres, admin Airflow e Fernet key renovados com CSPRNG na própria VPS;
+  E2E verde pós-rotação. PRD aguarda este deploy.
+
+### Adicionado
+- **`API_DOCS_ENABLED`** (env, default `true`): desabilita `/docs`, `/redoc` e
+  `/openapi.json` em produção para não autodocumentar a superfície de ataque.
+  `api/main.py` expõe factory `criar_app()`; testes cobrem os dois estados.
+- **`.env.api.example` / `.env.dashboard.example`:** templates dos ambientes
+  mínimos por serviço.
+
+### Corrigido
+- **Overlay HML (`docker-compose.hml.yml`):** porta 18080 publicada
+  simultaneamente no `airflow-webserver` e no `airflow-scheduler` — conflito de
+  bind quando ambos sobem; bloco removido do scheduler.
+
+---
+
+## Pós-Sprint 9 — Hotfix em produção
+
+### Corrigido
+- **Busca por ID cru em `08_ml.py` e `06_rede.py` (reportado como bug de
+  UX):** as duas páginas exigiam que o usuário informasse o
+  `id_parlamentar` numérico diretamente (`st.number_input`), sem busca
+  por nome — inconsistente com o padrão já estabelecido em
+  `02_parlamentar.py`/`05_fornecedor.py`, e causava erro genérico
+  (`Erro na consulta: Parlamentar {id} não encontrado`) para qualquer ID
+  que o usuário não soubesse de cor. Corrigido substituindo o
+  `number_input` pelo mesmo fluxo de busca+seleção (nome/UF/partido →
+  `st.selectbox`) já usado em `02_parlamentar.py`, reaproveitando
+  `client.listar_parlamentares` — sem endpoint novo. `08_ml.py` usa a
+  sidebar (`ml_*` como prefixo de `session_state`, isolado das outras
+  páginas); `06_rede.py` idem (`rede_*`), aplicado dentro da aba "Rede
+  do parlamentar" (a aba "Comunidades" não depende de ID). Varredura
+  completa por `number_input` no restante de `dashboard/pages/` não
+  encontrou mais ocorrências do padrão. Sem novo ADR — alinhamento de UX
+  a um padrão já em produção, não decisão arquitetural nova.
+
+- **`KeyError: None` em `dashboard/pages/05_fornecedor.py`:** o seletor de
+  fornecedor (`st.selectbox(..., key="forn_sel")`) é precedido, no fluxo de
+  nova busca, por `st.session_state["forn_sel"] = None` — reset válido do
+  Streamlit para forçar seleção vazia após uma nova busca, já usado com
+  segurança em `02_parlamentar.py`. Diferente de `02_parlamentar.py`,
+  porém, `05_fornecedor.py` não tinha a guarda `if sel is None: return
+  None` após o `st.selectbox`, então `opcoes[sel]` explodia com
+  `KeyError: None` no primeiro render pós-busca (antes do usuário
+  interagir com o dropdown). Auditados os demais `selectbox` do
+  dashboard (`03_partido.py`, `04_estado.py`) — não usam esse padrão de
+  reset via `key`, não afetados. Corrigido replicando a guarda já
+  validada em produção em `02_parlamentar.py`. Sem teste de regressão
+  automatizado ainda — o projeto não usa `streamlit.testing.AppTest` para
+  as páginas (`tests/dashboard/` cobre `client.py`/`ui.py`, não as
+  páginas); registrado como pendência no BACKLOG.
+- **Documentação retroativa — `.gitattributes` (commit `1b54475`):** o
+  fix de CRLF nos scripts shell (`nginx/entrypoint.sh` crashava com
+  `exit 127` no rebuild via checkout Windows) foi commitado sem entrada
+  correspondente aqui, apesar do próprio `.gitattributes` referenciar
+  "Ver CHANGELOG". Registrado agora: `.gitattributes` (`*.sh text
+  eol=lf`) garante LF em todo `.sh` versionado, eliminando a
+  reintrodução de CRLF em checkouts Windows.
+- **Decimal serializado como string em JSON:** campos monetários da API
+  (`valor_liquido`, `valor_glosa`, `valor_liquido_total`, `total_gasto`)
+  eram tipados como `Decimal` puro nos schemas Pydantic; o Pydantic v2
+  serializa `Decimal` para JSON como string (`"150.30"`), não número
+  (`150.3`). Quebrava `dashboard/pages/02_parlamentar.py` em produção
+  (`ValueError: Unknown format code 'f' for object of type 'str'` em
+  `formatar_moeda`) e, de forma latente, `05_fornecedor.py` e
+  `07_anomalias.py`. Corrigido com o novo tipo `Moeda`
+  (`api/schemas/_common.py`, `PlainSerializer` no modo JSON) aplicado em
+  `api/schemas/parlamentares.py`, `anomalias.py` e `fornecedores.py`.
+  `Decimal` continua sendo o tipo interno; apenas o encoder JSON da API
+  passa a emitir número. Sem impacto de precisão, sem novo ADR (correção
+  de implementação, não reabertura de decisão arquitetural).
+
+---
+
+## Sprint 9 — Deploy + Documentação — FECHADA
 
 ### Adicionado
 - **ADR-034** — execução diária do pipeline via `systemd timer` na VPS Oracle
@@ -33,10 +140,49 @@ Histórico das alterações, organizado por sprint (ver
 - **`pipeline_dag.py::_executar_gold`** — `NameError` latente: o snippet do
   subprocesso dbt usava `json.dumps`/`sys.path` sem importar `json`/`sys`
   (quebraria o Gold em produção). Import adicionados ao snippet.
+- **Duplicação de agendamento (Gate 2):** o DAG tinha `schedule="@daily"`
+  simultaneamente ao timer `systemd` — dois relógios independentes disparando
+  o mesmo pipeline (scheduler interno do Airflow + timer externo), causando
+  execuções concorrentes na primeira tentativa de backfill em produção.
+  Corrigido para `schedule=None` — agendamento passa a ser **exclusivamente
+  externo** via `observatorio-pipeline.timer` (ADR-034). `test_dag.py`
+  atualizado para refletir o novo contrato (`schedule_interval is None`).
+- **Reconciliação de cobertura:** medição anterior de 87% (pós-fixes E2E
+  HML) era resultado de `.coverage` acumulado/sujo entre execuções.
+  Medição limpa (`rm -f .coverage` + suíte completa) no commit `61c4c66`:
+  **374 passed, 93,53% cobertura** — valor de referência para o fechamento
+  da sprint.
+- **`pipeline_runs` vazio em produção (ADR-019):** a Bronze grava o
+  controle no MinIO (storage MinIO, ADR-007), mas o dbt Gold lia o glob
+  local `data/bronze/...` → 0 arquivos. Fix: `httpfs` + secret S3 no
+  `profiles.yml` (endpoint SEM scheme — DuckDB 1.0.0 quebra URL com
+  `http://`) e `get_dbt_vars()` injetando `bronze_pipeline_runs_dir` S3
+  quando `MINIO_ENDPOINT` configurado.
+- **Gold falha sem dados CGU:** `_garantir_silver_cgu_vazio` cria
+  `silver_cartao`/`silver_emenda` vazias (schema de `schemas_silver.py`)
+  quando a CGU não retorna dados — o dbt build falhava com "table does not
+  exist".
+- **Deploy:** `chmod +x scripts/run_pipeline_daily.sh` no passo 4/6 do
+  `deploy.sh` (unit sem prefixo `bash` → 203/EXEC sem o bit).
+- **SELinux (Oracle Linux):** systemd falhava com 203/EXEC mesmo com o bit
+  +x (contexto `user_home_t`). `chcon -t bin_t` no script.
+- **Permissões de dados:** `chmod -R a+rwx data/` para o container airflow
+  (uid 50000) escrever no DuckDB da Gold (dono `opc`, uid 1000).
 
-Resultado parcial da Sprint 9: Gates 1–4 implementados (Gate 2 aguarda
-validação na VPS; Gate 5/TLS bloqueado pelo DNS). **374 passed, 1 skipped
-(Airflow) local; 93,59% cobertura; Ruff verde.**
+### Adicionado (fechamento)
+- **Ambiente HML portado** (`docker-compose.hml.yml`, `config.hml/`,
+  `.env.hml.example`, `scripts/run_hml_e2e.sh`) da branch `hml` órfã para
+  `develop`, com isolamento corrigido (`*_ENV_FILE` → `.env.hml`).
+
+Resultado da Sprint 9 (verificado por auditoria direta em `61c4c66` +
+fixes até `9ad47c2`): **Gates 1–5 concluídos e comprovados** (CI real,
+Ruff estrito **374 passed/93,53% cobertura**, README/guias completos, TLS
+ao vivo, execução diária via systemd). **Gate 2 fechado em 25/08:** timer
+`enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`, 1676s), `pipeline_runs` populado via MinIO/S3 —
+`GET /api/pipeline/status` → `{"total":3}` (linha nova no topo);
+`GET /api/agent/context` → `pipeline.run_id=4e52260e` com dados novos na
+Gold (`total_gasto` 608.742.032 → 608.821.853). **Sprint 9 FECHADA.**
 
 ---
 

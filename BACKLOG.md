@@ -766,7 +766,7 @@ Commit de fechamento: `fdad9c0`. Sprint 7 fechada (349). Sprint 6.5 fechada
 
 ---
 
-## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+## Sprint 9 — Deploy + Documentação — FECHADA
 
 **Objetivo:** ativar CI real (testes/lint/secret scan em todo PR), executar o
 pipeline diariamente em produção (ADR-034), completar README e guias de
@@ -794,14 +794,53 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `down` garantido no trap EXIT; timeouts via env vars.
 - ☑ Units `systemd` (`observatorio-pipeline.timer`/`.service`) em `infra/`
   (oneshot, 03:00 America/Sao_Paulo, `Persistent=true`).
-- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`;
-  instalação/atualização das units no `deploy.sh` (passo `[4/6]`).
+- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`
+  (posteriormente migrado para Oracle Linux/`opc`/firewalld — ver nota de
+  migração abaixo); instalação/atualização das units no `deploy.sh`.
 - ☑ **Bugfix latente:** `pipeline_dag.py::_executar_gold` usava
   `json.dumps`/`sys.path` no subprocesso do dbt sem importá-los
   (`NameError` em produção) — `import json`/`import sys` adicionados.
-- ☐ **Validação real na VPS pendente** (padrão do projeto: não fechar gate
-  sem validação). Testar `sudo -n true && echo OK`; se a VPS já existia,
-  rodar `sudo usermod -aG docker ubuntu` manualmente.
+- ☑ **Bugfix de duplicação de agendamento:** `schedule="@daily"` no DAG
+  competia com o timer `systemd`, causando execuções concorrentes na
+  primeira tentativa de backfill em produção. Corrigido para
+  `schedule=None` — agendamento exclusivamente externo (mesclado em
+  `61c4c66`, PR #6). `test_dag.py` atualizado.
+- ☑ **Bugfix `pipeline_runs` vazio (ADR-019 em produção):** a Bronze grava
+  o controle `pipeline_runs` no MinIO (storage MinIO, ADR-007), mas o dbt
+  Gold lia o glob local `data/bronze/...` → 0 arquivos, "pipeline_runs
+  zero-linhas". Corrigido: `profiles.yml` ganhou extensão `httpfs` + secret
+  S3 path-style (endpoint SEM scheme — DuckDB 1.0.0 gerava URL quebrada com
+  `http://`); `get_dbt_vars()` injeta `bronze_pipeline_runs_dir=s3://<bucket>/...`
+  quando `MINIO_ENDPOINT` configurado. Validado no HML (4 execuções) e PRD.
+- ☑ **Robustez do Gold sem dados CGU:** `_garantir_silver_cgu_vazio` cria
+  `silver_cartao`/`silver_emenda` vazias (schema declarativo de
+  `schemas_silver.py`) quando a CGU não retorna dados no período — o dbt
+  build completo falhava com "table does not exist" (mesmo padrão do
+  `_garantir_ml_staging_vazio`, ADR-026).
+- ☑ **Ambiente HML portado:** `docker-compose.hml.yml`, `config.hml/`,
+  `.env.hml.example` e `scripts/run_hml_e2e.sh` (branch `hml` órfã →
+  `develop`), com isolamento corrigido (`*_ENV_FILE` apontando para
+  `.env.hml`).
+- ☑ **Fix de deploy:** `chmod +x scripts/run_pipeline_daily.sh` no passo 4/6
+  do `deploy.sh` (unit invoca sem prefixo `bash`; sem +x → 203/EXEC).
+- ☑ **SELinux (Oracle Linux):** o systemd falhava ao executar o script com
+  `status=203/EXEC Permission denied` mesmo com o bit +x — contexto
+  `user_home_t` bloqueava. Corrigido com `chcon -t bin_t` no script.
+  **Nota operacional:** reaplicar após re-sincronização do arquivo na VPS.
+- ☑ **Permissões de dados:** `chmod -R a+rwx data/` — o container airflow
+  (uid 50000) precisa escrever no DuckDB da Gold (dono `opc`, uid 1000).
+- ☑ **Validação real de execução completa na VPS — CONCLUÍDA (25/08).**
+  Critério de aceite atendido: timer `enabled`/`active (waiting)` (próximo
+  disparo 03:00 America/Sao_Paulo) e execução via systemd com **SUCCESS**
+  (run_id `4e52260e`, 1676s, log do `journalctl`). `pipeline_runs`
+  populado: `GET /api/pipeline/status` → `{"total":3}` com a linha nova no
+  topo (`4e52260e`, status `success`); `GET /api/agent/context` →
+  `pipeline.run_id = 4e52260e` (antes `null`), dados novos na Gold
+  (`total_gasto` 608.742.032 → 608.821.853, `num_transacoes` 490.602 →
+  490.800, `total_registros` 3.649.994 → 3.650.273). Observação: durante o
+  `dbt build` (leitor read_only + single-writer), `/api/pipeline/status`
+  pode retornar `total:0` momentaneamente — não é inconsistência
+  permanente, é timing do build.
 
 ### Gate 3 — Ruff estrito (dívida deferida na Sprint 8)
 
@@ -810,8 +849,10 @@ instalação/deploy/operação, e fechar dívidas registradas.
   auto-fix aplicado (113 correções). Deferidos para porta própria: `E501`
   (line-too-long — exigiria reformatação massiva) e `B904/B905`
   (semânticas, revisão manual).
-- ☑ Validado: `ruff check .` verde; suíte completa **374 passed, 1 skipped
-  (Airflow), 93,59% cobertura**.
+- ☑ Validado (auditoria direta, `61c4c66`): `ruff check .` verde; suíte
+  completa **374 passed, 93,53% cobertura** (medição limpa, `.coverage`
+  removido antes da execução — substitui a leitura anterior de 93,59%/87%,
+  ambas afetadas por cache de cobertura entre execuções).
 
 ### Gate 4 — Documentação
 
@@ -827,16 +868,138 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Gate 5 — TLS (autenticação/TLS — dívida da Sprint 7, ADR-007)
 
-- ☐ Nginx com HTTPS via Let's Encrypt/certbot — **bloqueado até o registro A
-  de `observatorio-parlamentar.com.br` apontar para a VPS Oracle** (certbot
-  falha a validação HTTP-01 sem DNS resolvendo). Até lá, tráfego em `:80`
-  sem criptografia (dado público agregado — risco aceito e documentado).
+- ☑ Nginx com HTTPS via Let's Encrypt/certbot. Domínio próprio
+  (`observatorio-parlamentar.com.br`, Registro.br) com zona DNS própria
+  (NS `e.sec.dns.br`/`f.sec.dns.br`), registro A raiz + `www` → VPS Oracle.
+  Certificado emitido (CN=`observatorio-parlamentar.com.br`, SAN `www`,
+  expira 18/11/2026), renovação automática via container `certbot`
+  (`certbot renew` a cada 12h). Config Nginx com entrada seletiva
+  (bootstrap :80/ACME vs. SSL :443) evita crash-loop sem certificado.
+  **Verificado por auditoria externa direta** (fetch a
+  `https://observatorio-parlamentar.com.br/` — HTTPS válido, sem redirect
+  para HTTP, App Streamlit servido corretamente).
 
-*Versão atual: 2.5 — **Sprint 9 em andamento** — ADR-034 aceito (execução
-diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
-**Progresso:** Gate 1 (ci.yml: Gitleaks+Ruff+pytest, 379 testes esperados no
-CI), Gate 2 (script diário + units systemd + usermod docker + bugfix NameError
-do DAG; **aguardando validação na VPS**), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037
-habilitados, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia de
-deploy/operação + healthchecks docker-compose). Gate 5 (TLS) **bloqueado até
-DNS apontar para a VPS**. ADRs 001-034.*
+### Acompanhamento pós-fechamento (não bloqueante)
+
+- ☑ **UX fix em produção — busca por ID cru em `08_ml.py`/`06_rede.py`:**
+  reportado como bug (usuário precisava saber o `id_parlamentar` de cor;
+  qualquer ID incorreto retornava "Parlamentar N não encontrado" sem
+  caminho de descoberta). Ambas páginas substituídas pelo mesmo
+  fluxo de busca por nome/UF/partido + `st.selectbox` já usado em
+  `02_parlamentar.py`/`05_fornecedor.py` — sem endpoint novo
+  (`client.listar_parlamentares` reaproveitado). Varredura confirmou que
+  nenhuma outra página do dashboard usa `number_input` para ID.
+
+- ☑ **Bugfix em produção — `KeyError: None` em `05_fornecedor.py`:**
+  seletor de fornecedor (`st.selectbox(key="forn_sel")`) quebrava no
+  primeiro render após uma busca, pois o reset
+  `st.session_state["forn_sel"] = None` (padrão já usado com segurança em
+  `02_parlamentar.py`) não tinha a guarda `if sel is None: return None`
+  correspondente. Corrigido replicando a guarda de `02_parlamentar.py`.
+  `03_partido.py`/`04_estado.py` auditados e não afetados (não usam esse
+  padrão de reset). Ruff limpo.
+- ☐ **Cobertura de regressão para páginas Streamlit:** o projeto não usa
+  `streamlit.testing.AppTest` — `tests/dashboard/` cobre apenas
+  `client.py`/`ui.py`. Três problemas de UX/bug consecutivos em produção
+  (`02_parlamentar.py`/Decimal, `05_fornecedor.py`/seletor,
+  `08_ml.py`+`06_rede.py`/busca por ID) só foram pegos por uso manual.
+  Avaliar introduzir `AppTest` ao menos para o fluxo busca→seleção, hoje
+  replicado em 4 páginas (02, 05, 06, 08) sem teste automatizado.
+- ☑ **Documentação retroativa — CRLF/`.gitattributes` (commit
+  `1b54475`):** fix já em produção (rebuild do nginx crashava com `exit
+  127` por CRLF em `nginx/entrypoint.sh` originado de checkout Windows);
+  faltava o registro em CHANGELOG.md referenciado pelo próprio
+  `.gitattributes`. Adicionado retroativamente.
+- ☑ **Bugfix em produção — Decimal serializado como string JSON:**
+  `GastoItem.valor_liquido`/`valor_glosa` (`api/schemas/parlamentares.py`),
+  `AnomaliaItem.valor_liquido` (`api/schemas/anomalias.py`) e
+  `PerfilFornecedor.valor_liquido_total`/`ParlamentarFornecedor.total_gasto`
+  (`api/schemas/fornecedores.py`) eram tipados como `Decimal` puro — o
+  Pydantic v2 serializa `Decimal` para JSON como *string*
+  (`"150.30"`, não `150.3`), contradizendo a intenção já documentada no
+  docstring original do módulo. Reportado em produção via
+  `dashboard/pages/02_parlamentar.py` (`ValueError: Unknown format code
+  'f' for object of type 'str'` em `formatar_moeda`); auditoria confirmou
+  que `05_fornecedor.py` e `07_anomalias.py` tinham o mesmo bug latente
+  (só não reportado ainda) — `03_partido.py`/`04_estado.py` escaparam por
+  já aplicarem `float(...)` defensivamente. Corrigido na raiz (API, não no
+  dashboard): novo tipo `Moeda` em `api/schemas/_common.py`
+  (`Annotated[Decimal, PlainSerializer(..., when_used="json")]`),
+  aplicado nos 4 campos monetários acima — `Decimal` continua sendo o tipo
+  interno (precisão preservada), mas o encoder JSON da API agora emite
+  número. Validado contra os schemas reais (`model_dump_json()`) e suíte
+  `tests/api/`/`tests/unit/` (63 passed, sem regressão). Não requereu novo
+  ADR — corrige comportamento para bater com a intenção já registrada,
+  não reabre nenhuma decisão arquitetural.
+- ☐ **Higiene operacional:** ambiente HML derrubado em 25/08 (containers,
+  rede e volumes `hml_*` removidos) para liberar recursos da VPS e eliminar
+  ambiguidade de observação. HML nunca deve ficar residente por design
+  (mesmo princípio do Gate 5); o `scripts/run_hml_e2e.sh` sobe/derruba sob
+  demanda.
+- ☐ **Observação de `/api/pipeline/status`:** durante o `dbt build`
+  (single-writer do DuckDB + leitura `read_only` da API), o endpoint pode
+  retornar `total:0` momentaneamente. Verificado por 4 camadas independentes
+  (DuckDB ground truth, API interna, URL pública via nginx/TLS, fetch
+  externo) — sempre converge para `total:3` após o build. Não é bug; se
+  virar queixa de consumidor, considerar retry/read replica.
+
+*Versão atual: 2.7 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito.
+Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates 1–5
+concluídos e comprovados** com evidência externa (CI real, Ruff estrito
+93,53%/374 passed, README/guias completos, TLS ao vivo, execução diária via
+systemd com SUCCESS em produção). **Gate 2 fechado em 25/08:** timer
+`enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`), `pipeline_runs` populado via MinIO/S3 (`GET /api/pipeline/status`
+→ total 3; `GET /api/agent/context` → pipeline.run_id preenchido). Causas
+raiz resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
+a+rwx data/`), fix S3 (httpfs), robustez CGU vazia, ambiente HML portado.
+ADRs 001-034.*
+
+---
+
+## Pós-Sprint 9 - Hardening de Segurança (25/08/2026)
+
+Auditoria de segurança externa (nginx, Docker/compose, API, pseudonimização,
+CI e histórico git via gitleaks — 123 commits, 0 vazamentos). Correções na
+branch `fix/security-hardening`; rotação de segredos executada na VPS de HML
+ANTES do código (console MinIO estava pública → credenciais tratadas como
+comprometidas).
+
+- ☑ **Rotação de segredos em HML:** MINIO_ROOT_PASSWORD, POSTGRES_PASSWORD,
+  AIRFLOW_ADMIN_PASSWORD (43 chars urlsafe CSPRNG) e AIRFLOW_FERNET_KEY
+  (validada com `cryptography`) — gerados na própria VPS, nunca impressos.
+  E2E verde pós-rotação (backfill + incremental SUCCESS). CPF_HMAC_SECRET_KEY
+  intocado (exige reprocesso da Silver); CGU_API_KEY é rotação externa.
+- ☑ **Console MinIO fora do proxy público** (`nginx/default.conf`,
+  `nginx/bootstrap.conf`) — bind 127.0.0.1 + SSH tunnel apenas.
+- ☑ **Rate limit e headers no nginx:** limit_req 10r/s (burst 20) +
+  limit_conn por IP; HSTS, nosniff, X-Frame-Options DENY, Referrer-Policy;
+  proxy_read_timeout do WebSocket Streamlit 86400s→60s (ping nativo 30s).
+- ☑ **Containers não-root** (api/dashboard, uid 10001) e
+  `no-new-privileges:true` em todos os serviços do compose.
+- ☑ **Volume da API read-only** (`./data:/app/data:ro`) — fronteira ADR-026
+  também no mount.
+- ☑ **Env mínimo por serviço:** api lê `.env.api`, dashboard lê
+  `.env.dashboard` (templates commitados) — Streamlit não recebe mais chaves
+  CGU/HMAC/Postgres/Airflow.
+- ☑ **Admin Airflow sem senha em argv:** entrypoint oficial da imagem
+  (`_AIRFLOW_DB_MIGRATE` + `_AIRFLOW_WWW_USER_CREATE`); senha somente por env;
+  `AIRFLOW_ADMIN_EMAIL` configurável. (`airflow users password` não existe no
+  2.9.x — resets manuais em HML usaram o FAB SecurityManager por stdin.)
+- ☑ **API_DOCS_ENABLED:** `/docs`, `/redoc` e `/openapi.json` desligáveis em
+  produção (default ligado preserva DX em dev/HML).
+- ☑ **Fix overlay HML:** porta 18080 publicada em scheduler E webserver
+  (conflito de bind quando ambos sobem) — removida do scheduler.
+- ☐ Rotacionar segredos do **PRD** junto com o deploy destas correções
+  (antes disso a senha nova também ficaria exposta).
+- ☐ Normalizar CPF antes do HMAC-SHA256 — fontes entregam formatos distintos
+  (`123.456.789-09` vs `12345678909`) e a mesma pessoa gera digests diferentes;
+  exige reprocesso Bronze→Gold com chave versionada.
+- ☐ Dependabot + pin das GitHub Actions por commit SHA (supply chain).
+- ☐ Timeout explícito nos healthchecks de container (`urllib.urlopen` sem
+  timeout pode travar a thread de healthcheck).
+- ☐ Alinhar direção da janela `_truncar_validacao` com watermark vazio:
+  Câmara usa os períodos MAIS RECENTES enquanto CGU/Senado varrem os PRIMEIROS
+  (cartões 01-02/2013 ≈ 2600 páginas) — explica E2E HML ~50 min.
+- ☐ Restringir SSH da VPS ao novo IP na Security List OCI (IP público mudou:
+  147.15.38.74; antigo 137.131.175.179 em timeout).

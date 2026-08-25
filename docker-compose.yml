@@ -17,6 +17,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -24,6 +26,8 @@ services:
   # ── Certbot (emissão inicial manual + renovação automática) ──
   certbot:
     image: certbot/certbot:latest
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - certbot-etc:/etc/letsencrypt
       - certbot-var:/var/lib/letsencrypt
@@ -52,13 +56,17 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
-    env_file: ${API_ENV_FILE:-.env}
+    # Env mínimo (.env.api): a API só lê o DuckDB Gold (ADR-026). Credenciais
+    # MinIO chegam via `environment` abaixo, interpoladas do .env do projeto.
+    env_file: ${API_ENV_FILE:-.env.api}
     environment:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+     # :ro — fronteira de leitura (ADR-026) também no mount: a API nunca
+     # escreve no Gold, nem sob comprometimento do container.
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -68,6 +76,8 @@ services:
     depends_on:
       minio:
         condition: service_started
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -77,12 +87,16 @@ services:
     build:
       context: .
       dockerfile: dashboard/Dockerfile
-    env_file: ${DASHBOARD_ENV_FILE:-.env}
+    # Env mínimo (.env.dashboard): o dashboard só precisa apontar para a API —
+    # nunca recebe segredos de MinIO/CGU/HMAC (superprivilégio eliminado).
+    env_file: ${DASHBOARD_ENV_FILE:-.env.dashboard}
     environment:
       - API_URL=http://api:8000
     depends_on:
       api:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -102,6 +116,8 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -112,12 +128,11 @@ services:
     build:
       context: .
       dockerfile: pipeline/Dockerfile
-    entrypoint: >
-      bash -c "
-      airflow db init &&
-      airflow users create --username "$$AIRFLOW_ADMIN_USER" --password "$$AIRFLOW_ADMIN_PASSWORD" --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
-      airflow webserver
-      "
+    # Entrypoint OFICIAL da imagem apache/airflow: com _AIRFLOW_DB_MIGRATE e
+    # _AIRFLOW_WWW_USER_CREATE ele aplica migrações e cria o admin lendo a
+    # senha de VARIÁVEL DE AMBIENTE (nunca de argv — antes aparecia em ps aux).
+    # Criação é idempotente: usuário existente não é sobrescrito.
+    command: webserver
     env_file: ${PIPELINE_ENV_FILE:-.env}
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -131,8 +146,11 @@ services:
       - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
       - PYTHONPATH=/opt/airflow
       - AIRFLOW__WEBSERVER__RBAC=True
-      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
-      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
+      - _AIRFLOW_DB_MIGRATE=true
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=${AIRFLOW_ADMIN_USER:-admin}
+      - _AIRFLOW_WWW_USER_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
+      - _AIRFLOW_WWW_USER_EMAIL=${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
@@ -145,6 +163,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -183,6 +203,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
