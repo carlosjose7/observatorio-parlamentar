@@ -1,0 +1,5 @@
+# Scripts shell devem ser LF no repositório (deploy/container Linux).
+# Sem isso, um checkout no Windows (git autocrlf) converte para CRLF e o
+# shebang "#!/bin/sh\r" quebra o exec no Linux (erro "<script>: not found"
+# no /docker-entrypoint.d do nginx, status 127/EXEC). Ver CHANGELOG.
+*.sh text eol=lf
