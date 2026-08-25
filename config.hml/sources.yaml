@@ -1,0 +1,138 @@
+# config/sources.yaml
+# Configuração das fontes de dados externas.
+# Nunca hardcode URLs, rate limits ou nomes de campos de watermark no código —
+# tudo deve ser lido daqui via pipeline/config.py (ADR-008).
+# extra="forbid" no Settings correspondente: campos aqui não mapeados falham no startup.
+
+sources:
+  camara:
+    nome: "Câmara dos Deputados"
+    base_url: "https://dadosabertos.camara.leg.br/api/v2"
+    formato: "json"
+    encoding: "utf-8"
+    paginacao:
+      parametro_pagina: "pagina"
+      parametro_itens: "itens"
+      itens_por_pagina: 100
+    rate_limit:
+      requisicoes_por_minuto: 100  # não documentado oficialmente; PROJECT_CONTEXT.md §3
+    endpoints:
+      deputados:
+        path: "/deputados"
+      deputados_detalhe:
+        path: "/deputados/{id_deputado}"
+      despesas_por_deputado:
+        path: "/deputados/{id_deputado}/despesas"
+    watermark:
+      despesas_por_deputado:
+        # A API NÃO aceita dataInicio/dataFim (400); o único filtro temporal
+        # confiável é `idLegislatura`, com `ano`/`mes` como refinamento
+        # (corretivo 6.5). A extração particiona por mês (como cartões): para
+        # cada mês, deriva a legislatura do calendário (ADR-024) e requisita
+        # `idLegislatura`+`ano`+`mes`.
+        campo: "mes"                     # partição mensal (competência)
+        parametro_filtro: "idLegislatura"
+        parametro_filtro_ano: "ano"
+        parametro_filtro_mes: "mes"
+        formato_data: "%m/%Y"            # ex: "01/2015"
+        estrategia: "incremental"
+    deduplicacao:
+      campo: "cod_documento"            # GUID global (modelo Bronze, snake_case)
+      escopo: "ano_mes"
+    carga_historica:
+      mes_inicio: "01/2015"             # primeira carga (watermark vazio) varre meses desde aqui
+    siafi:
+      ug_siafi: null  # pendência conhecida — ver BACKLOG.md, não bloqueia Sprint 2
+
+  senado:
+    nome: "Senado Federal"
+    base_url: "https://www.senado.leg.br/transparencia/LAI/verba"
+    padrao_arquivo: "despesa_ceaps_{ano}.csv"
+    formato: "csv"
+    encoding: "ISO-8859-1"
+    separador: ";"
+    quote_char: "\""
+    separador_decimal: ","
+    formato_data: "%d/%m/%Y"
+    # API de Dados Abertos do Senado (legislativo) — Onda 2, dados mestres de
+    # senadores (dim_parlamentar, ADR-020). Endpoint distinto do CSV CEAPS.
+    api_dados:
+      base_url: "https://legis.senado.leg.br/dadosabertos"
+      formato: "json"
+      encoding: "utf-8"
+      endpoints:
+        senadores:
+          path: "/senador/lista/atual.json"
+    deduplicacao:
+      campo: "cod_documento"            # chave natural por ano — COD_DOCUMENTO
+      escopo: "ano"
+    carga_historica:
+      ano_inicio: 2015
+    watermark:
+      despesa_ceaps:
+        # Sem watermark incremental — a fonte publica CSV anual completo (ADR-009)
+        estrategia: "arquivo_anual"
+        formato_data: "%d/%m/%Y"
+    siafi:
+      unidade_gestora: "020001"
+      gestao: "00001"
+    execucao:
+      frequencia: "sazonal"  # após publicação do CSV do ano anterior
+
+  transparencia:
+    nome: "Portal da Transparência (CGU)"
+    base_url: "https://api.portaldatransparencia.gov.br/api-de-dados"
+    auth:
+      header: "chave-api-dados"
+      env_var: "CGU_API_KEY"  # segredo real fica em .env, nunca aqui
+    formato: "json"
+    paginacao:
+      parametro_pagina: "pagina"
+    rate_limit:
+      requisicoes_por_minuto_diurno: 400   # 06:00–24:00
+      requisicoes_por_minuto_noturno: 700  # 00:00–06:00
+      janela_noturna_inicio: "00:00"
+      janela_noturna_fim: "06:00"
+    endpoints:
+      emendas:
+        path: "/emendas"
+      cartoes:
+        path: "/cartoes"
+        parametros_fixos:  # query params obrigatórios (não é segredo)
+          tipoCartao: "1"
+        rate_limit:
+          # ⚠️ HIPÓTESE — NÃO é limite oficial confirmado da CGU.
+          # origem: "APIs restritas" mencionada na página de cadastro de chave
+          # (180 req/min), sem lista explícita de endpoints; /cartoes é o
+          # candidato plausível (CPF mascarado do portador). confiança:
+          # conservadora — o custo de errar é só "mais lento"; o oposto é
+          # chave suspensa por 8h (docs/sprint6.5_limites_fontes.md §4).
+          # Revisar quando houver confirmação documental/empírica.
+          requisicoes_por_minuto: 180
+      orgaos_siafi:
+        path: "/orgaos-siafi"
+    watermark:
+      emendas:
+        campo: "ano"
+        parametro_filtro: "ano"
+        estrategia: "particao_anual"  # endpoint não expõe filtro de data granular
+      cartoes:
+        campo: "mesExtrato"
+        parametro_filtro: "mesExtratoInicio"
+        parametro_filtro_fim: "mesExtratoFim"  # endpoint exige período (até 12 meses) — inicio=fim=mês no incremental
+        formato_data: "%m/%Y"
+        estrategia: "incremental"
+    deduplicacao:
+      emendas:
+        campo: "codigo_emenda"          # chave natural por ano
+        escopo: "ano"
+      cartoes:
+        campo: "id"                     # chave nativa da CGU, única por mês
+        escopo: "ano_mes"
+    carga_historica:
+      emendas:
+        ano_inicio: 2020
+      cartoes:
+        mes_inicio: "01/2013"
+    separador_decimal: ","
+    formato_data: "%d/%m/%Y"

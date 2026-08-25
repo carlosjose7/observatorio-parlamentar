@@ -152,3 +152,43 @@ def test_pipeline_runs_vazio_sem_arquivos(tmp_path, monkeypatch):
 
     assert n == 0
     assert tipo == "VARCHAR[]"
+
+
+def test_get_dbt_vars_injeta_s3_quando_minio(monkeypatch):
+    """Em produção (MINIO_ENDPOINT setado), o controle vem do MinIO via S3.
+
+    ADR-019: a Bronze grava `pipeline_runs` no MinIO (storage MinIO). Sem o
+    override, o dbt Gold leria do glob local (`data/bronze/...`), que resolve
+    0 arquivos em produção — o sintoma "pipeline_runs zero-linhas". O var
+    injetado deve apontar para o S3 path-style do bucket configurado.
+    """
+    monkeypatch.setenv("MINIO_ENDPOINT", "http://minio:9000")
+
+    from pipeline import config as pipeline_config
+
+    pipeline_config.load_env_settings.cache_clear()
+
+    from pipeline.config import get_dbt_vars
+
+    vars_dbt = get_dbt_vars()
+    assert vars_dbt["bronze_pipeline_runs_dir"] == (
+        "s3://bronze/controle/pipeline_runs/*.parquet"
+    )
+
+
+def test_get_dbt_vars_sem_minio_mantem_local(monkeypatch):
+    """Sem MinIO (dev/teste), o controle é lido do glob local padrão.
+
+    `get_dbt_vars` NÃO deve injetar o var — o dbt usa o default do
+    `dbt_project.yml` (`data/bronze/controle/pipeline_runs/*.parquet`).
+    """
+    monkeypatch.delenv("MINIO_ENDPOINT", raising=False)
+
+    from pipeline import config as pipeline_config
+
+    pipeline_config.load_env_settings.cache_clear()
+
+    from pipeline.config import get_dbt_vars
+
+    vars_dbt = get_dbt_vars()
+    assert "bronze_pipeline_runs_dir" not in vars_dbt

@@ -62,6 +62,9 @@ ssh -i "$SSH_KEY" "$SSH_DEST" "
     set -e
     sudo cp ~/observatorio-parlamentar/infra/observatorio-pipeline.service /etc/systemd/system/
     sudo cp ~/observatorio-parlamentar/infra/observatorio-pipeline.timer /etc/systemd/system/
+    # Garante o bit de execução do script (o systemd invoca o ExecStart sem
+    # prefixo `bash`; sem +x o start falha com status=203/EXEC Permission denied).
+    chmod +x ~/observatorio-parlamentar/scripts/run_pipeline_daily.sh
     sudo systemctl daemon-reload
     sudo systemctl enable observatorio-pipeline.timer
     sudo systemctl start observatorio-pipeline.timer

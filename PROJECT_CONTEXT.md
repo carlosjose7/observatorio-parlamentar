@@ -240,7 +240,7 @@ Fontes Externas (APIs + CSVs)
 observatorio-parlamentar/
 ├── .github/
 │   └── workflows/
-│       └── pipeline.yml              # CI/CD (placeholder, Sprint 9)
+│       └── ci.yml                    # CI: Gitleaks + Ruff + pytest (Sprint 9, Gate 1)
 ├── api/                              # FastAPI (Sprint 6 — Ondas 1–4 completas)
 │   ├── routers/
 │   │   ├── __init__.py
@@ -381,13 +381,17 @@ observatorio-parlamentar/
 │   ├── governance/
 │   │   ├── sprint_rules.md
 │   │   └── system_prompt.md
+│   ├── guia_deploy_operacao.md       # Docker Compose, deploy VPS, ADR-034 (Sprint 9)
 │   └── guia_provisionamento_oci.md
 ├── infra/                            # Provisionamento de infraestrutura
-│   └── cloud-config.yaml             # Cloud-init Oracle Cloud (Docker + UFW + SSH)
+│   ├── cloud-config.yaml             # Cloud-init Oracle Linux (Docker + firewalld + SSH)
+│   ├── observatorio-pipeline.service # systemd oneshot — execução diária (ADR-034)
+│   └── observatorio-pipeline.timer   # systemd timer — 03:00 America/Sao_Paulo
 ├── nginx/                            # Reverse proxy
-│   ├── default.conf
+│   ├── default.conf                  # HTTP:80 (ACME) + HTTPS:443 (TLS, Gate 5)
 │   └── Dockerfile
 ├── scripts/                          # Scripts auxiliares
+│   ├── run_pipeline_daily.sh         # Execução diária via docker compose (ADR-034)
 │   ├── deploy.ps1
 │   └── deploy.sh
 ├── notes/                            # Anotações pessoais (não versionar)
@@ -687,7 +691,7 @@ GET  /agent/context
 | **6.5** | Validação Real | Pipeline end-to-end com dados reais | ✅ Concluída |
 | **7** | Dashboard | Streamlit funcional | ✅ Concluída |
 | **8** | Testes | Cobertura ≥ 80% | ✅ Concluída |
-| **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Em andamento |
+| **9** | Deploy + Docs | GitHub Actions + README completo | ✅ Concluída |
  
 > Roadmap reconciliado com `docs/governance/sprint_rules.md` — ambos os documentos
 > agora concordam em 12 sprints, sem fusão entre Testes (8) e
@@ -782,4 +786,18 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 2.9 — **Sprint 9 em andamento** — ADR-034 aceito (execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI). Progresso: Gate 1 (ci.yml com Gitleaks+Ruff+pytest, 379 testes esperados no CI), Gate 2 (script diário + units systemd + bugfix NameError do DAG — aguardando validação na VPS), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia deploy/operação + healthchecks). Gate 5 (TLS) bloqueado até DNS apontar para a VPS. Sprints 1-8 fechadas. ADRs 001-034.*
+*Versão atual: 3.1 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito
+(execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a
+CI). Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates
+1–5 concluídos e comprovados com evidência externa** (`ci.yml` real, Ruff
+estrito 374 passed/93,53% cobertura — medição limpa, substitui leituras
+anteriores de 93,59%/87% afetadas por cache de `.coverage` — README/guias
+sem pendências, TLS ao vivo verificado por fetch externo em
+`https://observatorio-parlamentar.com.br`). **Gate 2 fechado em 25/08** —
+timer `enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`, 1676s), `pipeline_runs` populado via MinIO/S3
+(`GET /api/pipeline/status` → `{"total":3}`; `GET /api/agent/context` →
+`pipeline.run_id` preenchido com dados novos na Gold). Causas raiz
+resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
+a+rwx data/`), fix S3 (httpfs/ADR-019), robustez CGU vazia, ambiente HML
+portado. Sprints 1-9 fechadas. ADRs 001-034.*

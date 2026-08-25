@@ -8,7 +8,7 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+## Sprint 9 — Deploy + Documentação — FECHADA
 
 ### Adicionado
 - **ADR-034** — execução diária do pipeline via `systemd timer` na VPS Oracle
@@ -33,10 +33,49 @@ Histórico das alterações, organizado por sprint (ver
 - **`pipeline_dag.py::_executar_gold`** — `NameError` latente: o snippet do
   subprocesso dbt usava `json.dumps`/`sys.path` sem importar `json`/`sys`
   (quebraria o Gold em produção). Import adicionados ao snippet.
+- **Duplicação de agendamento (Gate 2):** o DAG tinha `schedule="@daily"`
+  simultaneamente ao timer `systemd` — dois relógios independentes disparando
+  o mesmo pipeline (scheduler interno do Airflow + timer externo), causando
+  execuções concorrentes na primeira tentativa de backfill em produção.
+  Corrigido para `schedule=None` — agendamento passa a ser **exclusivamente
+  externo** via `observatorio-pipeline.timer` (ADR-034). `test_dag.py`
+  atualizado para refletir o novo contrato (`schedule_interval is None`).
+- **Reconciliação de cobertura:** medição anterior de 87% (pós-fixes E2E
+  HML) era resultado de `.coverage` acumulado/sujo entre execuções.
+  Medição limpa (`rm -f .coverage` + suíte completa) no commit `61c4c66`:
+  **374 passed, 93,53% cobertura** — valor de referência para o fechamento
+  da sprint.
+- **`pipeline_runs` vazio em produção (ADR-019):** a Bronze grava o
+  controle no MinIO (storage MinIO, ADR-007), mas o dbt Gold lia o glob
+  local `data/bronze/...` → 0 arquivos. Fix: `httpfs` + secret S3 no
+  `profiles.yml` (endpoint SEM scheme — DuckDB 1.0.0 quebra URL com
+  `http://`) e `get_dbt_vars()` injetando `bronze_pipeline_runs_dir` S3
+  quando `MINIO_ENDPOINT` configurado.
+- **Gold falha sem dados CGU:** `_garantir_silver_cgu_vazio` cria
+  `silver_cartao`/`silver_emenda` vazias (schema de `schemas_silver.py`)
+  quando a CGU não retorna dados — o dbt build falhava com "table does not
+  exist".
+- **Deploy:** `chmod +x scripts/run_pipeline_daily.sh` no passo 4/6 do
+  `deploy.sh` (unit sem prefixo `bash` → 203/EXEC sem o bit).
+- **SELinux (Oracle Linux):** systemd falhava com 203/EXEC mesmo com o bit
+  +x (contexto `user_home_t`). `chcon -t bin_t` no script.
+- **Permissões de dados:** `chmod -R a+rwx data/` para o container airflow
+  (uid 50000) escrever no DuckDB da Gold (dono `opc`, uid 1000).
 
-Resultado parcial da Sprint 9: Gates 1–4 implementados (Gate 2 aguarda
-validação na VPS; Gate 5/TLS bloqueado pelo DNS). **374 passed, 1 skipped
-(Airflow) local; 93,59% cobertura; Ruff verde.**
+### Adicionado (fechamento)
+- **Ambiente HML portado** (`docker-compose.hml.yml`, `config.hml/`,
+  `.env.hml.example`, `scripts/run_hml_e2e.sh`) da branch `hml` órfã para
+  `develop`, com isolamento corrigido (`*_ENV_FILE` → `.env.hml`).
+
+Resultado da Sprint 9 (verificado por auditoria direta em `61c4c66` +
+fixes até `9ad47c2`): **Gates 1–5 concluídos e comprovados** (CI real,
+Ruff estrito **374 passed/93,53% cobertura**, README/guias completos, TLS
+ao vivo, execução diária via systemd). **Gate 2 fechado em 25/08:** timer
+`enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`, 1676s), `pipeline_runs` populado via MinIO/S3 —
+`GET /api/pipeline/status` → `{"total":3}` (linha nova no topo);
+`GET /api/agent/context` → `pipeline.run_id=4e52260e` com dados novos na
+Gold (`total_gasto` 608.742.032 → 608.821.853). **Sprint 9 FECHADA.**
 
 ---
 

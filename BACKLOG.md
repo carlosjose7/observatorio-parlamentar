@@ -766,7 +766,7 @@ Commit de fechamento: `fdad9c0`. Sprint 7 fechada (349). Sprint 6.5 fechada
 
 ---
 
-## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+## Sprint 9 — Deploy + Documentação — FECHADA
 
 **Objetivo:** ativar CI real (testes/lint/secret scan em todo PR), executar o
 pipeline diariamente em produção (ADR-034), completar README e guias de
@@ -794,14 +794,53 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `down` garantido no trap EXIT; timeouts via env vars.
 - ☑ Units `systemd` (`observatorio-pipeline.timer`/`.service`) em `infra/`
   (oneshot, 03:00 America/Sao_Paulo, `Persistent=true`).
-- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`;
-  instalação/atualização das units no `deploy.sh` (passo `[4/6]`).
+- ☑ Provisionamento: `usermod -aG docker ubuntu` no `cloud-config.yaml`
+  (posteriormente migrado para Oracle Linux/`opc`/firewalld — ver nota de
+  migração abaixo); instalação/atualização das units no `deploy.sh`.
 - ☑ **Bugfix latente:** `pipeline_dag.py::_executar_gold` usava
   `json.dumps`/`sys.path` no subprocesso do dbt sem importá-los
   (`NameError` em produção) — `import json`/`import sys` adicionados.
-- ☐ **Validação real na VPS pendente** (padrão do projeto: não fechar gate
-  sem validação). Testar `sudo -n true && echo OK`; se a VPS já existia,
-  rodar `sudo usermod -aG docker ubuntu` manualmente.
+- ☑ **Bugfix de duplicação de agendamento:** `schedule="@daily"` no DAG
+  competia com o timer `systemd`, causando execuções concorrentes na
+  primeira tentativa de backfill em produção. Corrigido para
+  `schedule=None` — agendamento exclusivamente externo (mesclado em
+  `61c4c66`, PR #6). `test_dag.py` atualizado.
+- ☑ **Bugfix `pipeline_runs` vazio (ADR-019 em produção):** a Bronze grava
+  o controle `pipeline_runs` no MinIO (storage MinIO, ADR-007), mas o dbt
+  Gold lia o glob local `data/bronze/...` → 0 arquivos, "pipeline_runs
+  zero-linhas". Corrigido: `profiles.yml` ganhou extensão `httpfs` + secret
+  S3 path-style (endpoint SEM scheme — DuckDB 1.0.0 gerava URL quebrada com
+  `http://`); `get_dbt_vars()` injeta `bronze_pipeline_runs_dir=s3://<bucket>/...`
+  quando `MINIO_ENDPOINT` configurado. Validado no HML (4 execuções) e PRD.
+- ☑ **Robustez do Gold sem dados CGU:** `_garantir_silver_cgu_vazio` cria
+  `silver_cartao`/`silver_emenda` vazias (schema declarativo de
+  `schemas_silver.py`) quando a CGU não retorna dados no período — o dbt
+  build completo falhava com "table does not exist" (mesmo padrão do
+  `_garantir_ml_staging_vazio`, ADR-026).
+- ☑ **Ambiente HML portado:** `docker-compose.hml.yml`, `config.hml/`,
+  `.env.hml.example` e `scripts/run_hml_e2e.sh` (branch `hml` órfã →
+  `develop`), com isolamento corrigido (`*_ENV_FILE` apontando para
+  `.env.hml`).
+- ☑ **Fix de deploy:** `chmod +x scripts/run_pipeline_daily.sh` no passo 4/6
+  do `deploy.sh` (unit invoca sem prefixo `bash`; sem +x → 203/EXEC).
+- ☑ **SELinux (Oracle Linux):** o systemd falhava ao executar o script com
+  `status=203/EXEC Permission denied` mesmo com o bit +x — contexto
+  `user_home_t` bloqueava. Corrigido com `chcon -t bin_t` no script.
+  **Nota operacional:** reaplicar após re-sincronização do arquivo na VPS.
+- ☑ **Permissões de dados:** `chmod -R a+rwx data/` — o container airflow
+  (uid 50000) precisa escrever no DuckDB da Gold (dono `opc`, uid 1000).
+- ☑ **Validação real de execução completa na VPS — CONCLUÍDA (25/08).**
+  Critério de aceite atendido: timer `enabled`/`active (waiting)` (próximo
+  disparo 03:00 America/Sao_Paulo) e execução via systemd com **SUCCESS**
+  (run_id `4e52260e`, 1676s, log do `journalctl`). `pipeline_runs`
+  populado: `GET /api/pipeline/status` → `{"total":3}` com a linha nova no
+  topo (`4e52260e`, status `success`); `GET /api/agent/context` →
+  `pipeline.run_id = 4e52260e` (antes `null`), dados novos na Gold
+  (`total_gasto` 608.742.032 → 608.821.853, `num_transacoes` 490.602 →
+  490.800, `total_registros` 3.649.994 → 3.650.273). Observação: durante o
+  `dbt build` (leitor read_only + single-writer), `/api/pipeline/status`
+  pode retornar `total:0` momentaneamente — não é inconsistência
+  permanente, é timing do build.
 
 ### Gate 3 — Ruff estrito (dívida deferida na Sprint 8)
 
@@ -810,8 +849,10 @@ instalação/deploy/operação, e fechar dívidas registradas.
   auto-fix aplicado (113 correções). Deferidos para porta própria: `E501`
   (line-too-long — exigiria reformatação massiva) e `B904/B905`
   (semânticas, revisão manual).
-- ☑ Validado: `ruff check .` verde; suíte completa **374 passed, 1 skipped
-  (Airflow), 93,59% cobertura**.
+- ☑ Validado (auditoria direta, `61c4c66`): `ruff check .` verde; suíte
+  completa **374 passed, 93,53% cobertura** (medição limpa, `.coverage`
+  removido antes da execução — substitui a leitura anterior de 93,59%/87%,
+  ambas afetadas por cache de cobertura entre execuções).
 
 ### Gate 4 — Documentação
 
@@ -827,16 +868,39 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Gate 5 — TLS (autenticação/TLS — dívida da Sprint 7, ADR-007)
 
-- ☐ Nginx com HTTPS via Let's Encrypt/certbot — **bloqueado até o registro A
-  de `observatorio-parlamentar.com.br` apontar para a VPS Oracle** (certbot
-  falha a validação HTTP-01 sem DNS resolvendo). Até lá, tráfego em `:80`
-  sem criptografia (dado público agregado — risco aceito e documentado).
+- ☑ Nginx com HTTPS via Let's Encrypt/certbot. Domínio próprio
+  (`observatorio-parlamentar.com.br`, Registro.br) com zona DNS própria
+  (NS `e.sec.dns.br`/`f.sec.dns.br`), registro A raiz + `www` → VPS Oracle.
+  Certificado emitido (CN=`observatorio-parlamentar.com.br`, SAN `www`,
+  expira 18/11/2026), renovação automática via container `certbot`
+  (`certbot renew` a cada 12h). Config Nginx com entrada seletiva
+  (bootstrap :80/ACME vs. SSL :443) evita crash-loop sem certificado.
+  **Verificado por auditoria externa direta** (fetch a
+  `https://observatorio-parlamentar.com.br/` — HTTPS válido, sem redirect
+  para HTTP, App Streamlit servido corretamente).
 
-*Versão atual: 2.5 — **Sprint 9 em andamento** — ADR-034 aceito (execução
-diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
-**Progresso:** Gate 1 (ci.yml: Gitleaks+Ruff+pytest, 379 testes esperados no
-CI), Gate 2 (script diário + units systemd + usermod docker + bugfix NameError
-do DAG; **aguardando validação na VPS**), Gate 3 (Ruff estrito: I/W292/UP017/UP035/UP037
-habilitados, 374 passed/93,59%), Gate 4 (README §II.6/§III + guia de
-deploy/operação + healthchecks docker-compose). Gate 5 (TLS) **bloqueado até
-DNS apontar para a VPS**. ADRs 001-034.*
+### Acompanhamento pós-fechamento (não bloqueante)
+
+- ☐ **Higiene operacional:** ambiente HML derrubado em 25/08 (containers,
+  rede e volumes `hml_*` removidos) para liberar recursos da VPS e eliminar
+  ambiguidade de observação. HML nunca deve ficar residente por design
+  (mesmo princípio do Gate 5); o `scripts/run_hml_e2e.sh` sobe/derruba sob
+  demanda.
+- ☐ **Observação de `/api/pipeline/status`:** durante o `dbt build`
+  (single-writer do DuckDB + leitura `read_only` da API), o endpoint pode
+  retornar `total:0` momentaneamente. Verificado por 4 camadas independentes
+  (DuckDB ground truth, API interna, URL pública via nginx/TLS, fetch
+  externo) — sempre converge para `total:3` após o build. Não é bug; se
+  virar queixa de consumidor, considerar retry/read replica.
+
+*Versão atual: 2.7 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito.
+Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates 1–5
+concluídos e comprovados** com evidência externa (CI real, Ruff estrito
+93,53%/374 passed, README/guias completos, TLS ao vivo, execução diária via
+systemd com SUCCESS em produção). **Gate 2 fechado em 25/08:** timer
+`enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`), `pipeline_runs` populado via MinIO/S3 (`GET /api/pipeline/status`
+→ total 3; `GET /api/agent/context` → pipeline.run_id preenchido). Causas
+raiz resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
+a+rwx data/`), fix S3 (httpfs), robustez CGU vazia, ambiente HML portado.
+ADRs 001-034.*
