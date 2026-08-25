@@ -10,9 +10,9 @@ decisão de treino/inferência.
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from pydantic import BaseModel, ConfigDict
+
+from api.schemas._common import Moeda
 
 
 class AnomaliaItem(BaseModel):
@@ -28,7 +28,7 @@ class AnomaliaItem(BaseModel):
     id_parlamentar: int
     id_fornecedor: int | None
     data_sk: int
-    valor_liquido: Decimal
+    valor_liquido: Moeda
     zscore: float | None
     if_score: float | None
     criterio_zscore: bool

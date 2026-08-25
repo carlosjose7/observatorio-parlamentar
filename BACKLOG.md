@@ -881,6 +881,27 @@ instalação/deploy/operação, e fechar dívidas registradas.
 
 ### Acompanhamento pós-fechamento (não bloqueante)
 
+- ☑ **Bugfix em produção — Decimal serializado como string JSON:**
+  `GastoItem.valor_liquido`/`valor_glosa` (`api/schemas/parlamentares.py`),
+  `AnomaliaItem.valor_liquido` (`api/schemas/anomalias.py`) e
+  `PerfilFornecedor.valor_liquido_total`/`ParlamentarFornecedor.total_gasto`
+  (`api/schemas/fornecedores.py`) eram tipados como `Decimal` puro — o
+  Pydantic v2 serializa `Decimal` para JSON como *string*
+  (`"150.30"`, não `150.3`), contradizendo a intenção já documentada no
+  docstring original do módulo. Reportado em produção via
+  `dashboard/pages/02_parlamentar.py` (`ValueError: Unknown format code
+  'f' for object of type 'str'` em `formatar_moeda`); auditoria confirmou
+  que `05_fornecedor.py` e `07_anomalias.py` tinham o mesmo bug latente
+  (só não reportado ainda) — `03_partido.py`/`04_estado.py` escaparam por
+  já aplicarem `float(...)` defensivamente. Corrigido na raiz (API, não no
+  dashboard): novo tipo `Moeda` em `api/schemas/_common.py`
+  (`Annotated[Decimal, PlainSerializer(..., when_used="json")]`),
+  aplicado nos 4 campos monetários acima — `Decimal` continua sendo o tipo
+  interno (precisão preservada), mas o encoder JSON da API agora emite
+  número. Validado contra os schemas reais (`model_dump_json()`) e suíte
+  `tests/api/`/`tests/unit/` (63 passed, sem regressão). Não requereu novo
+  ADR — corrige comportamento para bater com a intenção já registrada,
+  não reabre nenhuma decisão arquitetural.
 - ☐ **Higiene operacional:** ambiente HML derrubado em 25/08 (containers,
   rede e volumes `hml_*` removidos) para liberar recursos da VPS e eliminar
   ambiguidade de observação. HML nunca deve ficar residente por design
