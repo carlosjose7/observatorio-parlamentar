@@ -954,3 +954,52 @@ systemd com SUCCESS em produção). **Gate 2 fechado em 25/08:** timer
 raiz resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
 a+rwx data/`), fix S3 (httpfs), robustez CGU vazia, ambiente HML portado.
 ADRs 001-034.*
+
+---
+
+## Pós-Sprint 9 - Hardening de Segurança (25/08/2026)
+
+Auditoria de segurança externa (nginx, Docker/compose, API, pseudonimização,
+CI e histórico git via gitleaks — 123 commits, 0 vazamentos). Correções na
+branch `fix/security-hardening`; rotação de segredos executada na VPS de HML
+ANTES do código (console MinIO estava pública → credenciais tratadas como
+comprometidas).
+
+- ☑ **Rotação de segredos em HML:** MINIO_ROOT_PASSWORD, POSTGRES_PASSWORD,
+  AIRFLOW_ADMIN_PASSWORD (43 chars urlsafe CSPRNG) e AIRFLOW_FERNET_KEY
+  (validada com `cryptography`) — gerados na própria VPS, nunca impressos.
+  E2E verde pós-rotação (backfill + incremental SUCCESS). CPF_HMAC_SECRET_KEY
+  intocado (exige reprocesso da Silver); CGU_API_KEY é rotação externa.
+- ☑ **Console MinIO fora do proxy público** (`nginx/default.conf`,
+  `nginx/bootstrap.conf`) — bind 127.0.0.1 + SSH tunnel apenas.
+- ☑ **Rate limit e headers no nginx:** limit_req 10r/s (burst 20) +
+  limit_conn por IP; HSTS, nosniff, X-Frame-Options DENY, Referrer-Policy;
+  proxy_read_timeout do WebSocket Streamlit 86400s→60s (ping nativo 30s).
+- ☑ **Containers não-root** (api/dashboard, uid 10001) e
+  `no-new-privileges:true` em todos os serviços do compose.
+- ☑ **Volume da API read-only** (`./data:/app/data:ro`) — fronteira ADR-026
+  também no mount.
+- ☑ **Env mínimo por serviço:** api lê `.env.api`, dashboard lê
+  `.env.dashboard` (templates commitados) — Streamlit não recebe mais chaves
+  CGU/HMAC/Postgres/Airflow.
+- ☑ **Admin Airflow sem senha em argv:** entrypoint oficial da imagem
+  (`_AIRFLOW_DB_MIGRATE` + `_AIRFLOW_WWW_USER_CREATE`); senha somente por env;
+  `AIRFLOW_ADMIN_EMAIL` configurável. (`airflow users password` não existe no
+  2.9.x — resets manuais em HML usaram o FAB SecurityManager por stdin.)
+- ☑ **API_DOCS_ENABLED:** `/docs`, `/redoc` e `/openapi.json` desligáveis em
+  produção (default ligado preserva DX em dev/HML).
+- ☑ **Fix overlay HML:** porta 18080 publicada em scheduler E webserver
+  (conflito de bind quando ambos sobem) — removida do scheduler.
+- ☐ Rotacionar segredos do **PRD** junto com o deploy destas correções
+  (antes disso a senha nova também ficaria exposta).
+- ☐ Normalizar CPF antes do HMAC-SHA256 — fontes entregam formatos distintos
+  (`123.456.789-09` vs `12345678909`) e a mesma pessoa gera digests diferentes;
+  exige reprocesso Bronze→Gold com chave versionada.
+- ☐ Dependabot + pin das GitHub Actions por commit SHA (supply chain).
+- ☐ Timeout explícito nos healthchecks de container (`urllib.urlopen` sem
+  timeout pode travar a thread de healthcheck).
+- ☐ Alinhar direção da janela `_truncar_validacao` com watermark vazio:
+  Câmara usa os períodos MAIS RECENTES enquanto CGU/Senado varrem os PRIMEIROS
+  (cartões 01-02/2013 ≈ 2600 páginas) — explica E2E HML ~50 min.
+- ☐ Restringir SSH da VPS ao novo IP na Security List OCI (IP público mudou:
+  147.15.38.74; antigo 137.131.175.179 em timeout).

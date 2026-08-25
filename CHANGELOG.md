@@ -8,6 +8,55 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Segurança — Hardening pós-auditoria (25/08/2026)
+
+### Segurança
+- **Console MinIO removida do proxy público:** `location /minio/` publicava a
+  console administrativa do object storage (login com credenciais root) para a
+  internet, anulando o bind local `127.0.0.1:9001`. Acesso operacional agora é
+  exclusivamente via SSH tunnel (`nginx/default.conf`, `nginx/bootstrap.conf`).
+- **Rate limit por IP no nginx:** `limit_req` (10r/s, burst 20, nodelay) e
+  `limit_conn` nas rotas `/api/`, `/docs`, `/openapi.json` e dashboard — mitiga
+  brute force e DoS de aplicação.
+- **Headers de segurança** com flag `always`: HSTS (1 ano, includeSubDomains),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: strict-origin-when-cross-origin`.
+- **WebSocket do Streamlit:** `proxy_read_timeout` de 86400s (24h) → 60s; o
+  ping nativo do Streamlit (30s) mantém a conexão viva — fecha vetor slowloris.
+- **Containers não-root:** imagens da API e do dashboard criam usuário dedicado
+  (uid 10001) em vez de rodar como root.
+- **`no-new-privileges:true`** em todos os serviços do compose (antes só o
+  MinIO tinha).
+- **Volume da API read-only:** `./data:/app/data:ro` — a fronteira de leitura
+  do ADR-026 vale também no mount; nem sob RCE o container altera o Gold.
+- **Env mínimo por serviço:** a API lê `.env.api` e o dashboard `.env.dashboard`
+  (templates commitados). O dashboard não recebe mais `CGU_API_KEY`,
+  `CPF_HMAC_SECRET_KEY`, `POSTGRES_PASSWORD` nem credenciais Airflow — RCE no
+  Streamlit não vira comprometimento total de segredos.
+- **Admin do Airflow sem senha na linha de comando:** entrypoint custom que
+  passava `--password "$AIRFLOW_ADMIN_PASSWORD"` (visível em `ps aux`) foi
+  substituído pelo mecanismo oficial da imagem (`_AIRFLOW_DB_MIGRATE` +
+  `_AIRFLOW_WWW_USER_CREATE/_AIRFLOW_WWW_USER_USERNAME/PASSWORD/EMAIL`);
+  criação idempotente e falhas visíveis. `AIRFLOW_ADMIN_EMAIL` configurável.
+- **Rotação de segredos em HML** executada antes do deploy (console MinIO
+  estava pública → credenciais tratadas como comprometidas): MinIO root,
+  Postgres, admin Airflow e Fernet key renovados com CSPRNG na própria VPS;
+  E2E verde pós-rotação. PRD aguarda este deploy.
+
+### Adicionado
+- **`API_DOCS_ENABLED`** (env, default `true`): desabilita `/docs`, `/redoc` e
+  `/openapi.json` em produção para não autodocumentar a superfície de ataque.
+  `api/main.py` expõe factory `criar_app()`; testes cobrem os dois estados.
+- **`.env.api.example` / `.env.dashboard.example`:** templates dos ambientes
+  mínimos por serviço.
+
+### Corrigido
+- **Overlay HML (`docker-compose.hml.yml`):** porta 18080 publicada
+  simultaneamente no `airflow-webserver` e no `airflow-scheduler` — conflito de
+  bind quando ambos sobem; bloco removido do scheduler.
+
+---
+
 ## Pós-Sprint 9 — Hotfix em produção
 
 ### Corrigido
