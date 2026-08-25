@@ -87,5 +87,3 @@ services:
       - ./pipeline:/opt/airflow/pipeline
       - ./config.hml:/opt/airflow/config
       - ./data.hml:/opt/airflow/data
-    ports:
-      - "127.0.0.1:18080:8080"
