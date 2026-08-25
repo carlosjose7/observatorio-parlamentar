@@ -17,6 +17,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -24,6 +26,8 @@ services:
   # ── Certbot (emissão inicial manual + renovação automática) ──
   certbot:
     image: certbot/certbot:latest
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - certbot-etc:/etc/letsencrypt
       - certbot-var:/var/lib/letsencrypt
@@ -68,6 +72,8 @@ services:
     depends_on:
       minio:
         condition: service_started
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -83,6 +89,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -102,6 +110,8 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -145,6 +155,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
@@ -183,6 +195,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
       - observatorio-net
     restart: unless-stopped
