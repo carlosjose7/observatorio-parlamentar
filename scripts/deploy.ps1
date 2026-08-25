@@ -31,7 +31,9 @@ Write-Host "[3/4] Enviando arquivos do projeto..." -ForegroundColor Yellow
 
 $excludeList = @(
     '.git', '.agents', '__pycache__', '*.pyc', '.venv', 'venv',
-    '.env', 'node_modules', 'data', 'logs'
+    '.env', 'node_modules', 'data', 'logs',
+    # artefatos dbt (o tar/rsync NAO le .gitignore — excluir explicitamente)
+    'pipeline/gold/target', 'pipeline/gold/logs', 'target'
 )
 
 # Cria TAR e envia via SSH (funciona no Windows sem rsync)

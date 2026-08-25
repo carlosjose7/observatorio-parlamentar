@@ -39,6 +39,8 @@ ssh -i "$SSH_KEY" "$SSH_DEST" "mkdir -p ~/observatorio-parlamentar"
 echo -e "${GREEN}✓ Diretório criado${NC}"
 
 # ── 3. Sincroniza arquivos (excluindo desnecessários) ────────────
+# Nota: artefatos dbt (pipeline/gold/target|logs) são excluídos explicitamente
+# porque o rsync NÃO lê o .gitignore.
 echo -e "\n${YELLOW}[3/6] Sincronizando arquivos do projeto...${NC}"
 rsync -avz --delete \
     --exclude='.git/' \
@@ -51,6 +53,8 @@ rsync -avz --delete \
     --exclude='node_modules/' \
     --exclude='data/' \
     --exclude='logs/' \
+    --exclude='pipeline/gold/target/' \
+    --exclude='pipeline/gold/logs/' \
     -e "ssh -i $SSH_KEY" \
     "$PROJECT_DIR/" \
     "$SSH_DEST:~/observatorio-parlamentar/"
