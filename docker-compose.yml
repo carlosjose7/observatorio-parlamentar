@@ -128,12 +128,11 @@ services:
     build:
       context: .
       dockerfile: pipeline/Dockerfile
-    entrypoint: >
-      bash -c "
-      airflow db init &&
-      airflow users create --username "$$AIRFLOW_ADMIN_USER" --password "$$AIRFLOW_ADMIN_PASSWORD" --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null || true &&
-      airflow webserver
-      "
+    # Entrypoint OFICIAL da imagem apache/airflow: com _AIRFLOW_DB_MIGRATE e
+    # _AIRFLOW_WWW_USER_CREATE ele aplica migrações e cria o admin lendo a
+    # senha de VARIÁVEL DE AMBIENTE (nunca de argv — antes aparecia em ps aux).
+    # Criação é idempotente: usuário existente não é sobrescrito.
+    command: webserver
     env_file: ${PIPELINE_ENV_FILE:-.env}
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -147,8 +146,11 @@ services:
       - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/pipeline/dags
       - PYTHONPATH=/opt/airflow
       - AIRFLOW__WEBSERVER__RBAC=True
-      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
-      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
+      - _AIRFLOW_DB_MIGRATE=true
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=${AIRFLOW_ADMIN_USER:-admin}
+      - _AIRFLOW_WWW_USER_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:?Defina AIRFLOW_ADMIN_PASSWORD no .env}
+      - _AIRFLOW_WWW_USER_EMAIL=${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
