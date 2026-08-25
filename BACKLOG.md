@@ -766,7 +766,7 @@ Commit de fechamento: `fdad9c0`. Sprint 7 fechada (349). Sprint 6.5 fechada
 
 ---
 
-## Sprint 9 — Deploy + Documentação — EM ANDAMENTO
+## Sprint 9 — Deploy + Documentação — FECHADA
 
 **Objetivo:** ativar CI real (testes/lint/secret scan em todo PR), executar o
 pipeline diariamente em produção (ADR-034), completar README e guias de
@@ -805,16 +805,42 @@ instalação/deploy/operação, e fechar dívidas registradas.
   primeira tentativa de backfill em produção. Corrigido para
   `schedule=None` — agendamento exclusivamente externo (mesclado em
   `61c4c66`, PR #6). `test_dag.py` atualizado.
-- ☐ **Validação real de execução completa na VPS — PENDENTE.** Critério de
-  aceite: timer `enabled`/`active (waiting)` e ao menos 1 execução
-  `SUCCESS` com `pipeline_runs` populado (verificável via
-  `GET /api/pipeline/status`). Estado verificado em 22/08: timer
-  `disabled`/`inactive (dead)` (desligado durante o debug da duplicação,
-  `journalctl` mostra `Deactivated successfully` às 01:01 UTC);
-  `/api/pipeline/status` retorna `{"total":0,"itens":[]}`. Os dados hoje
-  expostos na Gold (503 parlamentares, R$608M) vêm de carga anterior
-  (HML/E2E), não de execução do timer com o fix aplicado. **Gate 2 não
-  pode ser fechado sem essa validação.**
+- ☑ **Bugfix `pipeline_runs` vazio (ADR-019 em produção):** a Bronze grava
+  o controle `pipeline_runs` no MinIO (storage MinIO, ADR-007), mas o dbt
+  Gold lia o glob local `data/bronze/...` → 0 arquivos, "pipeline_runs
+  zero-linhas". Corrigido: `profiles.yml` ganhou extensão `httpfs` + secret
+  S3 path-style (endpoint SEM scheme — DuckDB 1.0.0 gerava URL quebrada com
+  `http://`); `get_dbt_vars()` injeta `bronze_pipeline_runs_dir=s3://<bucket>/...`
+  quando `MINIO_ENDPOINT` configurado. Validado no HML (4 execuções) e PRD.
+- ☑ **Robustez do Gold sem dados CGU:** `_garantir_silver_cgu_vazio` cria
+  `silver_cartao`/`silver_emenda` vazias (schema declarativo de
+  `schemas_silver.py`) quando a CGU não retorna dados no período — o dbt
+  build completo falhava com "table does not exist" (mesmo padrão do
+  `_garantir_ml_staging_vazio`, ADR-026).
+- ☑ **Ambiente HML portado:** `docker-compose.hml.yml`, `config.hml/`,
+  `.env.hml.example` e `scripts/run_hml_e2e.sh` (branch `hml` órfã →
+  `develop`), com isolamento corrigido (`*_ENV_FILE` apontando para
+  `.env.hml`).
+- ☑ **Fix de deploy:** `chmod +x scripts/run_pipeline_daily.sh` no passo 4/6
+  do `deploy.sh` (unit invoca sem prefixo `bash`; sem +x → 203/EXEC).
+- ☑ **SELinux (Oracle Linux):** o systemd falhava ao executar o script com
+  `status=203/EXEC Permission denied` mesmo com o bit +x — contexto
+  `user_home_t` bloqueava. Corrigido com `chcon -t bin_t` no script.
+  **Nota operacional:** reaplicar após re-sincronização do arquivo na VPS.
+- ☑ **Permissões de dados:** `chmod -R a+rwx data/` — o container airflow
+  (uid 50000) precisa escrever no DuckDB da Gold (dono `opc`, uid 1000).
+- ☑ **Validação real de execução completa na VPS — CONCLUÍDA (25/08).**
+  Critério de aceite atendido: timer `enabled`/`active (waiting)` (próximo
+  disparo 03:00 America/Sao_Paulo) e execução via systemd com **SUCCESS**
+  (run_id `4e52260e`, 1676s, log do `journalctl`). `pipeline_runs`
+  populado: `GET /api/pipeline/status` → `{"total":3}` com a linha nova no
+  topo (`4e52260e`, status `success`); `GET /api/agent/context` →
+  `pipeline.run_id = 4e52260e` (antes `null`), dados novos na Gold
+  (`total_gasto` 608.742.032 → 608.821.853, `num_transacoes` 490.602 →
+  490.800, `total_registros` 3.649.994 → 3.650.273). Observação: durante o
+  `dbt build` (leitor read_only + single-writer), `/api/pipeline/status`
+  pode retornar `total:0` momentaneamente — não é inconsistência
+  permanente, é timing do build.
 
 ### Gate 3 — Ruff estrito (dívida deferida na Sprint 8)
 
@@ -853,13 +879,14 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `https://observatorio-parlamentar.com.br/` — HTTPS válido, sem redirect
   para HTTP, App Streamlit servido corretamente).
 
-*Versão atual: 2.6 — **Sprint 9 em andamento.** ADR-034 aceito. Auditoria
-direta em `61c4c66` (main = develop, PR #6 mesclado) confirma: **Gates 1, 3,
-4 e 5 concluídos e comprovados** com evidência externa (CI real, Ruff
-estrito 93,53%/374 passed, README/guias completos, TLS ao vivo). **Gate 2
-implementado e com bug de duplicação corrigido (`schedule=None`), mas
-timer `systemd` está desligado na VPS e nenhuma execução completa foi
-registrada em produção** (`pipeline_runs` vazio, verificável via
-`/api/pipeline/status`) — dados atuais da Gold vêm de carga HML/E2E
-anterior, não de execução de produção pós-fix. Sprint 9 não pode ser
-fechada até essa validação. ADRs 001-034.*
+*Versão atual: 2.7 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito.
+Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates 1–5
+concluídos e comprovados** com evidência externa (CI real, Ruff estrito
+93,53%/374 passed, README/guias completos, TLS ao vivo, execução diária via
+systemd com SUCCESS em produção). **Gate 2 fechado em 25/08:** timer
+`enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`), `pipeline_runs` populado via MinIO/S3 (`GET /api/pipeline/status`
+→ total 3; `GET /api/agent/context` → pipeline.run_id preenchido). Causas
+raiz resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
+a+rwx data/`), fix S3 (httpfs), robustez CGU vazia, ambiente HML portado.
+ADRs 001-034.*

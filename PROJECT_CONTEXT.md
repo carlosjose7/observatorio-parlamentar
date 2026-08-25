@@ -691,7 +691,7 @@ GET  /agent/context
 | **6.5** | Validação Real | Pipeline end-to-end com dados reais | ✅ Concluída |
 | **7** | Dashboard | Streamlit funcional | ✅ Concluída |
 | **8** | Testes | Cobertura ≥ 80% | ✅ Concluída |
-| **9** | Deploy + Docs | GitHub Actions + README completo | ⏳ Em andamento |
+| **9** | Deploy + Docs | GitHub Actions + README completo | ✅ Concluída |
  
 > Roadmap reconciliado com `docs/governance/sprint_rules.md` — ambos os documentos
 > agora concordam em 12 sprints, sem fusão entre Testes (8) e
@@ -786,23 +786,18 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 3.0 — **Sprint 9 em andamento** — ADR-034 aceito (execução
-diária via systemd timer na VPS Oracle; GitHub Actions restrito a CI).
-Auditoria direta em `61c4c66` (main = develop, PR #6 mesclado) confirma:
-**Gates 1, 3, 4 e 5 concluídos e comprovados com evidência externa**
-(`ci.yml` real, Ruff estrito 374 passed/93,53% cobertura — medição limpa,
-substitui leituras anteriores de 93,59%/87% afetadas por cache de
-`.coverage` — README/guias sem pendências, TLS ao vivo verificado por
-fetch externo em `https://observatorio-parlamentar.com.br`). **Gate 2
-implementado, incluindo o bugfix do agendamento duplicado
-(`schedule="@daily"` do DAG competindo com o timer systemd — corrigido
-para `schedule=None`, PR #6), mas ainda sem validação de execução completa
-em produção:** timer `systemd` desligado na VPS (`disabled`/
-`inactive (dead)`, log mostra `Deactivated successfully` em 22/08 01:01
-UTC) e `pipeline_runs` vazio (`GET /api/pipeline/status` →
-`{"total":0,"itens":[]}`, verificado externamente). Os dados hoje expostos
-pela API (503 parlamentares, R$608M, 490k transações) vêm de carga
-anterior de homologação (HML/E2E), não de execução de produção com o fix
-aplicado. **Sprint 9 permanece EM ANDAMENTO — fechamento formal
-condicionado à validação real do Gate 2.** Sprints 1-8 fechadas.
-ADRs 001-034.*
+*Versão atual: 3.1 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito
+(execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a
+CI). Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates
+1–5 concluídos e comprovados com evidência externa** (`ci.yml` real, Ruff
+estrito 374 passed/93,53% cobertura — medição limpa, substitui leituras
+anteriores de 93,59%/87% afetadas por cache de `.coverage` — README/guias
+sem pendências, TLS ao vivo verificado por fetch externo em
+`https://observatorio-parlamentar.com.br`). **Gate 2 fechado em 25/08** —
+timer `enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
+`4e52260e`, 1676s), `pipeline_runs` populado via MinIO/S3
+(`GET /api/pipeline/status` → `{"total":3}`; `GET /api/agent/context` →
+`pipeline.run_id` preenchido com dados novos na Gold). Causas raiz
+resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
+a+rwx data/`), fix S3 (httpfs/ADR-019), robustez CGU vazia, ambiente HML
+portado. Sprints 1-9 fechadas. ADRs 001-034.*
