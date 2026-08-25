@@ -931,6 +931,8 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `tests/api/`/`tests/unit/` (63 passed, sem regressão). Não requereu novo
   ADR — corrige comportamento para bater com a intenção já registrada,
   não reabre nenhuma decisão arquitetural.
+=======
+>>>>>>> origin/main
 - ☐ **Higiene operacional:** ambiente HML derrubado em 25/08 (containers,
   rede e volumes `hml_*` removidos) para liberar recursos da VPS e eliminar
   ambiguidade de observação. HML nunca deve ficar residente por design

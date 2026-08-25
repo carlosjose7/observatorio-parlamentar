@@ -112,7 +112,6 @@ Histórico das alterações, organizado por sprint (ver
   `Decimal` continua sendo o tipo interno; apenas o encoder JSON da API
   passa a emitir número. Sem impacto de precisão, sem novo ADR (correção
   de implementação, não reabertura de decisão arquitetural).
-
 ---
 
 ## Sprint 9 — Deploy + Documentação — FECHADA
