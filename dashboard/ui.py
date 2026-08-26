@@ -15,6 +15,48 @@ import streamlit as st
 
 from dashboard.client import ApiClient, ApiError, ApiIndisponivel
 
+_IDENTIDADE_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+.stApp { font-family: "DM Sans", "Source Sans Pro", sans-serif; }
+h1, h2, h3 { color: #0B1F33; letter-spacing: -0.02em; }
+[data-testid="stMetric"] {
+    background: #FFFFFF;
+    border: 1px solid #D9DEE3;
+    border-radius: 0;
+    padding: 16px 16px 12px;
+}
+[data-testid="stMetricLabel"] p {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5C6B7A;
+}
+[data-testid="stMetricValue"] { color: #0B1F33; font-weight: 700; }
+.stButton > button,
+.stDownloadButton > button,
+[data-testid="stDownloadButton"] > button {
+    border-radius: 0;
+    font-weight: 600;
+}
+[data-testid="stCaptionContainer"],
+[data-testid="stWidgetLabel"] p { color: #5C6B7A; }
+hr { border: none; border-top: 1px solid #D9DEE3; }
+</style>
+"""
+
+
+def aplicar_identidade() -> None:
+    """Injeta o CSS da identidade visual compartilhada com a landing page.
+
+    Complementa o tema de `.streamlit/config.toml` (paleta) com tipografia
+    DM Sans/IBM Plex Mono, cartões de métrica e botões de cantos retos.
+    Deve ser chamado logo após `st.set_page_config` em todas as páginas.
+    """
+    st.markdown(_IDENTIDADE_CSS, unsafe_allow_html=True)
+
 
 def formatar_moeda(valor: float | None) -> str:
     """Formata um valor monetário em pt-BR (R$ 1.234,56) ou '—' quando nulo."""
@@ -153,3 +195,52 @@ def tabela_exportavel(
             )
         except ImportError:
             st.caption("PDF indisponível (instale matplotlib).")
+
+
+_NOMES_MESES = [
+    "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+    "Jul", "Ago", "Set", "Out", "Nov", "Dez",
+]
+
+
+def filtro_periodo(df: pd.DataFrame, *, key_prefix: str) -> pd.DataFrame:
+    """Filtros de ano e mês lado a lado (todos os meses marcados por padrão).
+
+    Espera as colunas `ano` e `mes` no DataFrame. As chaves dos widgets
+    derivam de `key_prefix` para não colidirem entre páginas/recortes.
+    """
+    if df.empty or "ano" not in df.columns or "mes" not in df.columns:
+        return df
+    anos = sorted(int(a) for a in df["ano"].unique())
+    col_ano, col_mes = st.columns(2)
+    with col_ano:
+        sel_anos = st.multiselect("Ano", anos, default=anos, key=f"{key_prefix}_ano")
+    with col_mes:
+        sel_meses = st.multiselect(
+            "Mês",
+            list(range(1, 13)),
+            default=list(range(1, 13)),
+            format_func=lambda m: f"{m:02d} · {_NOMES_MESES[m - 1]}",
+            key=f"{key_prefix}_mes",
+        )
+    return df[df["ano"].isin(sel_anos) & df["mes"].isin(sel_meses)]
+
+
+def grafico_mensal(df: pd.DataFrame, *, coluna_valor: str = "valor_liquido") -> None:
+    """Gráfico de barras do total por mês (AAAA-MM), em ordem cronológica."""
+    if df.empty:
+        return
+    mensal = (
+        df.assign(
+            periodo=df["ano"].astype(int).astype(str)
+            + "-"
+            + df["mes"].astype(int).astype(str).str.zfill(2)
+        )
+        .groupby("periodo", as_index=False)[coluna_valor]
+        .sum()
+        .rename(columns={coluna_valor: "Total"})
+        .sort_values("periodo")
+        .set_index("periodo")
+    )
+    st.markdown("**Total por mês**")
+    st.bar_chart(mensal)

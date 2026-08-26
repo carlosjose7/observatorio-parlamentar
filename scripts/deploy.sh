@@ -39,6 +39,8 @@ ssh -i "$SSH_KEY" "$SSH_DEST" "mkdir -p ~/observatorio-parlamentar"
 echo -e "${GREEN}✓ Diretório criado${NC}"
 
 # ── 3. Sincroniza arquivos (excluindo desnecessários) ────────────
+# Nota: artefatos dbt (pipeline/gold/target|logs) são excluídos explicitamente
+# porque o rsync NÃO lê o .gitignore.
 echo -e "\n${YELLOW}[3/6] Sincronizando arquivos do projeto...${NC}"
 rsync -avz --delete \
     --exclude='.git/' \
@@ -51,6 +53,8 @@ rsync -avz --delete \
     --exclude='node_modules/' \
     --exclude='data/' \
     --exclude='logs/' \
+    --exclude='pipeline/gold/target/' \
+    --exclude='pipeline/gold/logs/' \
     -e "ssh -i $SSH_KEY" \
     "$PROJECT_DIR/" \
     "$SSH_DEST:~/observatorio-parlamentar/"
@@ -99,8 +103,8 @@ echo -e "\n${GREEN}┌───────────────────�
 echo -e "${GREEN}│  Deploy concluído!                                       │${NC}"
 echo -e "${GREEN}│                                                         │${NC}"
 echo -e "${GREEN}│  Dashboard: http://${VPS_IP}                            │${NC}"
-echo -e "${GREEN}│  API Docs:  http://${VPS_IP}/docs                       │${NC}"
-echo -e "${GREEN}│  MinIO:     http://${VPS_IP}/minio                      │${NC}"
+echo -e "${GREEN}│  API Docs:  http://${VPS_IP}/docs (off se DOCS_ENABLED=f)│${NC}"
+echo -e "${GREEN}│  MinIO:     console via SSH tunnel apenas (127.0.0.1)    │${NC}"
 echo -e "${GREEN}│                                                         │${NC}"
 echo -e "${GREEN}│  Airflow:   http://${VPS_IP}:8080 (profile: pipeline)   │${NC}"
 echo -e "${GREEN}│  credenciais: AIRFLOW_ADMIN_USER/_PASSWORD do .env       │${NC}"
