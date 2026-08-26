@@ -8,6 +8,58 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 10 — Despesas por fornecedor com filtros temporais (26/08/2026)
+
+### Adicionado
+- **Endpoint `GET /fornecedores/{cnpj_cpf_valor}/gastos`**: despesas recebidas
+  por um fornecedor, com o parlamentar pagador. Espelho de `listar_gastos`
+  na direção fornecedor→parlamentar. Filtro opcional `?ano=` sobre
+  `dim_data.ano`. Paginação padrão (100 itens/página).
+- **Schema `GastoFornecedorItem` + `GastosFornecedor`**
+  (`api/schemas/fornecedores.py`): contrato de resposta com data, ano, mês,
+  tipo_despesa, dados do parlamentar e valores.
+- **UI helpers** (`dashboard/ui.py`): `filtro_periodo(df, key_prefix)` —
+  multiselects de ano e mês lado a lado (todos marcados por padrão);
+  `grafico_mensal(df)` — gráfico de barras do total por mês (AAAA-MM).
+- **Páginas 02-05** atualizadas: filtros ano/mês e gráfico de barras
+  mensal em parlamentar, partido, estado e fornecedor.
+
+### Corrigido
+- **Página 05 (fornecedor)** agora consome `/gastos` em vez de
+  `/parlamentares` — despesas com filtro ano/mês e gráfico, derivando os
+  parlamentares via agregação (antes endpoint indisponível sem dados).
+
+---
+
+## Redesign visual, análises agregadas e correção do fluxo de ML (26/08/2026)
+
+### Adicionado
+- **Landing institucional** (`site/index.html`): vitrine estática servida pelo
+  nginx em `/`, com identidade editorial (DM Sans/IBM Plex Mono, paleta
+  navy/verde/dourado), seção "Panorama" com barras reais do Gold e CTA para o
+  dashboard. O Streamlit moveu-se para `/app/` (`--server.baseUrlPath`,
+  healthcheck e rotas nginx atualizadas).
+- **Endpoints de agregação** (`GET /agregacoes/por-uf|por-partido|
+  top-parlamentares|no-tempo`): GROUP BY sobre o Gold (ADR-026) com schemas
+  `extra="forbid"` — sustentam os gráficos do dashboard.
+- **Página "Análises"** no dashboard (`11_analises.py`): quatro gráficos Altair
+  na identidade visual (gastos por UF, por partido, série mensal e top
+  parlamentares).
+- **Tema do dashboard**: `.streamlit/config.toml` com a paleta da landing +
+  `aplicar_identidade()` injetando tipografia/cartões nas 10 páginas.
+
+### Corrigido
+- **Ondas de ML nunca executavam (ADR-035):** o DAG encadeava só
+  bronze→silver→gold(dbt) e ninguém invocava as cargas que populam
+  `ml_staging` — Gold analítico (`expense_outliers`, `network_*`,
+  `risk_scores`) nascia vazio em toda execução; Anomalias/Rede/Risco zerados.
+  DAG agora roda gold_core → `executar_analytics`
+  (`pipeline/analytics_stage.py`) → gold_analytics, com guardrail
+  `alertar_analytics_vazio`. Backfill aplicado: 2.418 outliers, 5.803 arestas,
+  432 risk_scores.
+
+---
+
 ## Segurança — Hardening pós-auditoria (25/08/2026)
 
 ### Segurança
