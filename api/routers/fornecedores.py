@@ -18,10 +18,12 @@ from fastapi import APIRouter, HTTPException, Query
 from api.repo import (
     GoldIndisponivel,
     listar_fornecedores,
+    listar_gastos_fornecedor,
     listar_parlamentares_fornecedor,
     obter_perfil_fornecedor,
 )
 from api.schemas.fornecedores import (
+    GastosFornecedor,
     ListaFornecedores,
     ListaParlamentaresFornecedor,
     PerfilFornecedor,
@@ -78,6 +80,25 @@ def get_parlamentares_do_fornecedor(
         )
     except GoldIndisponivel as exc:
         raise _erro_gold("fornecedor_parlamentares", exc)
+    if resultado is None:
+        raise HTTPException(status_code=404, detail=f"Fornecedor {cnpj_cpf_valor} não encontrado")
+    return resultado
+
+
+@router.get("/{cnpj_cpf_valor}/gastos", response_model=GastosFornecedor)
+def get_gastos_do_fornecedor(
+    cnpj_cpf_valor: str,
+    ano: int | None = Query(default=None, ge=_config.ano_minimo_consulta, description="Filtro por ano da despesa"),
+    pagina: int = Query(default=_config.pagina_padrao, ge=1, description="Página corrente (1-based)"),
+    limite: int = Query(default=_config.limite_padrao, ge=1, le=_config.limite_maximo, description="Itens por página (máx 100)"),
+) -> GastosFornecedor:
+    """Despesas do fornecedor com data/ano/mês e o parlamentar pagador."""
+    try:
+        resultado = listar_gastos_fornecedor(
+            cnpj_cpf_valor=cnpj_cpf_valor, ano=ano, pagina=pagina, limite=limite
+        )
+    except GoldIndisponivel as exc:
+        raise _erro_gold("fornecedor_gastos", exc)
     if resultado is None:
         raise HTTPException(status_code=404, detail=f"Fornecedor {cnpj_cpf_valor} não encontrado")
     return resultado

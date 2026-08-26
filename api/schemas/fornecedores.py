@@ -17,6 +17,8 @@ existe, é leitura direta sobre `fact_despesa`/dimensões.
 
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.schemas._common import Moeda
@@ -93,3 +95,31 @@ class ListaParlamentaresFornecedor(_ContratoResposta):
     limite: int
     total: int = Field(..., description="Nº de parlamentares distintos que gastaram no fornecedor")
     itens: list[ParlamentarFornecedor]
+
+
+class GastoFornecedorItem(_ContratoResposta):
+    """Uma despesa recebida pelo fornecedor, com o parlamentar pagador."""
+
+    id_despesa: int
+    data: date = Field(..., description="Data do documento (via dim_data)")
+    ano: int
+    mes: int
+    tipo_despesa: str | None = Field(
+        default=None, description="Descrição da categoria resolvida via dim_categoria_despesa"
+    )
+    id_parlamentar: int
+    nome_parlamentar: str
+    sigla_partido: str
+    sigla_uf: str
+    valor_liquido: Moeda
+    valor_glosa: Moeda
+
+
+class GastosFornecedor(_ContratoResposta):
+    """Envelope paginado de `GET /fornecedores/{cnpj_cpf_valor}/gastos`."""
+
+    fornecedor: FornecedorContexto
+    pagina: int
+    limite: int
+    total: int = Field(..., description="Total de despesas do fornecedor sob os filtros")
+    itens: list[GastoFornecedorItem]
