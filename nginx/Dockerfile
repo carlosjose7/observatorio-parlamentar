@@ -1,4 +1,6 @@
 FROM nginx:alpine
+# Landing institucional servida estaticamente em /
+COPY site/ /var/www/site/
 # Configs candidatos ficam FORA de conf.d (evita carga dupla / servidor duplicado)
 COPY nginx/default.conf   /etc/nginx/candidates/default.conf
 COPY nginx/bootstrap.conf /etc/nginx/candidates/bootstrap.conf

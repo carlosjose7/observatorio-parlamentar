@@ -11,9 +11,10 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.client import ApiClient
-from dashboard.ui import carregar_com_feedback, tabela_exportavel
+from dashboard.ui import aplicar_identidade, carregar_com_feedback, tabela_exportavel
 
 st.set_page_config(page_title="Metadados", page_icon="📚", layout="wide")
+aplicar_identidade()
 st.title("📚 Metadados e Versionamento")
 
 client = ApiClient()

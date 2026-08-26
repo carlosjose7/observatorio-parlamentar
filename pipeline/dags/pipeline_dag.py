@@ -78,62 +78,99 @@ def _executar_silver(**context):
     }
 
 
-def _executar_gold(**context):
-    """Build das tabelas Gold via dbt (ADR-018/ADR-026) após Bronze→Silver.
+def _rodar_dbt(selecao: str | None, exclusao: str | None, rotulo: str) -> str:
+    """`dbt build` em SUBPROCESSO, com seletor opcional de models (ADR-018/026).
 
-    Roda `dbt build` completo no projeto `pipeline/gold` num SUBPROCESSO
-    (mesmo motivo do teste de contrato: o adaptador dbt-duckdb mantém uma
-    conexão read-write por processo — subprocesso efêmero libera o DuckDB ao
-    sair, permitindo que a API o reabra read-only). `get_dbt_vars()` injeta a
-    var exigida por sources/schema; sem `--vars` o dbt falha em vez de
-    aplicar um default divergente (PROJECT_CONTEXT §15). Só é seguro rodar em
-    processo próprio porque no worker do Airflow ninguém mais mantém conexão.
-
-    ADR-026: os models analytics (`ml_staging.*`) são escritos EXCLUSIVAMENTE
-    pelos scripts de ML (`analytics/...`), fora do dbt. Antes do build,
-    garantimos o schema `ml_staging` vazio (se ausente) para o dbt compilar —
-    mesmo contrato do `scripts/run_e2e_local.py` e do teste de contrato
-    (`tests/integration/test_api_gold_contrato.py`). Os scripts de ML rodam
-    como etapa separada e populam essas tabelas.
+    Subprocesso efêmero porque a conexão dbt-duckdb é read-write por processo —
+    ao sair, libera o DuckDB para a próxima etapa/API read-only. `get_dbt_vars()`
+    injeta a var exigida por sources/schema; sem `--vars` o dbt falha em vez de
+    aplicar um default divergente (PROJECT_CONTEXT §15).
     """
     import os
     import subprocess
     import sys
     from pathlib import Path
 
-    # Garante o schema `ml_staging` vazio (ADR-026) — tabelas de controle.
-    _garantir_ml_staging_vazio()
-    # Garante `silver_cartao`/`silver_emenda` vazias quando a CGU não trouxe
-    # dados (ex: janela curta de validação no HML ou fonte sem transações no
-    # período) — o dbt build completo falharia com "table does not exist".
-    _garantir_silver_cgu_vazio()
-
     RAIZ = Path(__file__).resolve().parents[2]
     GOLD = RAIZ / "pipeline" / "gold"
-    codigo = (
-        "import json\n"
-        "import sys\n"
-        f"sys.path.insert(0, {str(RAIZ)!r})\n"
-        f"sys.path.insert(0, {str(GOLD)!r})\n"
-        "from dbt.cli.main import dbtRunner\n"
-        "from pipeline.config import get_dbt_vars\n"
-        f"r = dbtRunner().invoke([\n"
-        f"    'build',\n"
-        f"    '--project-dir', {str(GOLD)!r},\n"
-        f"    '--profiles-dir', {str(GOLD)!r},\n"
-        f"    '--vars', json.dumps(get_dbt_vars()),\n"
-        "]\n"
-        ")\n"
-        "raise SystemExit(0 if r.success else 1)\n"
-    )
+    argumentos = [
+        "import json\n",
+        "import sys\n",
+        f"sys.path.insert(0, {str(RAIZ)!r})\n",
+        f"sys.path.insert(0, {str(GOLD)!r})\n",
+        "from dbt.cli.main import dbtRunner\n",
+        "from pipeline.config import get_dbt_vars\n",
+        "invocacao = [\n",
+        "    'build',\n",
+        f"    '--project-dir', {str(GOLD)!r},\n",
+        f"    '--profiles-dir', {str(GOLD)!r},\n",
+        "    '--vars', json.dumps(get_dbt_vars()),\n",
+    ]
+    if selecao:
+        argumentos.append(f"    '--select', {selecao!r},\n")
+    if exclusao:
+        argumentos.append(f"    '--exclude', {exclusao!r},\n")
+    argumentos.append("]\n")
+    argumentos.append("raise SystemExit(0 if dbtRunner().invoke(invocacao).success else 1)\n")
+
     env = {
         **os.environ,
         "PYTHONPATH": os.pathsep.join(
             filter(bool, (str(GOLD), os.environ.get("PYTHONPATH", "")))
         ),
     }
-    subprocess.run([sys.executable, "-c", codigo], env=env, check=True)
-    return "gold_pronto"
+    subprocess.run([sys.executable, "-c", "".join(argumentos)], env=env, check=True)
+    logger.info("dbt_build_ok", etapa=rotulo)
+    return rotulo
+
+
+def _executar_gold_core(**context):
+    """Build CORE do Gold via dbt: dimensões, fatos e agregados puro-SQL.
+
+    Exclui os cinco models analytics que leem `source('ml_staging', ...)` —
+    eles só têm conteúdo depois da task `executar_analytics` (ADR-026) e são
+    materializados por `executar_gold_analytics`. Antes do build, garante o
+    schema `ml_staging` vazio (se ausente) e as Silver CGU vazias quando a
+    fonte não trouxe dados — sem isso o build falharia com "table does not
+    exist".
+    """
+    from pipeline.analytics_stage import MODELS_ANALYTICS
+
+    _garantir_ml_staging_vazio()
+    _garantir_silver_cgu_vazio()
+    return _rodar_dbt(None, " ".join(MODELS_ANALYTICS), "gold_core")
+
+
+def _executar_analytics(**context):
+    """Popula `ml_staging` (ondas de ML 2→3→4) sobre o Gold core materializado.
+
+    Repassa o `run_id` da Bronze (XCom) para rastreabilidade ponta a ponta.
+    A escrita fica restrita a `ml_staging` — fronteira ADR-026.
+    """
+    from pipeline.analytics_stage import executar_etapa_analytics
+
+    run_id = context["ti"].xcom_pull(task_ids="executar_bronze")
+    resumo = executar_etapa_analytics(run_id)
+    return resumo
+
+
+def _executar_gold_analytics(**context):
+    """Build ANALYTICS do Gold via dbt: os cinco models que leem `ml_staging`.
+
+    Roda DEPOIS de `executar_analytics`; é o que materializa `expense_outliers`,
+    `network_nodes`, `network_edges`, `politician_similarity` e `risk_scores`
+    no Gold que a API expõe (ADR-026/ADR-021). Ao final, guardrail registra
+    warning se houver fatos mas alguma tabela analítica ficou vazia
+    (sintoma do fio solto corrigido no ADR-035).
+    """
+    from pipeline.analytics_stage import (
+        MODELS_ANALYTICS,
+        alertar_analytics_vazio,
+    )
+
+    resultado = _rodar_dbt(" ".join(MODELS_ANALYTICS), None, "gold_analytics")
+    alertar_analytics_vazio(MODELS_ANALYTICS)
+    return resultado
 
 
 def _garantir_ml_staging_vazio() -> None:
@@ -267,9 +304,20 @@ with DAG(
         python_callable=_executar_silver,
     )
 
-    executar_gold = PythonOperator(
-        task_id="executar_gold",
-        python_callable=_executar_gold,
+    executar_gold_core = PythonOperator(
+        task_id="executar_gold_core",
+        python_callable=_executar_gold_core,
     )
 
-    executar_bronze >> executar_silver >> executar_gold
+    executar_analytics = PythonOperator(
+        task_id="executar_analytics",
+        python_callable=_executar_analytics,
+    )
+
+    executar_gold_analytics = PythonOperator(
+        task_id="executar_gold_analytics",
+        python_callable=_executar_gold_analytics,
+    )
+
+    executar_bronze >> executar_silver >> executar_gold_core
+    executar_gold_core >> executar_analytics >> executar_gold_analytics

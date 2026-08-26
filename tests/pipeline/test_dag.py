@@ -2,12 +2,14 @@
 """Import-test do DAG do pipeline com Airflow DagBag (Sprint 6.5).
 
 Cobre o resíduo registrado no fechamento da Sprint 4: o encadeamento
-`executar_bronze >> executar_silver >> executar_gold` só era confirmado por
+`executar_bronze >> executar_silver >> executar_gold_core >>
+executar_analytics >> executar_gold_analytics` só era confirmado por
 leitura de código. Sem subir o scheduler, valida:
 
 1. o parsing do módulo `pipeline/dags/pipeline_dag.py` pelo DagBag;
 2. o `dag_id`, agendamento e tags declarados;
-3. a estrutura de dependências de todas as tasks (ordem Bronze→Silver→Gold);
+3. a estrutura de dependências de todas as tasks (ordem
+   Bronze→Silver→Gold core→Analytics ML→Gold analytics);
 4. a integridade XCom: `executar_silver` consome o `run_id` produzido por
    `executar_bronze` (mesma task pullada na upstream).
 
@@ -77,23 +79,35 @@ def test_dag_configuracao_basica():
     assert dag.default_args["depends_on_past"] is False
 
 
-def test_dag_tem_tres_tasks():
+def test_dag_tem_cinco_tasks():
     dag = _dagbag().get_dag("observatorio_pipeline")
     # Airflow 2.9: `task_ids` é lista (set em versões mais novas) — normaliza.
-    assert set(dag.task_ids) == {"executar_bronze", "executar_silver", "executar_gold"}
+    assert set(dag.task_ids) == {
+        "executar_bronze",
+        "executar_silver",
+        "executar_gold_core",
+        "executar_analytics",
+        "executar_gold_analytics",
+    }
 
 
 def test_dag_ordem_de_dependencias():
     dag = _dagbag().get_dag("observatorio_pipeline")
     bronze = dag.get_task("executar_bronze")
     silver = dag.get_task("executar_silver")
-    gold = dag.get_task("executar_gold")
+    gold_core = dag.get_task("executar_gold_core")
+    analytics = dag.get_task("executar_analytics")
+    gold_analytics = dag.get_task("executar_gold_analytics")
 
     assert set(bronze.downstream_task_ids) == {"executar_silver"}
     assert set(silver.upstream_task_ids) == {"executar_bronze"}
-    assert set(silver.downstream_task_ids) == {"executar_gold"}
-    assert set(gold.upstream_task_ids) == {"executar_silver"}
-    assert set(gold.downstream_task_ids) == set()
+    assert set(silver.downstream_task_ids) == {"executar_gold_core"}
+    assert set(gold_core.upstream_task_ids) == {"executar_silver"}
+    assert set(gold_core.downstream_task_ids) == {"executar_analytics"}
+    assert set(analytics.upstream_task_ids) == {"executar_gold_core"}
+    assert set(analytics.downstream_task_ids) == {"executar_gold_analytics"}
+    assert set(gold_analytics.upstream_task_ids) == {"executar_analytics"}
+    assert set(gold_analytics.downstream_task_ids) == set()
 
 
 def test_dag_xcom_run_id_bronze_para_silver():

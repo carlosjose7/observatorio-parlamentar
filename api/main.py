@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from api.routers.agent import router as router_agent
+from api.routers.agregacoes import router as router_agregacoes
 from api.routers.anomalias import router as router_anomalias
 from api.routers.fornecedores import router as router_fornecedores
 from api.routers.parlamentares import router as router_parlamentares
@@ -44,6 +45,7 @@ def health():
 
 app.include_router(router_parlamentares)
 app.include_router(router_fornecedores)
+app.include_router(router_agregacoes)
 app.include_router(router_anomalias)
 app.include_router(router_rede)
 app.include_router(router_qualidade)

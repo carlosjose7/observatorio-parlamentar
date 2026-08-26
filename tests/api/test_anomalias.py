@@ -22,6 +22,9 @@ def test_listar_anomalias_sem_filtro(_cliente):
     assert [item["id_despesa"] for item in corpo["itens"]] == [1, 4, 3]
     primeira = corpo["itens"][0]
     assert primeira["id_parlamentar"] == 1
+    assert primeira["nome"] == "MARIA DA SILVA"
+    assert primeira["sigla_partido"] == "PSDB"
+    assert primeira["sigla_uf"] == "DF"
     assert primeira["id_fornecedor"] == 10
     assert primeira["zscore"] == 3.1
     assert primeira["if_score"] == -0.2
@@ -40,8 +43,29 @@ def test_threshold_segmenta_por_zscore(_cliente):
     terceira = corpo["itens"][1]
     assert terceira["id_despesa"] == 4
     assert terceira["zscore"] == 2.6
+    assert terceira["nome"] == "ANA SOUZA"
     # só uma acima do corte mais alto
     assert _cliente.get("/anomalias", params={"threshold": 3.0}).json()["total"] == 1
+
+
+def test_filtro_por_ano(_cliente):
+    corpo = _cliente.get("/anomalias", params={"ano": 2022}).json()
+    assert corpo["ano"] == 2022
+    assert [item["id_despesa"] for item in corpo["itens"]] == [3]
+
+    corpo_2023 = _cliente.get("/anomalias", params={"ano": 2023}).json()
+    assert corpo_2023["total"] == 2
+    assert [item["id_despesa"] for item in corpo_2023["itens"]] == [1, 4]
+
+
+def test_filtro_ano_combinado_com_threshold(_cliente):
+    corpo = _cliente.get("/anomalias", params={"ano": 2023, "threshold": 2.5}).json()
+    assert corpo["ano"] == 2023
+    assert corpo["threshold"] == 2.5
+    assert [item["id_despesa"] for item in corpo["itens"]] == [1, 4]
+
+    vazio = _cliente.get("/anomalias", params={"ano": 2022, "threshold": 2.5}).json()
+    assert vazio["total"] == 0
 
 
 def test_threshold_nenhum_filtra_tudo(_cliente):
