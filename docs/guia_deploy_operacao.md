@@ -172,4 +172,102 @@ print(con.execute('select run_id, status from pipeline_runs order by execution_t
 
 ---
 
-*Atualizado ao final da Sprint 9 (Gates 2–5).*
+## 7. Testes em HML (homologação)
+
+### 7.1 Visão geral do fluxo
+
+O ciclo de validação de uma feature segue:
+
+```
+develop → deploy HML → validação → PR para main
+```
+
+- **HML** roda na mesma VPS, isolado do PRD (projeto Docker `-p hml`).
+- **Ports:** API `:18000`, Airflow `:18080`, MinIO `:19000/:19001` (distintas do PRD).
+- **Dados:** `./data.hml/` (DuckDB/Parquet independentes do PRD).
+- **Credenciais:** `.env.hml` (nunca toca `.env` do PRD).
+
+### 7.2 Pré-requisitos
+
+- `.env.hml` configurado (copiar de `.env.hml.example` e preencher valores próprios).
+- Docker + Docker Compose v2 instalados na VPS.
+- Branch `develop` com as mudanças commitadas e push para `origin`.
+
+### 7.3 Deploy da branch develop no HML
+
+**Passo 1 — Sincronizar código:**
+```bash
+# Na VPS, na raiz do repo:
+git pull origin develop
+```
+
+**Passo 2 — Subir containers HML:**
+```bash
+docker compose -f docker-compose.yml -f docker-compose.hml.yml \
+  -p hml --env-file .env.hml --profile pipeline \
+  up -d postgres airflow-scheduler minio api
+```
+
+**Passo 3 — Verificar status:**
+```bash
+docker compose -p hml ps
+# Todos os serviços com status "Up"?
+```
+
+### 7.4 Rodar E2E do pipeline
+
+```bash
+bash scripts/run_hml_e2e.sh
+```
+
+O script executa:
+1. 1ª execução: **backfill** (janela 2 meses, watermark vazio).
+2. 2ª execução: **incremental** (mês seguinte ao watermark consolidado).
+3. Valida `SUCCESS` em ambas as execuções.
+4. Derruba containers ao final (`trap EXIT`).
+
+**Timeout:** 1800s (30 min). Para acompanhar o progresso:
+```bash
+docker compose -p hml logs -f airflow-scheduler
+```
+
+### 7.5 Validar API e Dashboard
+
+**API HML:** `http://127.0.0.1:18000/docs` (Swagger/ReDoc).
+
+Endpoints-chave para validar após deploy de uma feature:
+```bash
+# Listagem de fornecedores
+curl http://127.0.0.1:18000/fornecedores?limite=3
+
+# Feature nova: despesas por fornecedor
+curl http://127.0.0.1:18000/fornecedores/{cnpj}/gastos
+
+# Regressão: despesas por parlamentar
+curl http://127.0.0.1:18000/parlamentares/{id}/gastos
+
+# Pipeline executou com sucesso?
+curl http://127.0.0.1:18000/pipeline/status
+```
+
+### 7.6 Checklist antes do PR para main
+
+- [ ] E2E HML: ambas execuções `SUCCESS` (backfill + incremental)
+- [ ] API HML: endpoints retornam 200 com dados consistentes
+- [ ] Testes unitários: `python -m pytest tests/` (todos verdes)
+- [ ] Lint: `python -m ruff check .` (sem erros)
+- [ ] `CHANGELOG.md` atualizado com a feature
+- [ ] Nenhuma alteração em arquivos `.env` ou credenciais versionadas
+
+### 7.7 Troubleshooting
+
+| Problema | Solução |
+|----------|---------|
+| Airflow não fica pronto | `docker compose -p hml logs airflow-scheduler` — verificar erros de import |
+| E2E falha no backfill | Conferir `.env.hml`: credenciais MinIO/Postgres batem com os containers |
+| API retorna 404 em endpoint novo | Verificar se o endpoint existe em `api/routers/` e se o módulo está registrado no `api/main.py` |
+| Containers não sobem | `docker compose -p hml down -v` e repetir §7.3 |
+
+---
+
+*Atualizado ao final da Sprint 10 (§7 — testes em HML).*

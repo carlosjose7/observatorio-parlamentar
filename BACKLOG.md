@@ -1005,3 +1005,12 @@ comprometidas).
   (cartões 01-02/2013 ≈ 2600 páginas) — explica E2E HML ~50 min.
 - ☐ Restringir SSH da VPS ao novo IP na Security List OCI (IP público mudou:
   147.15.38.74; antigo 137.131.175.179 em timeout).
+- ☑ **Excludes de artefatos dbt nos scripts de deploy** (25/08): rsync/tar
+  não leem o `.gitignore` — `pipeline/gold/target|logs` agora excluídos
+  explicitamente em `deploy.sh`/`deploy.ps1` (causa raiz do lixo carregado
+  para a VPS no deploy do PRD).
+- ☐ **Paths dbt fora do bind mount** (`DBT_TARGET_PATH`/`DBT_LOG_PATH`
+  apontando para volume próprio): evita `chmod 777 target logs` e a
+  necessidade de sudo sem TTY no deploy (apontado no PRD, 25/08).
+  Observação: `dbt.log` NUNCA esteve versionado (`.gitignore` cobre
+  `pipeline/gold/logs/`) — o arquivo na VPS era resíduo de rsync antigo.

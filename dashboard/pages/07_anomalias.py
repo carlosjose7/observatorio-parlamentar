@@ -11,9 +11,15 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.client import ApiClient
-from dashboard.ui import carregar_com_feedback, formatar_moeda, tabela_exportavel
+from dashboard.ui import (
+    aplicar_identidade,
+    carregar_com_feedback,
+    formatar_moeda,
+    tabela_exportavel,
+)
 
 st.set_page_config(page_title="Anomalias", page_icon="🚨", layout="wide")
+aplicar_identidade()
 st.title("🚨 Anomalias de Despesa")
 
 client = ApiClient()
@@ -38,6 +44,12 @@ def _agregados() -> None:
         return
     st.markdown(f"**{payload.get('total', 0)} despesas anômalas**")
 
+    por_ano = payload.get("por_ano", [])
+    if por_ano:
+        st.session_state["anomalias_anos"] = sorted(
+            int(a["ano"]) for a in por_ano
+        )
+
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Por ano**")
@@ -61,9 +73,11 @@ def _agregados() -> None:
             st.info("Sem dados por critério.")
 
 
-def _lista(threshold: float | None) -> None:
+def _lista(threshold: float | None, ano: int | None) -> None:
     payload = carregar_com_feedback(
-        lambda: client.listar_anomalias(threshold=threshold, limite=100),
+        lambda: client.listar_anomalias(
+            threshold=threshold, ano=ano, limite=100
+        ),
         spinner="Carregando anomalias...",
     )
     if payload is None:
@@ -77,15 +91,18 @@ def _lista(threshold: float | None) -> None:
     df["data_sk"] = pd.to_datetime(df["data_sk"].astype(str), format="%Y%m%d").dt.strftime("%d/%m/%Y")
     df["valor_liquido"] = df["valor_liquido"].map(formatar_moeda)
     df["num_criterios_atendidos"] = df[_CRITERIOS].sum(axis=1)
+    df["nome"] = df["nome"].fillna("—")
+    df["sigla_partido"] = df["sigla_partido"].fillna("—")
+    df["sigla_uf"] = df["sigla_uf"].fillna("—")
     colunas = [
-        "id_despesa", "id_parlamentar", "id_fornecedor", "data_sk",
+        "nome", "sigla_partido", "sigla_uf", "data_sk",
         "valor_liquido", "zscore", "num_criterios_atendidos",
     ]
     df = df[colunas].rename(
         columns={
-            "id_despesa": "Despesa",
-            "id_parlamentar": "Parlamentar",
-            "id_fornecedor": "Fornecedor",
+            "nome": "Parlamentar",
+            "sigla_partido": "Partido",
+            "sigla_uf": "UF",
             "data_sk": "Data",
             "valor_liquido": "Valor",
             "zscore": "Z-score",
@@ -99,11 +116,23 @@ def main() -> None:
     _agregados()
     st.divider()
     st.subheader("Lista de anomalias")
-    threshold = st.slider(
-        "Threshold de z-score",
-        min_value=0.0, max_value=10.0, value=0.0, step=0.1,
+
+    anos = st.session_state.get("anomalias_anos", [])
+    col_ano, col_threshold = st.columns(2)
+    with col_ano:
+        escolha_ano = st.selectbox(
+            "Ano do documento",
+            ["Todos"] + [str(a) for a in anos],
+        )
+    with col_threshold:
+        threshold = st.slider(
+            "Threshold de z-score",
+            min_value=0.0, max_value=10.0, value=0.0, step=0.1,
+        )
+    _lista(
+        threshold if threshold > 0 else None,
+        int(escolha_ano) if escolha_ano != "Todos" else None,
     )
-    _lista(threshold if threshold > 0 else None)
 
 
 main()

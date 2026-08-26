@@ -16,9 +16,15 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.client import ApiClient
-from dashboard.ui import carregar_com_feedback, tabela_exportavel
+from dashboard.ui import (
+    aplicar_identidade,
+    carregar_com_feedback,
+    formatar_moeda,
+    tabela_exportavel,
+)
 
 st.set_page_config(page_title="Rede", page_icon="🕸️", layout="wide")
+aplicar_identidade()
 st.title("🕸️ Rede Parlamentar-Fornecedor")
 
 client = ApiClient()
@@ -73,7 +79,7 @@ def _selecionar_parlamentar() -> dict | None:
 
 
 def _rede_do_parlamentar(id_parlamentar: int) -> None:
-    """Grafo centrado em um parlamentar (limitado a `_MAX_ARESTAS` arestas)."""
+    """Grafo centrado em um parlamentar, com filtro de período e ranking."""
     st.subheader("Rede de um parlamentar")
     payload = carregar_com_feedback(
         lambda: client.rede_parlamentar(id_parlamentar),
@@ -83,21 +89,50 @@ def _rede_do_parlamentar(id_parlamentar: int) -> None:
         return
 
     arestas = payload.get("arestas", [])
-    if len(arestas) > _MAX_ARESTAS:
-        st.warning(
-            f"Rede com {len(arestas):,} fornecedores — exibindo os "
-            f"{_MAX_ARESTAS:,} com maior vínculo."
+    if not arestas:
+        st.info(
+            "Nenhuma interação registrada para este parlamentar na janela carregada."
         )
-        arestas = sorted(
-            arestas, key=lambda a: a.get("valor_total", 0), reverse=True
-        )[:_MAX_ARESTAS]
+        return
+
+    periodos = sorted({str(a.get("periodo")) for a in arestas})
+    sel_periodos = st.multiselect(
+        "Filtrar por período", periodos, key=f"rede_per_{id_parlamentar}"
+    )
+    if sel_periodos:
+        arestas = [a for a in arestas if str(a.get("periodo")) in sel_periodos]
+    if not arestas:
+        st.info("Nenhuma interação nos períodos selecionados.")
+        return
+
+    resumo: dict[int, dict] = {}
+    for aresta in arestas:
+        chave = aresta["id_fornecedor"]
+        linha = resumo.setdefault(
+            chave,
+            {
+                "nome": aresta.get("nome_fornecedor") or f"#{chave}",
+                "total": 0.0,
+                "periodos": set(),
+            },
+        )
+        linha["total"] += float(aresta.get("valor_total", 0))
+        linha["periodos"].add(aresta.get("periodo"))
+
+    ordenados = sorted(resumo.items(), key=lambda kv: kv[1]["total"], reverse=True)
+    if len(ordenados) > _MAX_ARESTAS:
+        st.warning(
+            f"{len(ordenados):,} fornecedores no recorte — exibindo os "
+            f"{_MAX_ARESTAS:,} de maior vínculo.".replace(",", ".")
+        )
+    cortados = ordenados[:_MAX_ARESTAS]
 
     grafo = nx.Graph()
     parlamentar = payload.get("parlamentar", {})
     grafo.add_node("eu", label=parlamentar.get("nome", "Parlamentar"), tipo="parlamentar")
-    for aresta in arestas:
-        grafo.add_node(aresta["id_fornecedor"], label=aresta["nome_fornecedor"], tipo="fornecedor")
-        grafo.add_edge("eu", aresta["id_fornecedor"], weight=aresta.get("valor_total", 1.0))
+    for id_forn, info in cortados:
+        grafo.add_node(id_forn, label=info["nome"], tipo="fornecedor")
+        grafo.add_edge("eu", id_forn, weight=info["total"])
 
     fig, ax = plt.subplots(figsize=(10, 7))
     pos = nx.spring_layout(grafo, seed=42)
@@ -124,6 +159,34 @@ def _rede_do_parlamentar(id_parlamentar: int) -> None:
         file_name=f"rede_{id_parlamentar}.png",
         mime="image/png",
     )
+
+    st.markdown(f"**Ranking de fornecedores ({len(ordenados)})**")
+    if len(cortados) >= 2:
+        grafico_df = pd.DataFrame(
+            {
+                "Fornecedor": [info["nome"] for _, info in cortados[:10]],
+                "Total": [info["total"] for _, info in cortados[:10]],
+            }
+        ).set_index("Fornecedor")
+        st.bar_chart(grafico_df)
+
+    total_rede = sum(info["total"] for _, info in ordenados)
+    df = pd.DataFrame(
+        [
+            {
+                "#": posicao,
+                "Fornecedor": info["nome"],
+                "Total": info["total"],
+                "% da rede": (
+                    f"{info['total'] / total_rede:.1%}" if total_rede else "—"
+                ),
+                "Períodos": ", ".join(str(p) for p in sorted(info["periodos"])),
+            }
+            for posicao, (_, info) in enumerate(cortados, start=1)
+        ]
+    )
+    df["Total"] = df["Total"].map(formatar_moeda)
+    tabela_exportavel(df, nome_arquivo=f"ranking_fornecedores_{id_parlamentar}")
 
 
 def _comunidades() -> None:
@@ -168,14 +231,197 @@ def _comunidades() -> None:
     tabela_exportavel(df, nome_arquivo="comunidades")
 
 
+def _rede_do_fornecedor() -> None:
+    """Grafo INVERSO: um fornecedor e os parlamentares que o procuram."""
+    st.subheader("Rede de um fornecedor")
+    busca = st.text_input(
+        "Nome do fornecedor (busca parcial)",
+        key="rede_forn_busca",
+        placeholder="Ex.: transportes, hotel, mercado...",
+    )
+
+    if busca:
+        payload = carregar_com_feedback(
+            lambda: client.listar_fornecedores(nome=busca, limite=50),
+            spinner="Buscando fornecedores...",
+        )
+        if payload is None:
+            return
+        itens = payload.get("itens", [])
+        if not itens:
+            st.warning("Nenhum fornecedor encontrado com esse nome.")
+            return
+    else:
+        sugestoes = carregar_com_feedback(
+            lambda: client.top_fornecedores(limite=15),
+            spinner="Carregando maiores fornecedores...",
+        )
+        if not sugestoes:
+            return
+        itens = [
+            {
+                "id_fornecedor": s["id_fornecedor"],
+                "nome_fornecedor": s["nome_fornecedor"],
+                "tipo_documento": None,
+            }
+            for s in sugestoes.get("itens", [])
+        ]
+        if not itens:
+            return
+        st.caption(
+            f"Top {len(itens)} fornecedores por valor recebido — "
+            "ou refine pela busca parcial acima."
+        )
+
+    opcoes = {
+        f"{i['nome_fornecedor']} ({i['tipo_documento'] or '?'})": i["id_fornecedor"]
+        for i in itens
+    }
+    sel = st.selectbox("Fornecedor", list(opcoes.keys()), key="rede_forn_sel")
+    id_sel = opcoes[sel]
+    dados = carregar_com_feedback(
+        lambda: client.rede_fornecedor(id_sel),
+        spinner="Carregando rede do fornecedor...",
+    )
+    if dados is None:
+        return
+    arestas = dados.get("arestas", [])
+    if not arestas:
+        st.info(
+            "Nenhuma interação registrada para este fornecedor na janela "
+            "carregada do Gold."
+        )
+        return
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total recebido", formatar_moeda(dados.get("total_recebido")))
+    c2.metric("Parlamentares conectados", dados.get("num_parlamentares", 0))
+
+    periodos = sorted({str(a.get("periodo")) for a in arestas})
+    sel_periodos = st.multiselect(
+        "Filtrar por período", periodos, key=f"forn_per_{id_sel}"
+    )
+    if sel_periodos:
+        arestas = [a for a in arestas if str(a.get("periodo")) in sel_periodos]
+    if not arestas:
+        st.info("Nenhuma interação nos períodos selecionados.")
+        return
+
+    resumo: dict[int, dict] = {}
+    for aresta in arestas:
+        chave = aresta["id_parlamentar"]
+        linha = resumo.setdefault(
+            chave,
+            {
+                "nome": aresta.get("nome") or f"#{chave}",
+                "partido": aresta.get("sigla_partido") or "?",
+                "uf": aresta.get("sigla_uf") or "?",
+                "total": 0.0,
+                "periodos": set(),
+            },
+        )
+        linha["total"] += float(aresta.get("valor_total", 0))
+        linha["periodos"].add(aresta.get("periodo"))
+
+    ordenados = sorted(resumo.items(), key=lambda kv: kv[1]["total"], reverse=True)
+
+    partidos = sorted({info["partido"] for _, info in ordenados})
+    ufs = sorted({info["uf"] for _, info in ordenados})
+    cf1, cf2 = st.columns(2)
+    with cf1:
+        sel_partidos = st.multiselect(
+            "Filtrar por partido", partidos, key=f"forn_p_{id_sel}"
+        )
+    with cf2:
+        sel_ufs = st.multiselect("Filtrar por UF", ufs, key=f"forn_u_{id_sel}")
+
+    visiveis = [
+        (idp, info)
+        for idp, info in ordenados
+        if (not sel_partidos or info["partido"] in sel_partidos)
+        and (not sel_ufs or info["uf"] in sel_ufs)
+    ]
+    if not visiveis:
+        st.info("Nenhum parlamentar no recorte de filtros selecionado.")
+        return
+    if len(visiveis) > _MAX_ARESTAS:
+        st.warning(
+            f"{len(visiveis):,} parlamentares no recorte — exibindo os "
+            f"{_MAX_ARESTAS:,} de maior vínculo.".replace(",", ".")
+        )
+    cortados = visiveis[:_MAX_ARESTAS]
+
+    grafo = nx.Graph()
+    grafo.add_node(
+        "fornecedor",
+        label=dados.get("nome_fornecedor", "Fornecedor"),
+        tipo="fornecedor",
+    )
+    for id_parl, info in cortados:
+        grafo.add_node(
+            id_parl,
+            label=f"{info['nome']} ({info['partido']}-{info['uf']})",
+            tipo="parlamentar",
+        )
+        grafo.add_edge("fornecedor", id_parl, weight=info["total"])
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    pos = nx.spring_layout(grafo, seed=42)
+    cores = {"parlamentar": "#2980b9", "fornecedor": "#e74c3c"}
+    nx.draw_networkx_nodes(
+        grafo, pos,
+        node_color=[cores[grafo.nodes[n]["tipo"]] for n in grafo.nodes],
+        node_size=500,
+    )
+    nx.draw_networkx_labels(grafo, pos, font_size=7)
+    nx.draw_networkx_edges(grafo, pos, alpha=0.4)
+    ax.axis("off")
+    st.pyplot(fig)
+
+    st.markdown(f"**Ranking de parlamentares conectados ({len(visiveis)})**")
+    if len(cortados) >= 2:
+        grafico_df = pd.DataFrame(
+            {
+                "Parlamentar": [
+                    f"{info['nome']} ({info['partido']}-{info['uf']})"
+                    for _, info in cortados[:10]
+                ],
+                "Total": [info["total"] for _, info in cortados[:10]],
+            }
+        ).set_index("Parlamentar")
+        st.bar_chart(grafico_df)
+
+    total_recebido = float(dados.get("total_recebido") or 0)
+    df = pd.DataFrame(
+        [
+            {
+                "#": posicao,
+                "Parlamentar": info["nome"],
+                "Partido": info["partido"],
+                "UF": info["uf"],
+                "Total": info["total"],
+                "% do recebido": (
+                    f"{info['total'] / total_recebido:.1%}" if total_recebido else "—"
+                ),
+                "Períodos": ", ".join(str(p) for p in sorted(info["periodos"])),
+            }
+            for posicao, (_, info) in enumerate(cortados, start=1)
+        ]
+    )
+    df["Total"] = df["Total"].map(formatar_moeda)
+    tabela_exportavel(df, nome_arquivo=f"ranking_fornecedor_{id_sel}")
+
+
 def main() -> None:
-    abas = st.tabs(["Rede do parlamentar", "Comunidades"])
+    abas = st.tabs(["Rede do parlamentar", "Rede do fornecedor", "Comunidades"])
     with abas[0]:
         parlamentar = _selecionar_parlamentar()
         if parlamentar is not None:
             st.divider()
             _rede_do_parlamentar(parlamentar["id_parlamentar"])
     with abas[1]:
+        _rede_do_fornecedor()
+    with abas[2]:
         _comunidades()
 
 

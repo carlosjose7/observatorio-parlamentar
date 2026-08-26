@@ -105,6 +105,38 @@ def test_parlamentares_do_fornecedor_inexistente_404(_cliente):
     assert _cliente.get("/fornecedores/00000000000000/parlamentares").status_code == 404
 
 
+# ── GET /fornecedores/{cnpj_cpf_valor}/gastos ─────────────────────
+
+
+def test_gastos_do_fornecedor(_cliente):
+    corpo = _cliente.get(f"/fornecedores/{_CNPJ}/gastos").json()
+    assert corpo["fornecedor"]["id_fornecedor"] == 10
+    assert corpo["total"] == 3
+    itens = corpo["itens"]
+    # ordenação: data desc, id_despesa asc — doc-1 e doc-4 (2023-03-10) antes de doc-3 (2022-11-20)
+    assert [i["id_despesa"] for i in itens] == [1, 4, 3]
+    primeiro = itens[0]
+    assert primeiro["data"] == "2023-03-10"
+    assert primeiro["ano"] == 2023
+    assert primeiro["mes"] == 3
+    assert primeiro["nome_parlamentar"] == "MARIA DA SILVA"
+    assert primeiro["sigla_partido"] == "PSDB"
+    assert primeiro["sigla_uf"] == "DF"
+    assert _dinheiro(primeiro["valor_liquido"]) == Decimal("1500.00")
+    assert itens[2]["mes"] == 11  # doc-3, 2022-11-20
+
+
+def test_gastos_do_fornecedor_filtro_ano(_cliente):
+    corpo = _cliente.get(f"/fornecedores/{_CNPJ}/gastos", params={"ano": 2022}).json()
+    assert corpo["total"] == 1
+    assert corpo["itens"][0]["id_despesa"] == 3
+    assert corpo["itens"][0]["mes"] == 11
+
+
+def test_gastos_do_fornecedor_inexistente_404(_cliente):
+    assert _cliente.get("/fornecedores/00000000000000/gastos").status_code == 404
+
+
 # ── Degradação — Gold indisponível ───────────────────────────────
 
 
@@ -122,6 +154,7 @@ def test_gold_indisponivel_503_fornecedores(tmp_path, monkeypatch):
     [
         ("obter_perfil_fornecedor", f"/fornecedores/{_CNPJ}"),
         ("listar_parlamentares_fornecedor", f"/fornecedores/{_CNPJ}/parlamentares"),
+        ("listar_gastos_fornecedor", f"/fornecedores/{_CNPJ}/gastos"),
     ],
 )
 def test_rotas_individuais_gold_indisponivel_503(monkeypatch, atributo, rota):

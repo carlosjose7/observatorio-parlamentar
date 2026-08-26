@@ -42,3 +42,33 @@ class ListaComunidades(BaseModel):
 
     total: int
     itens: list[ComunidadeItem]
+
+
+class ArestaFornecedor(BaseModel):
+    """Uma interação fornecedor→parlamentar no grafo materializado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id_parlamentar: int
+    nome: str | None
+    sigla_partido: str | None
+    sigla_uf: str | None
+    periodo: int
+    valor_total: float
+
+
+class RedeFornecedor(BaseModel):
+    """`GET /rede/fornecedores/{id}` — a rede INVERSA da do parlamentar.
+
+    Mesma fronteira do `/parlamentares/{id}/rede`: leitura das arestas já
+    materializadas (`network_edges`, ADR-030) com nomes resolvidos pelas
+    dimensões — a API não recalcula grafo.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id_fornecedor: int
+    nome_fornecedor: str
+    total_recebido: float
+    num_parlamentares: int
+    arestas: list[ArestaFornecedor]

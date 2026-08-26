@@ -77,6 +77,8 @@ class AgentParlamentar(_Rigido):
     risco: RiscoParlamentar | None
     anomalias: AnomaliasParlamentar
     top_fornecedores: list[FornecedorTop]
+    janela_inicio: str | None
+    janela_fim: str | None
 
 
 # ── /agent/fornecedor/{cnpj_cpf_valor} ──────────────────────────

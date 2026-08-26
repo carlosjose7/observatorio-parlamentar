@@ -2116,7 +2116,66 @@ Consequências:
   `pipeline.yml` sugerir execução do pipeline de dados — ajuste a ser
   feito no item 1 da Sprint 9.
 - Se o escopo evoluir para múltiplas VPS/réplicas, o cron local deixa
-  de ser suficiente e exigiria um orquestrador externo — não é
+  de ser suficiente e exigiria um orquestrador externo - não é
   necessidade do MVP.
+
+---
+
+ADR-035
+Título: Orquestração das ondas de ML no DAG - build Gold em duas fases
+(core → analytics) com etapa Python entre elas
+
+Status:
+Aceito
+
+Contexto:
+O DAG `observatorio_pipeline` encadeava apenas bronze → silver →
+gold(dbt). Os pontos de entrada das ondas de ML (`executar_carga_outliers`,
+`executar_carga_ml_rede`, `executar_carga_ml_risco`) nunca eram invocados:
+a task de Gold garantia o schema `ml_staging` VAZIO antes do build e o dbt
+materializava os cinco models que leem `source('ml_staging', ...)` sobre
+staging sempre vazio. Resultado observado em produção (ago/2026):
+`expense_outliers`, `network_nodes`, `network_edges`,
+`politician_similarity` e `risk_scores` nasciam vazias a cada execução -
+páginas de Anomalias/Rede/Risco exibiam zero, e o "1 nó" da página de Rede
+era o grafo sem arestas. Não era parâmetro de modelo: era fio de
+orquestração solto (os docstrings das cargas já diziam "o ponto de entrada
+da DAG" - a task é que não existia).
+
+Decisão:
+1. Dividir o build do Gold em DUAS fases com seletores dbt explícitos:
+   `executar_gold_core` (`dbt build --exclude` dos cinco models analytics -
+   dimensões, fatos e agregados puro-SQL como `supplier_concentration`
+   permanecem aqui) e `executar_gold_analytics` (`dbt build --select` dos
+   cinco models que leem `source('ml_staging', ...)`).
+2. Nova task `executar_analytics` ENTRE as duas, chamando
+   `pipeline/analytics_stage.executar_etapa_analytics(run_id)` - módulo
+   compartilhado também por `scripts/run_e2e_local.py`. Lê o Gold core
+   materializado (`fact_despesa`, `dim_data`, `supplier_concentration`)
+   em modo read-only e escreve EXCLUSIVAMENTE em `ml_staging`, na ordem de
+   dependência Onda 2 → 3 → 4.
+3. Fronteira ADR-026 PRESERVADA: Python single-writer de `ml_staging`;
+   dbt apenas consome como source; API segue read-only sobre o Gold.
+   Nenhuma premissa anterior é violada - este ADR formaliza o fluxo que o
+   ADR-026 (Opção A) já presumia ("os scripts de ML rodam como etapa
+   separada") e que não havia sido cabeado.
+4. Sem fatos promovidos, a etapa encerra sem escrever; os models analytics
+   são materializados vazios (mesmo contrato da Fase 1 de test_gold_risk).
+5. Guardrail: após o build analytics, `alertar_analytics_vazio` registra
+   warning estruturado quando existem fatos no Gold mas alguma tabela
+   analítica ficou vazia (sintoma exato do bug original).
+
+Consequências:
+- Cadeia passa a ser bronze >> silver >> gold_core >> executar_analytics
+  >> gold_analytics; `tests/pipeline/test_dag.py` atualizado para as cinco
+  tasks e a nova ordem.
+- PageRank/similaridade passam a rodar a cada execução diária (recálculo
+  total do ADR-030) - escala atual validada no backfill de ago/2026 (~9 mil
+  despesas em segundos); o disjuntor de custo futuro permanece o ADR-030.
+- `scripts/run_e2e_local.py` espelha as duas fases + etapa ML, então o E2E
+  volta a validar o produto analítico completo, não só o relacional.
+- Falha na etapa ML derruba apenas `executar_gold_analytics`; o Gold core
+  (fatos/dimensões consumidos pelos endpoints de negócio da API) permanece
+  com a última execução íntegra.
 
 ---

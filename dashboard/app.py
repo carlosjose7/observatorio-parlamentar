@@ -13,6 +13,7 @@ import streamlit as st
 
 from dashboard.client import ApiClient
 from dashboard.ui import (
+    aplicar_identidade,
     carregar_com_feedback,
     formatar_moeda,
     metricas_seguras,
@@ -23,6 +24,7 @@ st.set_page_config(
     page_icon="🏛️",
     layout="wide",
 )
+aplicar_identidade()
 
 st.title("🏛️ Observatório Parlamentar")
 st.caption("Plataforma de Inteligência Parlamentar Brasileira")

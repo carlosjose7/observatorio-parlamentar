@@ -42,7 +42,8 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
-      - ./data.hml:/app/data
+      # :ro — mesmo do PRD: a API nunca escreve no Gold (ADR-026)
+      - ./data.hml:/app/data:ro
     ports:
       - "127.0.0.1:18000:8000"
 
