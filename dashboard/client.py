@@ -214,11 +214,28 @@ class ApiClient:
             params,
         )
 
+    def gastos_fornecedor(
+        self,
+        cnpj_cpf_valor: str,
+        ano: int | None = None,
+        pagina: int = 1,
+        limite: int = 100,
+    ) -> dict[str, Any]:
+        """GET /fornecedores/{cnpj_cpf_valor}/gastos (despesas com data/ano/mês)."""
+        params: dict[str, Any] = {"pagina": pagina, "limite": limite}
+        if ano:
+            params["ano"] = ano
+        return self._get(
+            f"/fornecedores/{_codificar_path(cnpj_cpf_valor)}/gastos",
+            params,
+        )
+
     # ── Anomalias ────────────────────────────────────────────────
 
     def listar_anomalias(
         self,
         threshold: float | None = None,
+        ano: int | None = None,
         pagina: int = 1,
         limite: int = 20,
     ) -> dict[str, Any]:
@@ -226,6 +243,8 @@ class ApiClient:
         params: dict[str, Any] = {"pagina": pagina, "limite": limite}
         if threshold is not None:
             params["threshold"] = threshold
+        if ano is not None:
+            params["ano"] = ano
         return self._get("/anomalias", params)
 
     # ── Rede ─────────────────────────────────────────────────────
@@ -237,6 +256,12 @@ class ApiClient:
         — a API aplica o teto na consulta, nunca no cliente.
         """
         return self._get("/rede/comunidades", {"limite_nos": limite_nos})
+
+    def rede_fornecedor(self, id_fornecedor: int) -> dict[str, Any]:
+        """GET /rede/fornecedores/{id} (parlamentares conectados ao fornecedor)."""
+        return self._get(
+            f"/rede/fornecedores/{_codificar_path(id_fornecedor)}"
+        )
 
     # ── Qualidade ────────────────────────────────────────────────
 
@@ -257,6 +282,28 @@ class ApiClient:
     def status_pipeline(self, limite: int = 20) -> dict[str, Any]:
         """GET /pipeline/status (execuções recentes do pipeline)."""
         return self._get("/pipeline/status", {"limite": limite})
+
+    # ── Agregações (análises/gráficos) ───────────────────────────
+
+    def agregacao_por_uf(self, limite: int = 10) -> dict[str, Any]:
+        """GET /agregacoes/por-uf (gastos por UF, ordenados por total)."""
+        return self._get("/agregacoes/por-uf", {"limite": limite})
+
+    def agregacao_por_partido(self, limite: int = 10) -> dict[str, Any]:
+        """GET /agregacoes/por-partido (gastos por partido, por total)."""
+        return self._get("/agregacoes/por-partido", {"limite": limite})
+
+    def top_parlamentares(self, limite: int = 10) -> dict[str, Any]:
+        """GET /agregacoes/top-parlamentares (ranking por gasto acumulado)."""
+        return self._get("/agregacoes/top-parlamentares", {"limite": limite})
+
+    def top_fornecedores(self, limite: int = 10) -> dict[str, Any]:
+        """GET /agregacoes/top-fornecedores (ranking por valor recebido)."""
+        return self._get("/agregacoes/top-fornecedores", {"limite": limite})
+
+    def despesas_no_tempo(self) -> dict[str, Any]:
+        """GET /agregacoes/no-tempo (série mensal AAAAMM de total e contagem)."""
+        return self._get("/agregacoes/no-tempo")
 
     # ── Agent (JSON semântico agregado, ADR-032) ─────────────────
 

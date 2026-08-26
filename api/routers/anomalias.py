@@ -36,12 +36,17 @@ def get_anomalias(
         ge=0,
         description="Piso de z-score: retorna apenas sinalizadas com zscore >= threshold",
     ),
+    ano: int | None = Query(
+        default=None,
+        ge=_config.ano_minimo_consulta,
+        description="Filtro pelo ano da data do documento",
+    ),
     pagina: int = Query(default=_config.pagina_padrao, ge=1, description="Página corrente (1-based)"),
     limite: int = Query(default=_config.limite_padrao, ge=1, le=_config.limite_maximo, description="Itens por página (máx 100)"),
 ) -> ListaAnomalias:
     try:
         return listar_anomalias(
-            threshold=threshold, pagina=pagina, limite=limite
+            threshold=threshold, ano=ano, pagina=pagina, limite=limite
         )
     except GoldIndisponivel as exc:
         raise _erro_gold("anomalias", exc)

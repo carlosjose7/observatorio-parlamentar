@@ -11,9 +11,17 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.client import ApiClient
-from dashboard.ui import carregar_com_feedback, formatar_moeda, tabela_exportavel
+from dashboard.ui import (
+    aplicar_identidade,
+    carregar_com_feedback,
+    filtro_periodo,
+    formatar_moeda,
+    grafico_mensal,
+    tabela_exportavel,
+)
 
 st.set_page_config(page_title="Partido", page_icon="🏛️", layout="wide")
+aplicar_identidade()
 st.title("🏛️ Partido")
 
 client = ApiClient()
@@ -53,26 +61,52 @@ def main() -> None:
         st.info(f"Nenhum parlamentar de {partido}.")
         return
 
-    # Total gasto por parlamentar via agregação de gastos (até 100).
+    # Despesas (até 100 por parlamentar) enriquecidas com ano/mês para os filtros.
     linhas = []
     for _, row in df.iterrows():
         g = carregar_com_feedback(
             lambda rid=row["id_parlamentar"]: client.gastos_parlamentar(rid, limite=100),
             spinner="",
         )
-        total = sum(float(x["valor_liquido"]) for x in (g or {}).get("itens", [])) if g else 0.0
-        linhas.append(
-            {
-                "nome": row["nome"],
-                "uf": row["sigla_uf"],
-                "situacao": row["situacao_normalizada"],
-                "total_gasto": total,
+        for x in (g or {}).get("itens", []):
+            linhas.append(
+                {
+                    "nome": row["nome"],
+                    "uf": row["sigla_uf"],
+                    "situacao": row["situacao_normalizada"],
+                    "ano": x["ano"],
+                    "mes": x["mes"],
+                    "valor_liquido": float(x["valor_liquido"]),
+                }
+            )
+    if not linhas:
+        st.info(f"Nenhuma despesa encontrada para parlamentares de {partido}.")
+        return
+
+    despesas = filtro_periodo(pd.DataFrame(linhas), key_prefix=f"partido_{partido}")
+    if despesas.empty:
+        st.info("Nenhuma despesa nos períodos selecionados.")
+        return
+
+    resumo = (
+        despesas.groupby(["nome", "uf", "situacao"], as_index=False)["valor_liquido"]
+        .sum()
+        .sort_values("valor_liquido", ascending=False)
+        .rename(
+            columns={
+                "nome": "Parlamentar",
+                "uf": "UF",
+                "situacao": "Situação",
+                "valor_liquido": "Total gasto",
             }
         )
-
-    resumo = pd.DataFrame(linhas).sort_values("total_gasto", ascending=False)
-    resumo["total_gasto"] = resumo["total_gasto"].map(formatar_moeda)
-    st.markdown(f"**{len(resumo)} parlamentares de {partido}**")
+    )
+    st.markdown(
+        f"**{len(resumo)} parlamentares de {partido} · "
+        f"{formatar_moeda(resumo['Total gasto'].sum())} no recorte**"
+    )
+    grafico_mensal(despesas)
+    resumo["Total gasto"] = resumo["Total gasto"].map(formatar_moeda)
     tabela_exportavel(resumo, nome_arquivo=f"partido_{partido}")
 
 

@@ -18,7 +18,8 @@ from api.schemas._common import Moeda
 class AnomaliaItem(BaseModel):
     """Uma despesa sinalizada — scores brutos + critérios que dispararam.
 
-    Espelha as colunas emitidas por `expense_outliers.sql`; `num_criterios`
+    Espelha as colunas emitidas por `expense_outliers.sql` + identificação
+    vigente do parlamentar (`dim_parlamentar` is_current); `num_criterios`
     é >= 2 por construção da Gold (ADR-002).
     """
 
@@ -26,6 +27,9 @@ class AnomaliaItem(BaseModel):
 
     id_despesa: int
     id_parlamentar: int
+    nome: str | None
+    sigla_partido: str | None
+    sigla_uf: str | None
     id_fornecedor: int | None
     data_sk: int
     valor_liquido: Moeda
@@ -41,7 +45,7 @@ class AnomaliaItem(BaseModel):
 
 
 class ListaAnomalias(BaseModel):
-    """Lista paginada de anomalias; `threshold` ecoa o filtro aplicado (None = todos)."""
+    """Lista paginada; `threshold`/`ano` ecoam os filtros aplicados (None = todos)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -49,4 +53,5 @@ class ListaAnomalias(BaseModel):
     limite: int
     total: int
     threshold: float | None
+    ano: int | None
     itens: list[AnomaliaItem]

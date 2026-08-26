@@ -11,9 +11,12 @@ Fluxo espelhado no DAG (pipeline/dags/pipeline_dag.py):
   1. Bronze: `run_pipeline` (local storage + JsonFileStore, watermark isolado).
   2. Silver: as 6 cargas (`silver_despesa` x2 fontes, `silver_parlamentar` x2,
      `silver_cartao`, `silver_emenda`).
-  3. Gold: `dbt build` completo num SUBPROCESSO (a conexão dbt-duckdb é
-     read-write por processo — subprocesso efêmero libera o arquivo, permitindo
-     que a API reabra em read_only; mesma justificativa do teste de contrato).
+  3. Gold core: `dbt build` EXCETO os models analytics (subprocesso — a
+     conexão dbt-duckdb é read-write por processo; subprocesso efêmero libera
+     o arquivo para a API reabrir em read_only).
+  4. Analytics: cargas de ML populam `ml_staging` (ondas 2→3→4, ADR-026) via
+     `pipeline.analytics_stage.executar_etapa_analytics`.
+  5. Gold analytics: `dbt build --select` dos models que leem `ml_staging`.
 
 Uso:
     python scripts/run_e2e_local.py                       # validação (limite 2)
@@ -205,34 +208,47 @@ def _criar_ml_staging_vazio() -> None:
         con.close()
 
 
-def _rodar_gold() -> None:
-    """`dbt build` completo em subprocesso (mesma receita do DAG/selo)."""
+def _rodar_gold(selecao: str | None, exclusao: str | None, rotulo: str) -> None:
+    """`dbt build` (com seletor opcional) em subprocesso — receita do DAG."""
     _criar_ml_staging_vazio()
-    codigo = (
-        f"import json\n"
-        f"import sys\n"
-        f"sys.path.insert(0, {str(RAIZ)!r})\n"
-        f"sys.path.insert(0, {str(GOLD)!r})\n"
-        "from dbt.cli.main import dbtRunner\n"
-        "from pipeline.config import get_dbt_vars\n"
-        f"r = dbtRunner().invoke([\n"
-        f"    'build',\n"
-        f"    '--project-dir', {str(GOLD)!r},\n"
-        f"    '--profiles-dir', {str(GOLD)!r},\n"
-        f"    '--vars', json.dumps(get_dbt_vars()),\n"
-        "]\n"
-        ")\n"
-        "raise SystemExit(0 if r.success else 1)\n"
-    )
+    argumentos = [
+        "import json\n",
+        "import sys\n",
+        f"sys.path.insert(0, {str(RAIZ)!r})\n",
+        f"sys.path.insert(0, {str(GOLD)!r})\n",
+        "from dbt.cli.main import dbtRunner\n",
+        "from pipeline.config import get_dbt_vars\n",
+        "invocacao = [\n",
+        "    'build',\n",
+        f"    '--project-dir', {str(GOLD)!r},\n",
+        f"    '--profiles-dir', {str(GOLD)!r},\n",
+        "    '--vars', json.dumps(get_dbt_vars()),\n",
+    ]
+    if selecao:
+        argumentos.append(f"    '--select', {selecao!r},\n")
+    if exclusao:
+        argumentos.append(f"    '--exclude', {exclusao!r},\n")
+    argumentos.append("]\n")
+    argumentos.append("raise SystemExit(0 if dbtRunner().invoke(invocacao).success else 1)\n")
+
     env = {
         **os.environ,
         "PYTHONPATH": os.pathsep.join(
             filter(bool, (str(GOLD), os.environ.get("PYTHONPATH", "")))
         ),
     }
-    print("[gold] dbt build (subprocesso)...", flush=True)
-    subprocess.run([sys.executable, "-c", codigo], env=env, check=True)
-    print("[gold] build concluído", flush=True)
+    print(f"[gold] dbt build {rotulo} (subprocesso)...", flush=True)
+    subprocess.run([sys.executable, "-c", "".join(argumentos)], env=env, check=True)
+    print(f"[gold] build {rotulo} concluído", flush=True)
+
+
+def _rodar_analytics(run_id: str) -> dict[str, int]:
+    """Popula `ml_staging` (ondas de ML 2→3→4) — mesma etapa do DAG."""
+    from pipeline.analytics_stage import executar_etapa_analytics
+
+    resumo = executar_etapa_analytics(run_id)
+    print(f"[analytics] {resumo}", flush=True)
+    return resumo
 
 
 def _resumo_final() -> None:
@@ -274,7 +290,15 @@ def main() -> None:
 
     run_id = _rodar_bronze()
     _rodar_silver(run_id)
-    _rodar_gold()
+    from pipeline.analytics_stage import (
+        MODELS_ANALYTICS,
+        alertar_analytics_vazio,
+    )
+
+    _rodar_gold(None, " ".join(MODELS_ANALYTICS), "core")
+    _rodar_analytics(run_id)
+    _rodar_gold(" ".join(MODELS_ANALYTICS), None, "analytics")
+    alertar_analytics_vazio(MODELS_ANALYTICS)
     _resumo_final()
     print(f"\n[e2e] concluído. run_id={run_id}", flush=True)
 

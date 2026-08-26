@@ -12,9 +12,15 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.client import ApiClient
-from dashboard.ui import carregar_com_feedback, formatar_moeda, tabela_exportavel
+from dashboard.ui import (
+    aplicar_identidade,
+    carregar_com_feedback,
+    formatar_moeda,
+    tabela_exportavel,
+)
 
 st.set_page_config(page_title="ML / Risco", page_icon="🧠", layout="wide")
+aplicar_identidade()
 st.title("🧠 Scores de Risco (agent-ready)")
 
 client = ApiClient()
@@ -99,6 +105,14 @@ def _render(id_parlamentar: int) -> None:
         return
 
     st.markdown(f"## {payload.get('nome')} ({payload.get('sigla_partido')}-{payload.get('sigla_uf')})")
+
+    janela_ini, janela_fim = payload.get("janela_inicio"), payload.get("janela_fim")
+    if janela_ini and janela_fim:
+        st.caption(
+            f"Janela analisada (camada Gold): **{janela_ini} a {janela_fim}** — as "
+            "métricas refletem apenas as despesas carregadas nesse período; "
+            "podem divergir do CEAP completo do exercício."
+        )
 
     metricas = payload.get("metricas", {})
     c1, c2, c3, c4 = st.columns(4)

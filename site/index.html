@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observatório Parlamentar — Brasília vista através dos dados</title>
+<meta name="description" content="Observatório Parlamentar: transparência parlamentar orientada por dados públicos da Câmara, do Senado e do Portal da Transparência.">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://observatorio-parlamentar.com.br/">
+<meta property="og:title" content="Observatório Parlamentar — Brasília vista através dos dados">
+<meta property="og:description" content="Dados públicos da Câmara, do Senado e do Portal da Transparência transformados em informação analisável, rastreável e compreensível.">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Observatório Parlamentar — Brasília vista através dos dados">
+<meta name="twitter:description" content="Transparência parlamentar orientada por dados públicos. Open source.">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M0 0h64v46L32 64 0 46z' fill='%230B1F33'/%3E%3Ctext x='32' y='40' font-family='Arial,sans-serif' font-weight='700' font-size='26' fill='%23fff' text-anchor='middle'%3EOP%3C/text%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --navy:#0B1F33;
+  --navy-2:#102D47;
+  --ink:#14202B;
+  --muted:#5C6B7A;
+  --line:#D9DEE3;
+  --paper:#F7F7F4;
+  --white:#FFFFFF;
+  --green:#187A52;
+  --green-soft:#E7F1EC;
+  --gold:#B58A42;
+  --gold-ink:#8A6A2F;
+  --concrete:#ECEDEA;
+  --max:1180px;
+}
+
+*{box-sizing:border-box}
+@media(prefers-reduced-motion:no-preference){
+  html{scroll-behavior:smooth}
+}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"DM Sans",sans-serif;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.wrap{width:min(var(--max),calc(100% - 48px));margin:auto}
+
+/* HEADER */
+header{
+  position:sticky;
+  top:0;
+  z-index:20;
+  background:rgba(247,247,244,.94);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.nav{
+  min-height:74px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:32px;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:13px;
+  text-decoration:none;
+}
+.brand-mark{
+  width:38px;
+  height:38px;
+  display:grid;
+  place-items:center;
+  background:var(--navy);
+  color:#fff;
+  font-weight:700;
+  letter-spacing:-.04em;
+  clip-path:polygon(0 0,100% 0,100% 72%,50% 100%,0 72%);
+}
+.brand-name{font-weight:700;font-size:15px;letter-spacing:-.02em}
+nav ul{display:flex;gap:28px;list-style:none;margin:0;padding:0}
+nav a{text-decoration:none;color:var(--muted);font-size:14px}
+nav a:hover{color:var(--ink)}
+.nav-actions{display:flex;gap:10px;align-items:center}
+.nav-cta{
+  text-decoration:none;
+  background:var(--green);
+  color:#fff;
+  padding:9px 15px;
+  font-size:13px;
+  font-weight:600;
+  transition:background .15s ease;
+}
+.nav-cta:hover{background:#11603F}
+.nav-github{
+  text-decoration:none;
+  border:1px solid var(--line);
+  color:var(--muted);
+  padding:8px 14px;
+  font-size:13px;
+  font-weight:600;
+}
+.nav-github:hover{border-color:var(--navy);color:var(--navy)}
+
+/* HERO */
+.hero{
+  position:relative;
+  min-height:680px;
+  display:grid;
+  grid-template-columns:1.05fr .95fr;
+  align-items:center;
+  gap:70px;
+  overflow:hidden;
+}
+.hero:after{
+  content:"";
+  position:absolute;
+  right:-150px;
+  bottom:-220px;
+  width:650px;
+  height:650px;
+  border:1px solid #CDD2D5;
+  border-radius:50%;
+  pointer-events:none;
+}
+@media(prefers-reduced-motion:no-preference){
+  .hero-copy>*{animation:fade-up .65s ease both}
+  .hero-copy>*:nth-child(2){animation-delay:.08s}
+  .hero-copy>*:nth-child(3){animation-delay:.16s}
+  .hero-copy>*:nth-child(4){animation-delay:.24s}
+}
+@keyframes fade-up{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:none}
+}
+.eyebrow{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  color:var(--green);
+  margin-bottom:24px;
+}
+.eyebrow:before{
+  content:"";
+  width:24px;
+  height:1px;
+  background:var(--green);
+}
+h1{
+  margin:0;
+  color:var(--navy);
+  font-size:clamp(44px,6vw,74px);
+  line-height:1.02;
+  letter-spacing:-.05em;
+  max-width:760px;
+}
+.hero-lede{
+  max-width:610px;
+  color:var(--muted);
+  font-size:18px;
+  margin:28px 0 34px;
+}
+.actions{display:flex;gap:12px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:13px 19px;
+  text-decoration:none;
+  font-weight:600;
+  font-size:14px;
+  border:1px solid transparent;
+  transition:background .15s ease,border-color .15s ease;
+}
+.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-primary:hover{background:var(--navy-2)}
+.btn-secondary{color:var(--navy);border-color:var(--navy)}
+.btn-secondary:hover{background:#fff}
+
+.hero-art{
+  position:relative;
+  min-height:390px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.congress{
+  position:relative;
+  width:100%;
+  max-width:480px;
+  height:270px;
+}
+.horizon{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:48px;
+  height:1px;
+  background:#AEB7BE;
+}
+.axis{
+  position:absolute;
+  left:50%;
+  top:18px;
+  bottom:48px;
+  width:1px;
+  background:#C7CDD1;
+}
+.dome{
+  position:absolute;
+  width:150px;
+  height:150px;
+  border:1px solid var(--navy);
+  border-bottom:0;
+  border-radius:150px 150px 0 0;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:48px;
+}
+.dome:after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:-1px;
+  width:210px;
+  height:105px;
+  transform:translateX(-50%);
+  border:1px solid var(--navy);
+  border-bottom:0;
+  border-radius:210px 210px 0 0;
+}
+.tower{
+  position:absolute;
+  bottom:48px;
+  left:50%;
+  width:13px;
+  height:130px;
+  transform:translateX(-50%);
+  background:var(--navy);
+}
+.flag{
+  position:absolute;
+  right:18%;
+  bottom:50px;
+  width:1px;
+  height:150px;
+  background:#8A969F;
+}
+.flag:after{
+  content:"";
+  position:absolute;
+  top:0;
+  left:1px;
+  width:35px;
+  height:20px;
+  background:var(--green);
+}
+.art-label{
+  position:absolute;
+  left:0;
+  bottom:0;
+  font-family:"IBM Plex Mono",monospace;
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:.08em;
+}
+
+/* STATS */
+.stats{
+  background:var(--navy);
+  color:#fff;
+  border-top:4px solid var(--gold);
+}
+.stat-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+}
+.stat{
+  padding:32px 26px 34px;
+  border-right:1px solid rgba(255,255,255,.14);
+}
+.stat:last-child{border-right:0}
+.stat strong{
+  display:block;
+  font-size:38px;
+  line-height:1;
+  letter-spacing:-.04em;
+}
+.stat span{
+  display:block;
+  color:#B8C4CE;
+  font-size:12px;
+  margin-top:9px;
+}
+
+/* PANORAMA */
+.panorama{
+  background:var(--white);
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+}
+.pano-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:end;
+  gap:24px;
+  flex-wrap:wrap;
+  margin-bottom:44px;
+}
+.pano-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:64px;
+}
+.pano-col h3{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:0 0 18px;
+  font-weight:500;
+}
+.bar-row{
+  display:grid;
+  grid-template-columns:112px 1fr 96px;
+  align-items:center;
+  gap:12px;
+  padding:7px 0;
+}
+.bar-label{font-size:13px;color:var(--ink);font-weight:600}
+.bar-track{height:16px;background:var(--concrete)}
+.bar-fill{display:block;height:100%;background:var(--navy)}
+.bar-lead .bar-fill{background:var(--green)}
+.bar-val{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11.5px;
+  color:var(--navy);
+  text-align:right;
+  white-space:nowrap;
+}
+.pano-note{
+  margin-top:38px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:20px;
+  flex-wrap:wrap;
+}
+.pano-note small{color:var(--muted);font-size:12px}
+.pano-link{
+  text-decoration:none;
+  border:1px solid var(--navy);
+  color:var(--navy);
+  padding:10px 16px;
+  font-size:13px;
+  font-weight:600;
+  transition:background .15s ease,color .15s ease;
+}
+.pano-link:hover{background:var(--navy);color:#fff}
+
+/* SECTIONS */
+section{padding:100px 0}
+.section-kicker{
+  font-family:"IBM Plex Mono",monospace;
+  color:var(--gold-ink);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  margin-bottom:13px;
+}
+.section-title{
+  color:var(--navy);
+  font-size:clamp(32px,4vw,50px);
+  line-height:1.05;
+  letter-spacing:-.045em;
+  margin:0;
+}
+.section-intro{
+  max-width:650px;
+  color:var(--muted);
+  margin:18px 0 50px;
+  font-size:16px;
+}
+
+/* SOURCES */
+.sources{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+}
+.source{
+  padding:32px 28px 34px 0;
+  margin-right:28px;
+  border-right:1px solid var(--line);
+}
+.source:last-child{border-right:0}
+.source-number{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  color:var(--gold-ink);
+}
+.source h3{font-size:19px;margin:22px 0 9px;color:var(--navy)}
+.source p{font-size:14px;color:var(--muted);margin:0}
+
+/* DATA STORY */
+.data-story{
+  background:var(--concrete);
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+}
+.story-grid{
+  display:grid;
+  grid-template-columns:.8fr 1.2fr;
+  gap:80px;
+  align-items:start;
+}
+.story-copy p{color:var(--muted);max-width:470px}
+.story-list{border-top:1px solid #C9CFD0}
+.story-row{
+  display:grid;
+  grid-template-columns:110px 1fr;
+  gap:24px;
+  padding:21px 0;
+  border-bottom:1px solid #C9CFD0;
+}
+.story-row b{color:var(--navy);font-size:14px;font-family:"IBM Plex Mono",monospace;font-weight:500;letter-spacing:.06em}
+.story-row span{color:var(--muted);font-size:14px}
+
+/* PIPELINE */
+.pipeline{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:0;
+  margin-top:50px;
+  border-top:1px solid var(--navy);
+  border-bottom:1px solid var(--navy);
+}
+.layer{
+  padding:30px 30px 34px 0;
+  margin-right:30px;
+  border-right:1px solid var(--line);
+}
+.layer:last-child{border-right:0}
+.layer-tag{
+  display:inline-block;
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  padding:5px 8px;
+  background:var(--green-soft);
+  color:var(--green);
+  margin-bottom:24px;
+}
+.layer h3{margin:0 0 10px;color:var(--navy);font-size:21px}
+.layer p{margin:0;color:var(--muted);font-size:14px}
+
+/* QUESTIONS */
+.questions{
+  background:var(--navy);
+  color:#fff;
+}
+.questions .section-title{color:#fff}
+.questions .section-kicker{color:var(--gold)}
+.questions .section-intro{color:#B8C4CE}
+.question-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  margin-top:48px;
+  border-top:1px solid rgba(255,255,255,.16);
+}
+.question{
+  padding:28px 30px 30px 0;
+  border-bottom:1px solid rgba(255,255,255,.16);
+}
+.question:nth-child(odd){border-right:1px solid rgba(255,255,255,.16);padding-right:40px}
+.question:nth-child(even){padding-left:40px}
+.question b{display:block;font-size:20px;margin-bottom:8px}
+.question span{color:#B8C4CE;font-size:14px}
+
+/* DISCLOSURE */
+.disclosure{
+  max-width:850px;
+  border-left:3px solid var(--gold);
+  padding:5px 0 5px 24px;
+}
+.disclosure strong{color:var(--navy)}
+.disclosure p{color:var(--muted);margin:8px 0 0}
+
+/* FOOTER */
+footer{
+  background:#071725;
+  color:#fff;
+  padding:50px 0 40px;
+}
+.footer{
+  display:flex;
+  justify-content:space-between;
+  gap:30px;
+  align-items:end;
+}
+.footer strong{font-size:16px}
+.footer small{color:#91A0AC;display:block;margin-top:6px}
+.footer-links{display:flex;flex-direction:column;gap:8px;align-items:end}
+.footer-nav{display:flex;gap:22px}
+.footer-nav a,.footer-links a{color:#C5D0D8;text-decoration:none;font-size:13px}
+.footer-nav a:hover,.footer-links a:hover{color:#fff}
+.footer-sources{
+  margin-top:36px;
+  padding-top:22px;
+  border-top:1px solid rgba(255,255,255,.12);
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 26px;
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  color:#91A0AC;
+  letter-spacing:.05em;
+}
+.footer-sources a{color:#91A0AC;text-decoration:none}
+.footer-sources a:hover{color:#fff}
+.mono{font-family:"IBM Plex Mono",monospace}
+
+/* MOBILE */
+@media(max-width:850px){
+  nav ul{display:none}
+  .hero{grid-template-columns:1fr;min-height:auto;padding:82px 0 70px;gap:20px}
+  .hero-art{min-height:300px}
+  .pano-grid{grid-template-columns:1fr;gap:44px}
+  .stat-grid{grid-template-columns:1fr 1fr}
+  .stat:nth-child(2){border-right:0}
+  .sources,.pipeline{grid-template-columns:1fr}
+  .source,.layer{border-right:0;border-bottom:1px solid var(--line);margin-right:0;padding-right:0}
+  .source:last-child,.layer:last-child{border-bottom:0}
+  .story-grid{grid-template-columns:1fr;gap:40px}
+  .question-grid{grid-template-columns:1fr}
+  .question:nth-child(odd){border-right:0;padding-right:0}
+  .question:nth-child(even){padding-left:0}
+  .footer{align-items:start;flex-direction:column}
+  .footer-links{align-items:start}
+}
+@media(max-width:520px){
+  .wrap{width:min(var(--max),calc(100% - 32px))}
+  .brand-name{font-size:13px}
+  .nav-github{display:none}
+  .stat-grid{grid-template-columns:1fr}
+  .stat{border-right:0;border-bottom:1px solid rgba(255,255,255,.14)}
+  .stat:last-child{border-bottom:0}
+  section{padding:76px 0}
+  .hero-art{min-height:250px}
+  .dome{width:120px;height:120px}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <span class="brand-mark">OP</span>
+      <span class="brand-name">Observatório Parlamentar</span>
+    </a>
+
+    <nav aria-label="Navegação principal">
+      <ul>
+        <li><a href="#dados">Dados</a></li>
+        <li><a href="#metodologia">Metodologia</a></li>
+        <li><a href="#perguntas">O que investigamos</a></li>
+      </ul>
+    </nav>
+
+    <div class="nav-actions">
+      <a class="nav-github" href="https://github.com/carlosjose7/observatorio-parlamentar" target="_blank" rel="noopener">
+        Código aberto ↗
+      </a>
+      <a class="nav-cta" href="/app/">Abrir o Dashboard</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="wrap hero">
+    <div class="hero-copy">
+      <div class="eyebrow">Brasília · dados públicos · transparência</div>
+
+      <h1>O Parlamento brasileiro, visto através dos dados.</h1>
+
+      <p class="hero-lede">
+        O Observatório Parlamentar transforma dados públicos da Câmara,
+        do Senado e do Portal da Transparência em informação analisável,
+        rastreável e compreensível.
+      </p>
+
+      <div class="actions">
+        <a class="btn btn-primary" href="/app/">Abrir o Dashboard →</a>
+        <a class="btn btn-secondary" href="#metodologia">Conhecer a metodologia</a>
+      </div>
+    </div>
+
+    <div class="hero-art" aria-hidden="true">
+      <div class="congress">
+        <div class="axis"></div>
+        <div class="dome"></div>
+        <div class="tower"></div>
+        <div class="flag"></div>
+        <div class="horizon"></div>
+        <span class="art-label">15°47′S · 47°52′W · BRASÍLIA, DF</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="stats">
+    <div class="wrap stat-grid">
+      <div class="stat"><strong>3</strong><span>fontes oficiais integradas</span></div>
+      <div class="stat"><strong>3,6 mi+</strong><span>registros analisáveis</span></div>
+      <div class="stat"><strong>6</strong><span>critérios de anomalia</span></div>
+      <div class="stat"><strong>5</strong><span>dimensões no índice de risco</span></div>
+    </div>
+  </div>
+
+  <section class="panorama">
+    <div class="wrap">
+      <div class="pano-head">
+        <div>
+          <div class="section-kicker">Panorama · retrato do Gold</div>
+          <h2 class="section-title">Para onde foi o dinheiro.</h2>
+        </div>
+        <a class="pano-link" href="/app/">Análises completas →</a>
+      </div>
+
+      <div class="pano-grid">
+        <div class="pano-col">
+          <h3>Gastos por UF</h3>
+          <div class="bar-row bar-lead"><span class="bar-label">SP</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="bar-val">R$ 531,6 mil</span></div>
+          <div class="bar-row"><span class="bar-label">MG</span><span class="bar-track"><span class="bar-fill" style="width:88%"></span></span><span class="bar-val">R$ 469,6 mil</span></div>
+          <div class="bar-row"><span class="bar-label">RJ</span><span class="bar-track"><span class="bar-fill" style="width:88%"></span></span><span class="bar-val">R$ 467,7 mil</span></div>
+          <div class="bar-row"><span class="bar-label">RS</span><span class="bar-track"><span class="bar-fill" style="width:87%"></span></span><span class="bar-val">R$ 461,3 mil</span></div>
+          <div class="bar-row"><span class="bar-label">BA</span><span class="bar-track"><span class="bar-fill" style="width:75%"></span></span><span class="bar-val">R$ 396,3 mil</span></div>
+          <div class="bar-row"><span class="bar-label">PE</span><span class="bar-track"><span class="bar-fill" style="width:63%"></span></span><span class="bar-val">R$ 336,8 mil</span></div>
+        </div>
+
+        <div class="pano-col">
+          <h3>Gastos por partido</h3>
+          <div class="bar-row bar-lead"><span class="bar-label">PL</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="bar-val">R$ 853,2 mil</span></div>
+          <div class="bar-row"><span class="bar-label">PT</span><span class="bar-track"><span class="bar-fill" style="width:74%"></span></span><span class="bar-val">R$ 632,1 mil</span></div>
+          <div class="bar-row"><span class="bar-label">UNIÃO</span><span class="bar-track"><span class="bar-fill" style="width:55%"></span></span><span class="bar-val">R$ 472,6 mil</span></div>
+          <div class="bar-row"><span class="bar-label">PSD</span><span class="bar-track"><span class="bar-fill" style="width:52%"></span></span><span class="bar-val">R$ 445,3 mil</span></div>
+          <div class="bar-row"><span class="bar-label">PP</span><span class="bar-track"><span class="bar-fill" style="width:52%"></span></span><span class="bar-val">R$ 441,8 mil</span></div>
+          <div class="bar-row"><span class="bar-label">REPUBLICANOS</span><span class="bar-track"><span class="bar-fill" style="width:40%"></span></span><span class="bar-val">R$ 343,5 mil</span></div>
+        </div>
+      </div>
+
+      <div class="pano-note">
+        <small>Retrato estático de referência · Gold de ago/2026 · 8.983 despesas · R$ 4,57 mi. Os números atualizados e a série mensal ficam no dashboard.</small>
+      </div>
+    </div>
+  </section>
+
+  <section id="dados" class="wrap">
+    <div class="section-kicker">01 · Fontes</div>
+    <h2 class="section-title">Uma visão única sobre dados que nasceram separados.</h2>
+    <p class="section-intro">
+      Câmara, Senado e Portal da Transparência possuem formatos, estruturas
+      e regras de acesso diferentes. O Observatório os transforma em uma
+      camada analítica comum.
+    </p>
+
+    <div class="sources">
+      <article class="source">
+        <span class="source-number">01 / CÂMARA</span>
+        <h3>Câmara dos Deputados</h3>
+        <p>API REST em JSON, com ingestão incremental e rastreabilidade por data de documento.</p>
+      </article>
+
+      <article class="source">
+        <span class="source-number">02 / SENADO</span>
+        <h3>Senado Federal</h3>
+        <p>Dados anuais em CSV, normalizados para integração com o modelo analítico.</p>
+      </article>
+
+      <article class="source">
+        <span class="source-number">03 / CGU</span>
+        <h3>Portal da Transparência</h3>
+        <p>API autenticada utilizada como fonte complementar de dados públicos.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="data-story">
+    <div class="wrap story-grid">
+      <div class="story-copy">
+        <div class="section-kicker">02 · Da informação à evidência</div>
+        <h2 class="section-title">O dado não responde sozinho. A análise ajuda a fazer as perguntas certas.</h2>
+        <p>
+          O objetivo não é produzir acusações. É encontrar padrões,
+          concentrações e desvios que possam ser examinados com mais contexto.
+        </p>
+      </div>
+
+      <div class="story-list">
+        <div class="story-row">
+          <b>CONCENTRAÇÃO</b>
+          <span>Quais fornecedores concentram maior volume de recursos?</span>
+        </div>
+        <div class="story-row">
+          <b>ANOMALIA</b>
+          <span>Quais despesas fogem dos padrões esperados?</span>
+        </div>
+        <div class="story-row">
+          <b>REDE</b>
+          <span>Quais relações aparecem quando conectamos parlamentares e fornecedores?</span>
+        </div>
+        <div class="story-row">
+          <b>RISCO</b>
+          <span>Quais padrões merecem investigação adicional?</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="metodologia" class="wrap">
+    <div class="section-kicker">03 · Metodologia</div>
+    <h2 class="section-title">Da fonte oficial à camada analítica.</h2>
+    <p class="section-intro">
+      Cada estágio possui uma responsabilidade definida. O dado bruto é preservado
+      e as transformações permanecem rastreáveis.
+    </p>
+
+    <div class="pipeline">
+      <article class="layer">
+        <span class="layer-tag">BRONZE</span>
+        <h3>Captura fiel</h3>
+        <p>Ingestão incremental, preservação da origem e armazenamento dos dados brutos.</p>
+      </article>
+
+      <article class="layer">
+        <span class="layer-tag">SILVER</span>
+        <h3>Padronização</h3>
+        <p>Limpeza, normalização, validação de schema e controles de qualidade.</p>
+      </article>
+
+      <article class="layer">
+        <span class="layer-tag">GOLD</span>
+        <h3>Sentido analítico</h3>
+        <p>Modelo dimensional, métricas, índices de risco e análise de redes.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="perguntas" class="questions">
+    <div class="wrap">
+      <div class="section-kicker">04 · O que investigamos</div>
+      <h2 class="section-title">Perguntas simples. Dados complexos.</h2>
+      <p class="section-intro">
+        A tecnologia fica nos bastidores. O resultado deve ser compreensível
+        para quem quer entender como o dinheiro público é utilizado.
+      </p>
+
+      <div class="question-grid">
+        <div class="question">
+          <b>Quem recebe?</b>
+          <span>Parlamentares, fornecedores, partidos e categorias de despesa.</span>
+        </div>
+        <div class="question">
+          <b>Quanto recebe?</b>
+          <span>Valores absolutos, médias, séries históricas e concentrações.</span>
+        </div>
+        <div class="question">
+          <b>Existe um padrão fora do comum?</b>
+          <span>Regras estatísticas e modelos de detecção de anomalias.</span>
+        </div>
+        <div class="question">
+          <b>Como as relações se conectam?</b>
+          <span>Grafos para explorar relações entre parlamentares e fornecedores.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="disclosure">
+      <strong>Transparência também significa reconhecer limites.</strong>
+      <p>
+        O Observatório sinaliza padrões estatísticos — não produz conclusões
+        de irregularidade. Toda sinalização deve ser interpretada com contexto
+        e investigação adicional. Os dados utilizados são públicos e oficiais.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer">
+      <div>
+        <strong>Observatório Parlamentar</strong>
+        <small class="mono">Brasília · dados públicos · open source</small>
+      </div>
+
+      <div class="footer-links">
+        <div class="footer-nav">
+          <a href="#dados">Dados</a>
+          <a href="#metodologia">Metodologia</a>
+          <a href="/app/">Dashboard</a>
+          <a href="https://github.com/carlosjose7/observatorio-parlamentar" target="_blank" rel="noopener">GitHub ↗</a>
+        </div>
+        <a href="https://github.com/carlosjose7/observatorio-parlamentar/blob/main/LICENSE" target="_blank" rel="noopener">Licença e código-fonte</a>
+      </div>
+    </div>
+
+    <div class="footer-sources">
+      <span>FONTES:</span>
+      <a href="https://dadosabertos.camara.leg.br" target="_blank" rel="noopener">CÂMARA DOS DEPUTADOS</a>
+      <a href="https://www12.senado.leg.br/dados-abertos" target="_blank" rel="noopener">SENADO FEDERAL</a>
+      <a href="https://portaldatransparencia.gov.br" target="_blank" rel="noopener">PORTAL DA TRANSPARÊNCIA/CGU</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+if (location.protocol === "file:") {
+  document.querySelectorAll('a[href^="/app"]').forEach(function (a) {
+    a.href = "http://localhost:8501/";
+  });
+}
+</script>
+</body>
+</html>

@@ -1,9 +1,9 @@
 """dashboard/pages/05_fornecedor.py — perfil e parlamentares de um fornecedor.
 
 Consome `GET /fornecedores`, `GET /fornecedores/{cnpj_cpf}` e
-`GET /fornecedores/{cnpj_cpf}/parlamentares` (RF-05). CNPJ casa exatamente;
+`GET /fornecedores/{cnpj_cpf}/gastos` (RF-05). CNPJ casa exatamente;
 CPF está pseudonimizado na Silver (ADR-011/033) — busca por CPF cru retorna
-404. Exportação (RF-08).
+404. Filtros de ano/mês, gráfico mensal e exportação (RF-08).
 """
 
 from __future__ import annotations
@@ -13,12 +13,16 @@ import streamlit as st
 
 from dashboard.client import ApiClient
 from dashboard.ui import (
+    aplicar_identidade,
     carregar_com_feedback,
+    filtro_periodo,
     formatar_moeda,
+    grafico_mensal,
     tabela_exportavel,
 )
 
 st.set_page_config(page_title="Fornecedor", page_icon="🏢", layout="wide")
+aplicar_identidade()
 st.title("🏢 Fornecedor")
 
 client = ApiClient()
@@ -78,31 +82,47 @@ def _render_perfil(cnpj_cpf_valor: str) -> None:
     c4.metric("Total recebido", formatar_moeda(perfil.get("valor_liquido_total")))
 
 
-def _render_parlamentares(cnpj_cpf_valor: str) -> None:
+def _render_gastos(cnpj_cpf_valor: str) -> None:
+    """Parlamentares do fornecedor derivados das despesas, com filtro ano/mês."""
     st.subheader("Parlamentares que gastaram neste fornecedor")
     payload = carregar_com_feedback(
-        lambda: client.parlamentares_fornecedor(cnpj_cpf_valor, limite=100),
-        spinner="Carregando parlamentares...",
+        lambda: client.gastos_fornecedor(cnpj_cpf_valor, limite=100),
+        spinner="Carregando despesas...",
     )
     if payload is None:
         return
     itens = payload.get("itens", [])
     if not itens:
-        st.info("Nenhum parlamentar vinculado.")
+        st.info("Nenhuma despesa registrada para este fornecedor.")
         return
-    df = pd.DataFrame(itens)[
-        ["nome", "sigla_partido", "sigla_uf", "total_gasto", "num_despesas"]
-    ].rename(
-        columns={
-            "nome": "Nome",
-            "sigla_partido": "Partido",
-            "sigla_uf": "UF",
-            "total_gasto": "Total gasto",
-            "num_despesas": "Despesas",
-        }
+
+    df = pd.DataFrame(itens)
+    df = filtro_periodo(df, key_prefix=f"forn_{cnpj_cpf_valor[:8]}")
+    if df.empty:
+        st.info("Nenhuma despesa nos períodos selecionados.")
+        return
+
+    resumo = (
+        df.groupby(["nome_parlamentar", "sigla_partido", "sigla_uf"], as_index=False)
+        .agg(total_gasto=("valor_liquido", "sum"), num_despesas=("id_despesa", "count"))
+        .sort_values("total_gasto", ascending=False)
+        .rename(
+            columns={
+                "nome_parlamentar": "Nome",
+                "sigla_partido": "Partido",
+                "sigla_uf": "UF",
+                "total_gasto": "Total gasto",
+                "num_despesas": "Despesas",
+            }
+        )
     )
-    df["Total gasto"] = df["Total gasto"].map(formatar_moeda)
-    tabela_exportavel(df, nome_arquivo=f"fornecedor_{cnpj_cpf_valor[:8]}")
+    st.markdown(
+        f"**{len(resumo)} parlamentares · "
+        f"{formatar_moeda(df['valor_liquido'].sum())} no recorte**"
+    )
+    grafico_mensal(df)
+    resumo["Total gasto"] = resumo["Total gasto"].map(formatar_moeda)
+    tabela_exportavel(resumo, nome_arquivo=f"fornecedor_{cnpj_cpf_valor[:8]}")
 
 
 def main() -> None:
@@ -115,7 +135,7 @@ def main() -> None:
         st.warning("Fornecedor sem documento de identificação.")
         return
     _render_perfil(cnpj_cpf_valor)
-    _render_parlamentares(cnpj_cpf_valor)
+    _render_gastos(cnpj_cpf_valor)
 
 
 main()

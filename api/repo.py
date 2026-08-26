@@ -39,10 +39,20 @@ from api.schemas.agent import (
     ResumoQualidade,
     RiscoParlamentar,
 )
+from api.schemas.agregacoes import (
+    AgregacaoItem,
+    ListaAgregacao,
+    ListaTopFornecedores,
+    SerieTemporal,
+    SerieTemporalItem,
+    TopFornecedorItem,
+)
 from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
 from api.schemas.fornecedores import (
     FornecedorContexto,
     FornecedorResumo,
+    GastoFornecedorItem,
+    GastosFornecedor,
     ListaFornecedores,
     ListaParlamentaresFornecedor,
     ParlamentarFornecedor,
@@ -61,7 +71,12 @@ from api.schemas.parlamentares import (
 )
 from api.schemas.pipeline import ExecucaoPipeline, PipelineStatus
 from api.schemas.qualidade import LinhaQualidade, RelatorioQualidade
-from api.schemas.rede import ComunidadeItem, ListaComunidades
+from api.schemas.rede import (
+    ArestaFornecedor,
+    ComunidadeItem,
+    ListaComunidades,
+    RedeFornecedor,
+)
 from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 
@@ -484,6 +499,90 @@ def listar_parlamentares_fornecedor(
     )
 
 
+@_tratar_erro_gold
+def listar_gastos_fornecedor(
+    *,
+    cnpj_cpf_valor: str,
+    ano: int | None,
+    pagina: int,
+    limite: int,
+) -> GastosFornecedor | None:
+    """Despesas recebidas por um fornecedor, com o parlamentar pagador.
+
+    Espelho de `listar_gastos`: junta `fact_despesa` → `dim_data` (data/ano/
+    mês), `dim_categoria_despesa` (descrição) e `dim_parlamentar` vigente
+    (`is_current`, ADR-020). `ano` é filtro opcional sobre `dim_data.ano`.
+    Retorna `None` (router responde 404) quando o fornecedor não existe.
+    """
+    with _conexao() as con:
+        contexto = _fornecedor_contexto(con, cnpj_cpf_valor)
+        if contexto is None:
+            return None
+
+        condicoes = ["f.id_fornecedor = ?"]
+        parametros: list[object] = [contexto.id_fornecedor]
+        if ano is not None:
+            condicoes.append("d.ano = ?")
+            parametros.append(ano)
+        offset = (pagina - 1) * limite
+
+        total = con.execute(
+            f"""
+            select count(*)
+            from fact_despesa f
+            join dim_data d on d.data_sk = f.data_sk
+            where {' and '.join(condicoes)}
+            """,
+            parametros,
+        ).fetchone()[0]
+        linhas = con.execute(
+            f"""
+            select
+                f.id_despesa,
+                d.data,
+                d.ano,
+                d.mes,
+                c.descricao as tipo_despesa,
+                p.id_parlamentar,
+                p.nome as nome_parlamentar,
+                p.sigla_partido,
+                p.sigla_uf,
+                f.valor_liquido,
+                f.valor_glosa
+            from fact_despesa f
+            join dim_data d on d.data_sk = f.data_sk
+            join dim_categoria_despesa c on c.cod_tipo = f.cod_tipo
+            join dim_parlamentar p
+              on p.id_parlamentar = f.id_parlamentar and p.is_current
+            where {' and '.join(condicoes)}
+            order by d.data_sk desc, f.id_despesa
+            limit ? offset ?
+            """,
+            [*parametros, limite, offset],
+        ).fetchall()
+        colunas = [
+            "id_despesa",
+            "data",
+            "ano",
+            "mes",
+            "tipo_despesa",
+            "id_parlamentar",
+            "nome_parlamentar",
+            "sigla_partido",
+            "sigla_uf",
+            "valor_liquido",
+            "valor_glosa",
+        ]
+
+    itens = [
+        GastoFornecedorItem.model_validate(dict(zip(colunas, linha)))
+        for linha in linhas
+    ]
+    return GastosFornecedor(
+        fornecedor=contexto, pagina=pagina, limite=limite, total=total, itens=itens
+    )
+
+
 # ── Onda 3: anomalias, comunidades, qualidade e pipeline ─────────
 
 
@@ -491,18 +590,36 @@ def listar_parlamentares_fornecedor(
 def listar_anomalias(
     *,
     threshold: float | None,
+    ano: int | None,
     pagina: int,
     limite: int,
 ) -> ListaAnomalias:
     """Lista despesas sinalizadas na Gold (Onda 3, ADR-002/§10).
 
-    Lê `expense_outliers` materializada — nunca recalcula a regra. O filtro
+    Lê `expense_outliers` materializada - nunca recalcula a regra. O filtro
     `threshold` é piso sobre `zscore` do conjunto JÁ sinalizado (decisão de
     Onda 3): reabrir o `-0.1` do Isolation Forest ou os `>= 2` critérios
     seria re-execução de inferência, proibida pela fronteira (ADR-026/ADR-030).
+    `ano` filtra pelo ano da data do documento (`data_sk // 10000`).
     """
-    condicao = " where zscore >= ?" if threshold is not None else ""
-    parametros: list[object] = [threshold] if threshold is not None else []
+    clausulas: list[str] = []
+    parametros: list[object] = []
+    if threshold is not None:
+        clausulas.append("zscore >= ?")
+        parametros.append(threshold)
+    if ano is not None:
+        clausulas.append("data_sk // 10000 = ?")
+        parametros.append(ano)
+    condicao = (" where " + " and ".join(clausulas)) if clausulas else ""
+    condicao_o = (
+        " where "
+        + " and ".join(
+            c.replace("zscore", "o.zscore").replace("data_sk", "o.data_sk")
+            for c in clausulas
+        )
+        if clausulas
+        else ""
+    )
     offset = (pagina - 1) * limite
 
     with _conexao() as con:
@@ -510,24 +627,87 @@ def listar_anomalias(
             f"select count(*) from expense_outliers{condicao}", parametros
         ).fetchone()[0]
         linhas = con.execute(
-            "select id_despesa, id_parlamentar, id_fornecedor, data_sk, valor_liquido,"
-            " zscore, if_score, criterio_zscore, criterio_if,"
-            " criterio_fornecedor_poucos_clientes, criterio_empresa_nova,"
-            " criterio_valores_identicos, criterio_dia_sem_sessao, num_criterios"
-            f" from expense_outliers{condicao}"
-            " order by zscore desc limit ? offset ?",
+            "select o.id_despesa, o.id_parlamentar, dp.nome as nome_parlamentar,"
+            " dp.sigla_partido, dp.sigla_uf, o.id_fornecedor, o.data_sk,"
+            " o.valor_liquido, o.zscore, o.if_score, o.criterio_zscore,"
+            " o.criterio_if, o.criterio_fornecedor_poucos_clientes,"
+            " o.criterio_empresa_nova, o.criterio_valores_identicos,"
+            " o.criterio_dia_sem_sessao, o.num_criterios"
+            " from expense_outliers o"
+            " left join dim_parlamentar dp"
+            " on dp.id_parlamentar = o.id_parlamentar and dp.is_current"
+            f"{condicao_o}"
+            " order by o.zscore desc limit ? offset ?",
             [*parametros, limite, offset],
         ).fetchall()
 
     colunas = [
-        "id_despesa", "id_parlamentar", "id_fornecedor", "data_sk", "valor_liquido",
+        "id_despesa", "id_parlamentar", "nome", "sigla_partido", "sigla_uf",
+        "id_fornecedor", "data_sk", "valor_liquido",
         "zscore", "if_score", "criterio_zscore", "criterio_if",
         "criterio_fornecedor_poucos_clientes", "criterio_empresa_nova",
         "criterio_valores_identicos", "criterio_dia_sem_sessao", "num_criterios",
     ]
     itens = [AnomaliaItem.model_validate(dict(zip(colunas, linha))) for linha in linhas]
     return ListaAnomalias(
-        pagina=pagina, limite=limite, total=total, threshold=threshold, itens=itens
+        pagina=pagina,
+        limite=limite,
+        total=total,
+        threshold=threshold,
+        ano=ano,
+        itens=itens,
+    )
+
+
+@_tratar_erro_gold
+def obter_rede_fornecedor(id_fornecedor: int) -> RedeFornecedor | None:
+    """Rede INVERSA: parlamentares que interagiram com um fornecedor.
+
+    Mesma fronteira do `obter_rede_parlamentar`: lê as arestas já
+    materializadas na Gold (`network_edges`, ADR-030) e resolve nomes pelas
+    dimensões — não recalcula grafo. Fornecedor inexistente → `None`
+    (router responde 404).
+    """
+    with _conexao() as con:
+        fornecedor = con.execute(
+            "select nome_fornecedor from dim_fornecedor where id_fornecedor = ?",
+            [id_fornecedor],
+        ).fetchone()
+        if fornecedor is None:
+            return None
+        arestas_tuplas = con.execute(
+            "select ne.id_parlamentar, dp.nome, dp.sigla_partido, dp.sigla_uf,"
+            " ne.periodo, ne.valor_total"
+            " from network_edges ne"
+            " left join dim_parlamentar dp"
+            " on dp.id_parlamentar = ne.id_parlamentar and dp.is_current"
+            " where ne.id_fornecedor = ?"
+            " order by ne.valor_total desc",
+            [id_fornecedor],
+        ).fetchall()
+
+    arestas = [
+        ArestaFornecedor.model_validate(
+            dict(
+                zip(
+                    [
+                        "id_parlamentar", "nome", "sigla_partido", "sigla_uf",
+                        "periodo", "valor_total",
+                    ],
+                    aresta,
+                )
+            )
+        )
+        for aresta in arestas_tuplas
+    ]
+    total = sum(a.valor_total for a in arestas)
+    num_parlamentares = len({a.id_parlamentar for a in arestas})
+    return RedeFornecedor(
+        id_fornecedor=id_fornecedor,
+        nome_fornecedor=fornecedor[0],
+        total_recebido=total,
+        num_parlamentares=num_parlamentares,
+        arestas=arestas,
     )
 
 
@@ -674,6 +854,14 @@ def listar_execucoes(*, limite: int) -> PipelineStatus:
 # ── Onda 4: agent-ready (ADR-032) ───────────────────────────────
 
 
+def _mes_de_data_sk(data_sk: int | None) -> str | None:
+    """`20260701` → `'2026-07'` — rótulo de janela para os payloads agent."""
+    if data_sk is None:
+        return None
+    texto = str(data_sk)
+    return f"{texto[:4]}-{texto[4:6]}"
+
+
 def _agregado_metricas(con, clausula: str, parametros: list[object]) -> tuple:
     """Agregados da §8 sobre `fact_despesa` para o grão de uma coluna.
 
@@ -709,6 +897,9 @@ def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
         total, medio, n_transacoes, n_fornecedores, maximo, mediano, p95 = (
             _agregado_metricas(con, "id_parlamentar = ?", [id_parlamentar])
         )
+        janela = con.execute(
+            "select min(data_sk), max(data_sk) from fact_despesa"
+        ).fetchone()
         hhi_linha = con.execute(
             "select ano, hhi from supplier_concentration"
             " where id_parlamentar = ? order by ano desc limit 1",
@@ -772,6 +963,8 @@ def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
         sigla_uf=perfil.sigla_uf,
         situacao_normalizada=perfil.situacao_normalizada,
         periodo_vigente_desde=perfil.effective_date.isoformat(),
+        janela_inicio=_mes_de_data_sk(janela[0]) if janela else None,
+        janela_fim=_mes_de_data_sk(janela[1]) if janela else None,
         metricas=metricas,
         risco=risco,
         anomalias=AnomaliasParlamentar(
@@ -964,4 +1157,114 @@ def obter_agente_contexto() -> AgentContext:
             ),
             versao_pipeline=pipe[3] if pipe else None,
         ),
+    )
+
+
+# ── Agregações para gráficos (gastos por UF/partido/parlamentar/tempo) ──
+#
+# Todas partem de `fact_despesa` juntando `dim_parlamentar` pela versão
+# vigente do SCD2 (`is_current`) — mesma convenção dos endpoints agent.
+# A API só agrega o Gold materializado (ADR-026): nenhum recálculo analítico.
+
+_JOIN_VIGENTE = (
+    "join dim_parlamentar p"
+    " on p.surrogate_key = f.surrogate_key and p.is_current"
+)
+
+
+def _agregar_por_dimensao(con: duckdb.DuckDBPyConnection, coluna: str, limite: int) -> list[AgregacaoItem]:
+    """GROUP BY genérico sobre uma coluna da dimensão parlamentar vigente."""
+    linhas = con.execute(
+        f"""
+        select p.{coluna} as rotulo,
+               sum(f.valor_liquido) as total,
+               count(*) as num_despesas
+        from fact_despesa f {_JOIN_VIGENTE}
+        where p.{coluna} is not null
+        group by 1
+        order by total desc
+        limit ?
+        """,
+        [limite],
+    ).fetchall()
+    return [
+        AgregacaoItem(rotulo=r[0], total=r[1], num_despesas=r[2]) for r in linhas
+    ]
+
+
+@_tratar_erro_gold
+def agregar_gastos_por_uf(*, limite: int) -> ListaAgregacao:
+    """Gastos agregados por UF do parlamentar vigente, ordenados por total."""
+    with _conexao() as con:
+        itens = _agregar_por_dimensao(con, "sigla_uf", limite)
+    return ListaAgregacao(limite=limite, itens=itens)
+
+
+@_tratar_erro_gold
+def agregar_gastos_por_partido(*, limite: int) -> ListaAgregacao:
+    """Gastos agregados por partido do parlamentar vigente, ordenados por total."""
+    with _conexao() as con:
+        itens = _agregar_por_dimensao(con, "sigla_partido", limite)
+    return ListaAgregacao(limite=limite, itens=itens)
+
+
+@_tratar_erro_gold
+def agregar_top_parlamentares(*, limite: int) -> ListaAgregacao:
+    """Top parlamentares por gasto acumulado na versão vigente."""
+    with _conexao() as con:
+        itens = _agregar_por_dimensao(con, "nome", limite)
+    return ListaAgregacao(limite=limite, itens=itens)
+
+
+@_tratar_erro_gold
+def agregar_top_fornecedores(*, limite: int) -> ListaTopFornecedores:
+    """Top fornecedores por valor recebido, com contagem de parlamentares."""
+    with _conexao() as con:
+        linhas = con.execute(
+            """
+            select f.id_fornecedor,
+                   fo.nome_fornecedor,
+                   sum(f.valor_liquido) as total,
+                   count(distinct f.id_parlamentar) as num_parlamentares
+            from fact_despesa f
+            join dim_fornecedor fo on fo.id_fornecedor = f.id_fornecedor
+            group by 1, 2
+            order by total desc
+            limit ?
+            """,
+            [limite],
+        ).fetchall()
+    return ListaTopFornecedores(
+        limite=limite,
+        itens=[
+            TopFornecedorItem(
+                id_fornecedor=r[0],
+                nome_fornecedor=r[1],
+                total_recebido=r[2],
+                num_parlamentares=r[3],
+            )
+            for r in linhas
+        ],
+    )
+
+
+@_tratar_erro_gold
+def agregar_despesas_no_tempo() -> SerieTemporal:
+    """Série mensal (AAAAMM) de total e quantidade de despesas."""
+    with _conexao() as con:
+        linhas = con.execute(
+            """
+            select substr(cast(f.data_sk as varchar), 1, 6) as periodo,
+                   sum(f.valor_liquido) as total,
+                   count(*) as num_despesas
+            from fact_despesa f
+            group by 1
+            order by 1
+            """
+        ).fetchall()
+    return SerieTemporal(
+        itens=[
+            SerieTemporalItem(periodo=r[0], total=r[1], num_despesas=r[2])
+            for r in linhas
+        ]
     )
