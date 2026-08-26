@@ -13,12 +13,16 @@ import streamlit as st
 
 from dashboard.client import ApiClient
 from dashboard.ui import (
+    aplicar_identidade,
     carregar_com_feedback,
+    filtro_periodo,
     formatar_moeda,
+    grafico_mensal,
     tabela_exportavel,
 )
 
 st.set_page_config(page_title="Parlamentar", page_icon="👤", layout="wide")
+aplicar_identidade()
 st.title("👤 Parlamentar")
 
 client = ApiClient()
@@ -91,7 +95,7 @@ def _render_perfil(id_parlamentar: int) -> None:
 
 
 def _render_gastos(id_parlamentar: int) -> None:
-    """Tabela de despesas do parlamentar com filtro de ano e exportação."""
+    """Despesas do parlamentar com filtro de ano/mês, gráfico mensal e exportação."""
     st.subheader("Despesas")
     payload = carregar_com_feedback(
         lambda: client.gastos_parlamentar(id_parlamentar, limite=100),
@@ -106,15 +110,13 @@ def _render_gastos(id_parlamentar: int) -> None:
         return
 
     df = pd.DataFrame(itens)
-    anos = sorted(df["ano"].unique())
-    if len(anos) > 1:
-        escolha = st.multiselect("Anos", anos, default=anos)
-        df = df[df["ano"].isin(escolha)]
+    df = filtro_periodo(df, key_prefix=f"gastos_{id_parlamentar}")
     if df.empty:
         st.info("Nenhuma despesa nos períodos selecionados.")
         return
 
-    df = df[
+    total = float(df["valor_liquido"].sum())
+    tabela = df[
         ["data", "tipo_despesa", "nome_fornecedor", "tipo_documento",
          "valor_liquido", "valor_glosa"]
     ].rename(
@@ -127,8 +129,9 @@ def _render_gastos(id_parlamentar: int) -> None:
             "valor_glosa": "Glosa",
         }
     )
-    st.markdown(f"**Total de {len(df)} despesas · {formatar_moeda(df['Valor líquido'].sum())}**")
-    tabela_exportavel(df, nome_arquivo=f"gastos_{id_parlamentar}")
+    st.markdown(f"**Total de {len(tabela)} despesas · {formatar_moeda(total)}**")
+    grafico_mensal(df)
+    tabela_exportavel(tabela, nome_arquivo=f"gastos_{id_parlamentar}")
 
 
 def main() -> None:
