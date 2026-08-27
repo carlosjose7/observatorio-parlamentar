@@ -9,29 +9,26 @@ on:
 jobs:
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 15
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script: |
-            set -e
-            cd /home/opc/observatorio-parlamentar
+      - name: Pull latest code
+        run: |
+          set -e
+          cd /home/opc/observatorio-parlamentar
+          git fetch origin develop
+          git reset --hard origin/develop
 
-            echo "=== Pulling latest code ==="
-            git fetch origin develop
-            git reset --hard origin/develop
+      - name: Build and restart containers
+        run: |
+          set -e
+          cd /home/opc/observatorio-parlamentar
+          docker compose up -d --build --remove-orphans
 
-            echo "=== Building and restarting containers ==="
-            docker compose up -d --build --remove-orphans
+      - name: Prune old images
+        run: |
+          docker image prune -f
 
-            echo "=== Pruning old images ==="
-            docker image prune -f
-
-            echo "=== Deploy complete ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}"
+      - name: Verify containers
+        run: |
+          docker ps --format "table {{.Names}}\t{{.Status}}"
