@@ -55,9 +55,22 @@ flowchart TB
 > `/api/`+`/docs` → FastAPI, `/` → landing estática. Diagrama e tabela
 > acima corrigidos para refletir a arquitetura de fato implementada.
 
-## Fluxo de CI/CD
+## Fluxo de CI/CD vs. Execução Diária do Pipeline
 
-1. Push na branch `main` dispara GitHub Actions
-2. Pipeline executa ingestão, transformação e carga
-3. API FastAPI e Dashboard Streamlit (`/app/`) são servidos juntos na
-   Oracle Cloud, atrás do mesmo Nginx
+> Dois fluxos distintos: o CI/CD parte de `ACTIONS`, a execução diária
+> parte de `TIMER` — não confundir um com o outro (ADR-034).
+
+**CI/CD (GitHub Actions, a cada push/PR):**
+1. Push/PR na branch `main` dispara `ci.yml`
+2. Roda Gitleaks (secret scan), Ruff (lint) e `pytest --cov` (gate 80%)
+3. GitHub Actions **não** executa o pipeline de dados — apenas valida
+   o código
+
+**Execução diária do pipeline (ADR-034, systemd timer na VPS):**
+1. `observatorio-pipeline.timer` dispara às 03:00 America/Sao_Paulo
+2. Sobe o perfil `pipeline` do Docker Compose (Airflow) e aciona o DAG
+   `observatorio_pipeline` (bronze → silver → gold_core →
+   `executar_analytics` → gold_analytics, ver ADR-035)
+3. API FastAPI e Dashboard Streamlit (`/app/`) já ficam sempre no ar
+   no perfil padrão, servidos juntos na Oracle Cloud atrás do mesmo
+   Nginx — não dependem da execução do pipeline para responder
