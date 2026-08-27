@@ -33,6 +33,16 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Correção — deploy.yml publicava develop em vez de main (27/08/2026)
+
+### Corrigido
+- `deploy.yml`: `git reset --hard origin/develop` → `origin/main`.
+  Deploys anteriores ao commit e52cc39 publicavam o conteúdo de
+  `develop` mesmo quando disparados por merge em `main`, contornando
+  o gate de review do PR.
+
+---
+
 ## Sprint 10 — Despesas por fornecedor com filtros temporais (26/08/2026)
 
 ### Adicionado
