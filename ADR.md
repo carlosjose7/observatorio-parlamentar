@@ -2252,3 +2252,47 @@ Consequências:
   proxy_pass desnecessário.
 
 ---
+
+ADR-037
+Título: Deploy automático via GitHub Actions com self-hosted runner na VPS
+
+Status:
+Aceito
+
+Contexto:
+O projeto necessitava de deploy automático a cada merge na branch principal.
+As alternativas avaliadas foram: (1) deploy via SSH-action a partir do
+GitHub Actions cloud, (2) webhook simples na VPS, e (3) self-hosted runner
+na VPS. A opção (1) esbarra no firewall da Oracle Cloud (Security List não
+permite tráfego SSH de IPs externos sem configuração manual da VCN). A
+opção (2) exigiria expor um endpoint HTTP na VPS e manter um servidor
+webhook customizado. A opção (3) elimina a necessidade de portas externas
+e permite que o workflow execute localmente na VPS.
+
+Decisão:
+1. Utilizar self-hosted runner (label: self-hosted, linux, arm64) rodando
+   como serviço systemd na VPS, executado pelo usuário `opc` (nunca root).
+2. O workflow `deploy.yml` dispara exclusivamente no evento `push` para
+   `main` (não `pull_request`), garantindo que apenas merges aprovados
+   disparam deploy.
+3. Branch protection configurada em `develop` e `main` exigindo:
+   - Status checks obrigatórios: Gitleaks, Ruff, pytest
+   - Review obrigatório (≥1 aprovação)
+   - Dismiss stale reviews ativado
+   - `main` com enforce_admins (sem bypass para admins)
+4. Runner registrado como GitHub App com permissão read-only de código
+   (deploy key com write para push, mas o runner apenas faz pull).
+
+Consequências:
+- Deploy não depende de portas externas abertas na Oracle Cloud, eliminando
+  superfície de ataque de rede.
+- Self-hosted runner em repo público tem risco conhecido: workflows maliciosos
+  poderiam executar código na VPS. Mitigado por: (a) trigger exclusivo em
+  `push` a branches protegidas, (b) branch protection com review obrigatório,
+  (c) runner como usuário não-privilegiado (`opc`).
+- Runner requer manutenção: atualizações do GitHub Actions Agent devem ser
+  monitoradas (o serviço reinicia automaticamente após updates).
+- O diretório `observatorio-parlamentar.old` foi removido após validação de
+  que nenhum segredo ou dado não versionado foi perdido.
+
+---

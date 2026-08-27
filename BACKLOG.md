@@ -784,6 +784,19 @@ instalação/deploy/operação, e fechar dívidas registradas.
 - ☐ Gitleaks como *required status check* na branch protection de `develop`
   (configuração no GitHub Settings; documentada, sem artefato de código).
   **Nota:** requer ajuste manual de branch protection (Gates em Settings).
+  ☑ **Concluído (27/08/2026):** Gitleaks, Ruff e pytest configurados como
+  required status checks em `develop` e `main` via GitHub API.
+
+### Gate 3 — Deploy automático (27/08/2026)
+
+- ☑ **Workflow `deploy.yml`** criado e testado: dispara em `push` para `main`,
+  roda em self-hosted runner na VPS, executa pull + build + restart containers.
+- ☑ **Self-hosted runner** (`github-runner.service`): agente GitHub Actions
+  rodando como serviço systemd, usuário `opc`, labels `self-hosted,linux,arm64`.
+- ☑ **Branch protection** configurada em `develop` e `main`: status checks
+  obrigatórios, review obrigatório, dismiss stale reviews.
+- ☑ **ADR-037** documenta a decisão, riscos e mitigações.
+- ☑ **Remoção de `observatorio-parlamentar.old`** após validação.
 
 ### Gate 2 — Execução diária (ADR-034, Opção B)
 
