@@ -730,7 +730,11 @@ GET  /agent/context
 
 **Ciclo de vida de branches:**
 
-- **Permanentes:** `main` (estável/produção) e `develop` (integração).
+- **Permanentes:** `main` (estável/produção), `hml` (homologação) e
+  `develop` (integração).
+- **Fluxo:** `sprint/*` → merge em `develop` → merge em `hml` para
+  validação no ambiente de homologação (`guia_deploy_operacao.md §7`) →
+  PR de `hml`/`develop` para `main` (dispara deploy, ADR-037).
 - **Temporárias:** branches de sprint (`sprint/{numero}-{descricao}`) são
   criadas no início de cada sprint para isolar o trabalho em andamento e são
   **deletadas após o merge em `develop`** com aprovação (ciclo da sprint,
