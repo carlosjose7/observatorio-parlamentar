@@ -1092,9 +1092,11 @@ tabelas analíticas de ML em produção desde a Sprint 9.
   sandbox de auditoria (rede bloqueia `extensions.duckdb.org`/httpfs —
   26 falhas/11 erros de integração, todas pela mesma causa). Confirmar
   número real de cobertura pós-Sprint 10 no CI ou localmente.
-- ☐ **Bypass de branch protection em `develop`:** push direto de
-  `09cfb31` reportou `Bypassed rule violations` (a proteção do ADR-037
-  exigiria PR + status checks). Decidir e registrar: bypass de admin é
-  intencional (útil em emergência) ou `develop` deve bloquear pushes
-  diretos de fato. Se intencional, emendar ADR-037; se não, ajustar a
-  configuração no GitHub.
+- ☑ **Bypass de branch protection em `develop`:** push direto de
+  `09cfb31` reportou `Bypassed rule violations`. Verificado via API do
+  GitHub em 27/08: proteções **ativas** nas duas branches conforme
+  ADR-037 (checks Gitleaks/Ruff/pytest strict, review ≥1, dismiss stale).
+  O bypass ocorre só em `develop`, que tem `enforce_admins=false` por
+  design (admin contorna com warning auditável); `main` tem
+  `enforce_admins=true` (ninguém contorna, só PR). Configuração confere
+  com o ADR — comportamento intencional, nenhuma ação necessária.
