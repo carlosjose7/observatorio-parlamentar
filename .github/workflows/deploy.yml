@@ -16,8 +16,8 @@ jobs:
         run: |
           set -e
           cd /home/opc/observatorio-parlamentar
-          git fetch origin develop
-          git reset --hard origin/develop
+          git fetch origin main
+          git reset --hard origin/main
 
       - name: Build and restart containers
         run: |
