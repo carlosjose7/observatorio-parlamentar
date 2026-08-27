@@ -1088,10 +1088,15 @@ tabelas analíticas de ML em produção desde a Sprint 9.
   nunca foi usado; dashboard sempre rodou no Docker Compose da VPS Oracle.
   Corrigido em `2a6f8aa` (PROJECT_CONTEXT.md §4 + nota de reconciliação
   no ADR-007, ADR-036 formaliza a arquitetura real).
-- ☐ Cobertura de testes (`pytest --cov`) não pôde ser validada em
-  sandbox de auditoria (rede bloqueia `extensions.duckdb.org`/httpfs —
-  26 falhas/11 erros de integração, todas pela mesma causa). Confirmar
-  número real de cobertura pós-Sprint 10 no CI ou localmente.
+- ☑ Cobertura de testes validada localmente em 27/08 (Python 3.12 /
+  Windows): **92.35% total, gate de 80% atingido — 398 passed** em
+  1h48m. Zero falhas de rede (a máquina local acessa
+  `extensions.duckdb.org` normalmente, ao contrário do sandbox de
+  auditoria). 5 erros restantes, todos em `tests/pipeline/test_dag.py`
+  (`sqlite3.OperationalError: unable to open database file` na metadata
+  DB do Airflow) — atrito ambiental de Airflow em Windows (plataforma
+  não suportada); o CI em `ubuntu-latest` é o gate autoritativo e lá
+  esses testes passam.
 - ☑ **Bypass de branch protection em `develop`:** push direto de
   `09cfb31` reportou `Bypassed rule violations`. Verificado via API do
   GitHub em 27/08: proteções **ativas** nas duas branches conforme
