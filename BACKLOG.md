@@ -1077,17 +1077,24 @@ tabelas analíticas de ML em produção desde a Sprint 9.
 
 ### Pendências abertas nesta sprint
 
-- ☐ **BACKLOG não fechado no fluxo padrão:** as entregas acima foram
+- ☑ **BACKLOG não fechado no fluxo padrão:** as entregas acima foram
   registradas em CHANGELOG.md e no ADR-036, mas só reconciliadas aqui
   retroativamente por auditoria de Revisor Técnico — não no fim natural
-  da sprint. Reforçar o ciclo de Documentador (`sprint_rules`, passo 4)
+  da sprint. Fechamento definitivo em `09cfb31` (remoção dos marcadores
+  de conflito órfãos + §14 com branch `hml` formalizada). Lição
+  permanente: reforçar o ciclo de Documentador (`sprint_rules`, passo 4)
   antes do merge, não depois.
-- ☐ Seção 180 de `PROJECT_CONTEXT.md §4` ainda cita "Dashboard público:
-  Streamlit Community Cloud" (plano do ADR-007/Sprint 0B) — parece
-  superado pelo deploy único via Docker Compose + Nginx `/app/` na
-  mesma VPS Oracle. Confirmar com Carlos se o tier Streamlit Community
-  Cloud ainda está em uso; se não, corrigir §4 e amendar ADR-007.
+- ☑ **§4 cita Streamlit Community Cloud:** confirmado com Carlos — o tier
+  nunca foi usado; dashboard sempre rodou no Docker Compose da VPS Oracle.
+  Corrigido em `2a6f8aa` (PROJECT_CONTEXT.md §4 + nota de reconciliação
+  no ADR-007, ADR-036 formaliza a arquitetura real).
 - ☐ Cobertura de testes (`pytest --cov`) não pôde ser validada em
   sandbox de auditoria (rede bloqueia `extensions.duckdb.org`/httpfs —
   26 falhas/11 erros de integração, todas pela mesma causa). Confirmar
   número real de cobertura pós-Sprint 10 no CI ou localmente.
+- ☐ **Bypass de branch protection em `develop`:** push direto de
+  `09cfb31` reportou `Bypassed rule violations` (a proteção do ADR-037
+  exigiria PR + status checks). Decidir e registrar: bypass de admin é
+  intencional (útil em emergência) ou `develop` deve bloquear pushes
+  diretos de fato. Se intencional, emendar ADR-037; se não, ajustar a
+  configuração no GitHub.
