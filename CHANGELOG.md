@@ -8,31 +8,6 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Infraestrutura — Deploy automático via GitHub Actions (27/08/2026)
-
-### Adicionado
-- **Workflow `deploy.yml`** (`.github/workflows/deploy.yml`): deploy automático
-  a cada merge na branch `main`, executado por self-hosted runner na VPS.
-  Fluxo: pull do código → build das imagens Docker → restart dos containers.
-- **Self-hosted runner** (`github-runner.service`): agente GitHub Actions
-  rodando como serviço systemd na VPS, usuário `opc`, labels
-  `self-hosted,linux,arm64`.
-- **Branch protection** em `develop` e `main`: status checks obrigatórios
-  (Gitleaks, Ruff, pytest), review obrigatório (≥1 aprovação), dismiss
-  stale reviews. `main` com enforce_admins (sem bypass).
-- **ADR-037**: documenta a decisão de deploy via self-hosted runner, riscos
-  de segurança em repo público e mitigações aplicadas.
-
-### Infraestrutura
-- Repositório clonado fresh do `develop` no diretório
-  `/home/opc/observatorio-parlamentar` (substituindo cópia manual anterior).
-- Chave SSH dedicada de deploy gerada (`~/.ssh/deploy_key`), deploy key
-  adicionada no GitHub com write access.
-- GitHub Secrets configurados: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`,
-  `VPS_PORT`.
-
----
-
 ## Sprint 10 — Despesas por fornecedor com filtros temporais (26/08/2026)
 
 ### Adicionado
