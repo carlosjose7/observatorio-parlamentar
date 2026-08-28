@@ -846,15 +846,23 @@ if (location.protocol === "file:") {
 }
 
 (function() {
-  const API_BASE = location.origin + '/api';
-  
+  var API_BASE = location.origin + '/api';
+  var TIMEOUT_MS = 3000;
+
+  function fetchWithTimeout(url) {
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, TIMEOUT_MS);
+    return fetch(url, { signal: controller.signal })
+      .finally(function() { clearTimeout(timer); });
+  }
+
   function formatCurrency(value) {
     if (value >= 1000000) {
       return 'R$ ' + (value / 1000000).toFixed(2).replace('.', ',') + ' mi';
     }
     return 'R$ ' + (value / 1000).toFixed(1).replace('.', ',') + ' mil';
   }
-  
+
   function createBarRow(item, isLead) {
     return '<div class="bar-row' + (isLead ? ' bar-lead' : '') + '">' +
       '<span class="bar-label">' + item.rotulo + '</span>' +
@@ -862,7 +870,7 @@ if (location.protocol === "file:") {
       '<span class="bar-val">' + formatCurrency(item.total) + '</span>' +
       '</div>';
   }
-  
+
   function updateSection(containerId, itens) {
     if (!itens || itens.length === 0) return;
     var maxTotal = itens[0].total;
@@ -873,63 +881,54 @@ if (location.protocol === "file:") {
     });
     document.getElementById(containerId).innerHTML = html;
   }
-  
-  function calculateStats(ufData, partidoData) {
+
+  function calculateStats(ufData) {
     var totalDespesas = 0;
     var totalValor = 0;
-    
     if (ufData && ufData.itens) {
       ufData.itens.forEach(function(item) {
         totalDespesas += item.num_despesas;
         totalValor += item.total;
       });
     }
-    
-    return {
-      totalDespesas: totalDespesas,
-      totalValor: totalValor
-    };
+    return { totalDespesas: totalDespesas, totalValor: totalValor };
   }
-  
+
   function updateInfo(ufData, partidoData) {
-    var stats = calculateStats(ufData, partidoData);
+    var stats = calculateStats(ufData);
     var now = new Date();
     var mesAtual = now.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-    
     var info = 'Dados atualizados em ' + mesAtual;
     if (stats.totalDespesas > 0) {
       info += ' · ' + stats.totalDespesas.toLocaleString('pt-BR') + ' despesas';
       info += ' · ' + formatCurrency(stats.totalValor);
     }
     info += '. Números completos no dashboard.';
-    
     document.getElementById('pano-info').textContent = info;
   }
-  
+
   function fetchAndRender() {
-    var ufPromise = fetch(API_BASE + '/agregacoes/por-uf?limite=6')
+    var ufPromise = fetchWithTimeout(API_BASE + '/agregacoes/por-uf?limite=6')
       .then(function(r) { return r.json(); })
       .catch(function() { return null; });
-    
-    var partidoPromise = fetch(API_BASE + '/agregacoes/por-partido?limite=6')
+
+    var partidoPromise = fetchWithTimeout(API_BASE + '/agregacoes/por-partido?limite=6')
       .then(function(r) { return r.json(); })
       .catch(function() { return null; });
-    
+
     Promise.all([ufPromise, partidoPromise]).then(function(results) {
       var ufData = results[0];
       var partidoData = results[1];
-      
       if (ufData && ufData.itens) {
         updateSection('pano-uf', ufData.itens);
       }
       if (partidoData && partidoData.itens) {
         updateSection('pano-partido', partidoData.itens);
       }
-      
       updateInfo(ufData, partidoData);
     });
   }
-  
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', fetchAndRender);
   } else {

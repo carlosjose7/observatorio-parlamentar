@@ -2296,3 +2296,121 @@ Consequências:
   que nenhum segredo ou dado não versionado foi perdido.
 
 ---
+
+ADR-038
+Título: Padronização de motor de gráficos no dashboard — Altair + Plotly
+
+Status:
+Aceito
+
+Contexto:
+O dashboard hoje mistura `st.bar_chart` (default Streamlit, sem tema),
+`matplotlib` inline (páginas 06 e 08) e Altair isolado (só página 11,
+com estilo duplicado). Resultado: identidade visual inconsistente entre
+páginas e nenhum reaproveitamento de tema. Adicionalmente, `ui.py` está
+em 62% de cobertura — abaixo da média do projeto (93,53%) — e é o
+módulo mais frágil frente ao gate de 80% (`fail_under`, `pyproject.toml`);
+qualquer expansão de superfície de código sem teste correspondente arrisca
+derrubar o gate.
+
+Decisão:
+1. Altair como padrão para gráficos estatísticos (rankings, séries
+   temporais, barras) — já em produção na página 11, zero dependência
+   nova.
+2. Plotly como complemento cirúrgico, restrito a dois casos onde Altair
+   é fraco: grafo de rede interativo (página 06) e gráfico radar
+   (página 08). Nova dependência: `plotly>=5.22.0` no extra `dashboard`
+   do `pyproject.toml` — nunca hardcoded em Dockerfile (ADR-006).
+3. `dashboard/charts.py` — novo módulo com builders tematizados,
+   consumido por 100% dos gráficos estatísticos do dashboard.
+4. ECharts avaliado e descartado: visualmente competitivo, mas wrapper
+   JS menos maduro no ecossistema Streamlit — motor duplo (Altair +
+   ECharts) aumentaria a superfície de manutenção sem ganho
+   proporcional para um projeto solo.
+5. `matplotlib` permanece como dependência — **não é substituído**.
+   Após a migração dos usos em gráficos (páginas 06 e 08, itens 2 e
+   3), seu único uso remanescente é a exportação de tabelas em PDF
+   (`ui.py`), fora do escopo de gráficos interativos desta decisão.
+6. Página 06 (rede) continua renderizando sobre `network_nodes`/
+   `network_edges` já materializados em Gold (ADR-030) — zero
+   recálculo por request, tetos de performance do Gate 3/Sprint 7
+   preservados; só o motor de renderização muda.
+
+Consequências:
+- +1 dependência (`plotly`) no extra `dashboard`.
+- `dashboard/charts.py` passa a ser dependência de `ui.py` e de todas
+  as páginas 02–07, 11.
+- Migração de 100% dos gráficos fora da paleta é entregável
+  obrigatório da Onda 2.
+- Cobertura de `charts.py` (novo) e da superfície tocada em `ui.py`/
+  `06_rede.py`/`08_ml.py` precisa de `AppTest` correspondente.
+
+---
+
+ADR-039
+Título: Landing page consome dados agregados via API em runtime
+(emenda ao ADR-036)
+
+Status:
+Aceito
+
+Contexto:
+O ADR-036 fixou a landing como estática (sem `fetch`, sem `/api/`),
+justificando isso como redução de superfície de ataque. Na prática,
+isso significa que o "Panorama" da landing mostra um retrato manual,
+imutável entre re-gerações — hoje desatualizado (`ago/2026 · 8.983
+despesas · R$ 4,57 mi`, quando produção já passa de 3,6 mi registros /
+R$ 608 mi). Para um projeto cuja proposta de valor é justamente
+transparência de dados públicos, uma landing institucional com números
+defasados é uma tensão direta com o propósito do produto — e exigiria
+disciplina manual recorrente (re-gerar o HTML a cada atualização
+relevante do Gold) que não escala e tende a ficar esquecida.
+
+Uma tentativa de implementação (`d0edcc1`, revertida) já provou o
+caminho tecnicamente viável: landing e API estão na mesma origem
+(`observatorio-parlamentar.com.br/` e `/api/` roteados pelo mesmo
+Nginx), então não há problema de CORS; o rate limit já existente em
+`/api/` (`10r/s` por IP, burst 20) cobre a rota sem configuração
+adicional.
+
+Decisão:
+1. A landing passa a buscar dados via `fetch('/api/agregacoes/por-uf')`
+   e `/por-partido` no carregamento da página, populando o Panorama
+   com números reais do Gold.
+2. **Fallback estático obrigatório** — se o fetch falhar (API
+   indisponível, erro de rede, timeout), a landing mantém o conteúdo
+   estático atual como conteúdo de fallback, nunca uma tela quebrada
+   ou vazia. Isso preserva a landing como vitrine funcional
+   independentemente do estado da API.
+3. Superfície de ataque: a landing passa a depender do endpoint
+   `GET /agregacoes/*`, que é **somente leitura, público, já exposto**
+   para o dashboard consumir — não abre nenhuma rota nova, nenhum
+   método de escrita, nenhuma superfície que já não existisse. O rate
+   limit por IP já protege contra abuso. Avaliação: o incremento de
+   risco é marginal frente ao ADR-007 original (API já pública), e não
+   justifica manter dado desatualizado como troca.
+4. Timeout curto no fetch (3s) para não degradar a percepção de
+   carregamento da landing caso a API esteja lenta/fora.
+5. `ADR-036` item 1 ("landing servida sem upstream, sem proxy")
+   permanece verdadeiro para o **HTML/CSS/JS estático em si** — o
+   Nginx continua servindo a landing diretamente de `/var/www/site`,
+   sem proxy. O que muda é que o **JS da própria página**, já no
+   navegador do usuário, faz uma chamada cliente-side à API pública
+   — não é o Nginx proxying a landing através da API.
+
+Consequências:
+- Landing sempre mostra dados atuais do Gold, sem depender de
+  re-geração manual.
+- Fallback estático precisa ser mantido sincronizado periodicamente
+  mesmo assim (para o caso de API fora do ar por período prolongado)
+  — mas deixa de ser a fonte principal, só rede de segurança.
+- Landing ganha uma dependência funcional (não crítica, dado o
+  fallback) da API estar no ar.
+- `site/index.html` deixa de ser 100% estático em sentido estrito
+  — precisa de nota clara nisso em qualquer auditoria futura de
+  superfície de ataque.
+- OG image continua sendo gerada manualmente (esse artefato é para
+  preview em redes sociais, não pode ser dinâmico por natureza do
+  protocolo Open Graph).
+
+---
