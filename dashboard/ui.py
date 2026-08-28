@@ -13,49 +13,9 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from dashboard.charts import barras_vert  # noqa: F401
 from dashboard.client import ApiClient, ApiError, ApiIndisponivel
-
-_IDENTIDADE_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-.stApp { font-family: "DM Sans", "Source Sans Pro", sans-serif; }
-h1, h2, h3 { color: #0B1F33; letter-spacing: -0.02em; }
-[data-testid="stMetric"] {
-    background: #FFFFFF;
-    border: 1px solid #D9DEE3;
-    border-radius: 0;
-    padding: 16px 16px 12px;
-}
-[data-testid="stMetricLabel"] p {
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #5C6B7A;
-}
-[data-testid="stMetricValue"] { color: #0B1F33; font-weight: 700; }
-.stButton > button,
-.stDownloadButton > button,
-[data-testid="stDownloadButton"] > button {
-    border-radius: 0;
-    font-weight: 600;
-}
-[data-testid="stCaptionContainer"],
-[data-testid="stWidgetLabel"] p { color: #5C6B7A; }
-hr { border: none; border-top: 1px solid #D9DEE3; }
-</style>
-"""
-
-
-def aplicar_identidade() -> None:
-    """Injeta o CSS da identidade visual compartilhada com a landing page.
-
-    Complementa o tema de `.streamlit/config.toml` (paleta) com tipografia
-    DM Sans/IBM Plex Mono, cartões de métrica e botões de cantos retos.
-    Deve ser chamado logo após `st.set_page_config` em todas as páginas.
-    """
-    st.markdown(_IDENTIDADE_CSS, unsafe_allow_html=True)
+from dashboard.theme import CSS_IDENTIDADE, aplicar_identidade, cabecalho_pagina  # noqa: F401
 
 
 def formatar_moeda(valor: float | None) -> str:
@@ -238,9 +198,8 @@ def grafico_mensal(df: pd.DataFrame, *, coluna_valor: str = "valor_liquido") -> 
         )
         .groupby("periodo", as_index=False)[coluna_valor]
         .sum()
-        .rename(columns={coluna_valor: "Total"})
+        .rename(columns={coluna_valor: "valor"})
         .sort_values("periodo")
-        .set_index("periodo")
     )
     st.markdown("**Total por mês**")
-    st.bar_chart(mensal)
+    barras_vert(mensal, "periodo", "valor")

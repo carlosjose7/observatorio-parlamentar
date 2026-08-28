@@ -43,6 +43,37 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 11 — Identidade Visual e Experiência Analítica (EM ANDAMENTO)
+
+### Adicionado
+- **ADR-038**: padronização de motor de gráficos — Altair (padrão
+  estatístico) + Plotly (grafo de rede e radar, complemento cirúrgico).
+- **`dashboard/theme.py`**: design system unificado — paleta como
+  constantes únicas no lado Python (navy/verde/dourado), CSS expandido
+  (chrome, tabs, dataframes, expanders, inputs, sidebar), `cabecalho_pagina()`
+  (kicker mono + título + lede), `aplicar_identidade()` re-exportado
+  para backward compat.
+- **`dashboard/charts.py`**: biblioteca de builders tematizados —
+  `barras_ranking`, `serie_mensal`, `barras_vert` (Altair), `radar_risco`,
+  `grafo_rede` (Plotly).
+- **`tests/dashboard/test_apptest.py`**: 15 AppTest smoke tests — todas
+  as 11 páginas + fluxo busca→seleção (02/05/06/08).
+
+### Alterado
+- **Migração de gráficos default para `charts.py`**: `grafico_mensal`
+  (02–05), `07_anomalias.py`, `06_rede.py`, radar de `08_ml.py`,
+  `11_analises.py` — zero `st.bar_chart`/`st.line_chart` remanescente.
+- **`pyproject.toml`**: `plotly>=5.22.0` no extra `dashboard`
+  (ADR-006 — nunca no Dockerfile).
+- **Página 06 (rede)**: grafo interativo Plotly (hover/zoom/pan)
+  substituindo matplotlib, sobre NetworkX layout (ADR-030 preservado).
+- **Página 08 (ML)**: radar Plotly (`radar_risco`) substituindo
+  matplotlib `#e74c3c` — agora usa paleta verde (`#187A52`).
+- **`matplotlib`** restrito à exportação PDF de tabelas em `ui.py`
+  (único uso remanescente, ADR-038 item 5).
+
+---
+
 ## Sprint 10 — Despesas por fornecedor com filtros temporais (26/08/2026)
 
 ### Adicionado
