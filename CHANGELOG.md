@@ -48,6 +48,8 @@ Histórico das alterações, organizado por sprint (ver
 ### Adicionado
 - **ADR-038**: padronização de motor de gráficos — Altair (padrão
   estatístico) + Plotly (grafo de rede e radar, complemento cirúrgico).
+- **ADR-039**: Landing page consome dados agregados via API em runtime
+  (emenda ao ADR-036) — fallback estático obrigatório, timeout 3s.
 - **`dashboard/theme.py`**: design system unificado — paleta como
   constantes únicas no lado Python (navy/verde/dourado), CSS expandido
   (chrome, tabs, dataframes, expanders, inputs, sidebar), `cabecalho_pagina()`
@@ -71,6 +73,10 @@ Histórico das alterações, organizado por sprint (ver
   matplotlib `#e74c3c` — agora usa paleta verde (`#187A52`).
 - **`matplotlib`** restrito à exportação PDF de tabelas em `ui.py`
   (único uso remanescente, ADR-038 item 5).
+- **Landing dinâmica** (`site/index.html`): Panorama agora busca
+  `/api/agregacoes/por-uf` e `/por-partido` em runtime com fallback
+  estático e timeout 3s (ADR-039 — emenda ao ADR-036). Se a API
+  estiver indisponível, o HTML estático permanece visível.
 
 ---
 

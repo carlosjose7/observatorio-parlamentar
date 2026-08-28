@@ -1157,11 +1157,9 @@ sustenta os gráficos.
 
 ### Onda 4 — Landing, qualidade e fechamento
 
-- ☐ **Landing** — Panorama re-gerado com retrato real de produção
-  (estático, sem fetch em runtime — ADR-036 preservado). Revertido
-  commit dinâmico (`d0edcc1`) por violação de ADR-036 sem novo ADR.
-  Pendente: re-geração manual dos números estáticos com dados de
-  produção + OG image.
+- ☑ **Landing** — Panorama dinâmico via API (`/api/agregacoes/por-uf` e
+  `/por-partido`) com fallback estático obrigatório e timeout 3s (ADR-039).
+  Se o fetch falhar, o HTML estático permanece visível — nunca tela vazia.
 - ☑ **AppTest** — smoke das 11 páginas + fluxo busca→seleção
   (02/05/06/08), 15 testes verdes (`tests/dashboard/test_apptest.py`).
 - ☑ **Governança de fechamento** — BACKLOG, CHANGELOG e
@@ -1180,8 +1178,8 @@ autenticação/alertas (backlog pós-v1, §1.5).
 - ☑ Ruff limpo (`ruff check .`)
 - ☑ Suíte completa verde, cobertura ≥ 80% (gate `fail_under`,
   Sprint 8) — 92.35% confirmado (398 passed)
-- ☐ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
-  PROJECT_CONTEXT §4/§6/§13) — Landing pendente (estático)
+- ☑ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
+  PROJECT_CONTEXT §4/§6/§13)
 
 **Branch:** `sprint/11-identidade-visual` (§14) → `develop` → `hml` →
 `main`

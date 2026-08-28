@@ -647,27 +647,31 @@ footer{
       <div class="pano-grid">
         <div class="pano-col">
           <h3>Gastos por UF</h3>
-          <div class="bar-row bar-lead"><span class="bar-label">SP</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="bar-val">R$ 531,6 mil</span></div>
-          <div class="bar-row"><span class="bar-label">MG</span><span class="bar-track"><span class="bar-fill" style="width:88%"></span></span><span class="bar-val">R$ 469,6 mil</span></div>
-          <div class="bar-row"><span class="bar-label">RJ</span><span class="bar-track"><span class="bar-fill" style="width:88%"></span></span><span class="bar-val">R$ 467,7 mil</span></div>
-          <div class="bar-row"><span class="bar-label">RS</span><span class="bar-track"><span class="bar-fill" style="width:87%"></span></span><span class="bar-val">R$ 461,3 mil</span></div>
-          <div class="bar-row"><span class="bar-label">BA</span><span class="bar-track"><span class="bar-fill" style="width:75%"></span></span><span class="bar-val">R$ 396,3 mil</span></div>
-          <div class="bar-row"><span class="bar-label">PE</span><span class="bar-track"><span class="bar-fill" style="width:63%"></span></span><span class="bar-val">R$ 336,8 mil</span></div>
+          <div id="pano-uf" class="pano-loading">
+            <div class="bar-row bar-lead"><span class="bar-label">SP</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="bar-val">R$ 531,6 mil</span></div>
+            <div class="bar-row"><span class="bar-label">MG</span><span class="bar-track"><span class="bar-fill" style="width:88%"></span></span><span class="bar-val">R$ 469,6 mil</span></div>
+            <div class="bar-row"><span class="bar-label">RJ</span><span class="bar-track"><span class="bar-fill" style="width:88%"></span></span><span class="bar-val">R$ 467,7 mil</span></div>
+            <div class="bar-row"><span class="bar-label">RS</span><span class="bar-track"><span class="bar-fill" style="width:87%"></span></span><span class="bar-val">R$ 461,3 mil</span></div>
+            <div class="bar-row"><span class="bar-label">BA</span><span class="bar-track"><span class="bar-fill" style="width:75%"></span></span><span class="bar-val">R$ 396,3 mil</span></div>
+            <div class="bar-row"><span class="bar-label">PE</span><span class="bar-track"><span class="bar-fill" style="width:63%"></span></span><span class="bar-val">R$ 336,8 mil</span></div>
+          </div>
         </div>
 
         <div class="pano-col">
           <h3>Gastos por partido</h3>
-          <div class="bar-row bar-lead"><span class="bar-label">PL</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="bar-val">R$ 853,2 mil</span></div>
-          <div class="bar-row"><span class="bar-label">PT</span><span class="bar-track"><span class="bar-fill" style="width:74%"></span></span><span class="bar-val">R$ 632,1 mil</span></div>
-          <div class="bar-row"><span class="bar-label">UNIÃO</span><span class="bar-track"><span class="bar-fill" style="width:55%"></span></span><span class="bar-val">R$ 472,6 mil</span></div>
-          <div class="bar-row"><span class="bar-label">PSD</span><span class="bar-track"><span class="bar-fill" style="width:52%"></span></span><span class="bar-val">R$ 445,3 mil</span></div>
-          <div class="bar-row"><span class="bar-label">PP</span><span class="bar-track"><span class="bar-fill" style="width:52%"></span></span><span class="bar-val">R$ 441,8 mil</span></div>
-          <div class="bar-row"><span class="bar-label">REPUBLICANOS</span><span class="bar-track"><span class="bar-fill" style="width:40%"></span></span><span class="bar-val">R$ 343,5 mil</span></div>
+          <div id="pano-partido" class="pano-loading">
+            <div class="bar-row bar-lead"><span class="bar-label">PL</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="bar-val">R$ 853,2 mil</span></div>
+            <div class="bar-row"><span class="bar-label">PT</span><span class="bar-track"><span class="bar-fill" style="width:74%"></span></span><span class="bar-val">R$ 632,1 mil</span></div>
+            <div class="bar-row"><span class="bar-label">UNIÃO</span><span class="bar-track"><span class="bar-fill" style="width:55%"></span></span><span class="bar-val">R$ 472,6 mil</span></div>
+            <div class="bar-row"><span class="bar-label">PSD</span><span class="bar-track"><span class="bar-fill" style="width:52%"></span></span><span class="bar-val">R$ 445,3 mil</span></div>
+            <div class="bar-row"><span class="bar-label">PP</span><span class="bar-track"><span class="bar-fill" style="width:52%"></span></span><span class="bar-val">R$ 441,8 mil</span></div>
+            <div class="bar-row"><span class="bar-label">REPUBLICANOS</span><span class="bar-track"><span class="bar-fill" style="width:40%"></span></span><span class="bar-val">R$ 343,5 mil</span></div>
+          </div>
         </div>
       </div>
 
       <div class="pano-note">
-        <small>Retrato estático de referência · Gold de ago/2026 · 8.983 despesas · R$ 4,57 mi. Os números atualizados e a série mensal ficam no dashboard.</small>
+        <small id="pano-info">Carregando dados do Gold...</small>
       </div>
     </div>
   </section>
@@ -840,6 +844,97 @@ if (location.protocol === "file:") {
     a.href = "http://localhost:8501/";
   });
 }
+
+(function() {
+  var API_BASE = location.origin + '/api';
+  var TIMEOUT_MS = 3000;
+
+  function fetchWithTimeout(url) {
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, TIMEOUT_MS);
+    return fetch(url, { signal: controller.signal })
+      .finally(function() { clearTimeout(timer); });
+  }
+
+  function formatCurrency(value) {
+    if (value >= 1000000) {
+      return 'R$ ' + (value / 1000000).toFixed(2).replace('.', ',') + ' mi';
+    }
+    return 'R$ ' + (value / 1000).toFixed(1).replace('.', ',') + ' mil';
+  }
+
+  function createBarRow(item, isLead) {
+    return '<div class="bar-row' + (isLead ? ' bar-lead' : '') + '">' +
+      '<span class="bar-label">' + item.rotulo + '</span>' +
+      '<span class="bar-track"><span class="bar-fill" style="width:' + item.percentual + '%"></span></span>' +
+      '<span class="bar-val">' + formatCurrency(item.total) + '</span>' +
+      '</div>';
+  }
+
+  function updateSection(containerId, itens) {
+    if (!itens || itens.length === 0) return;
+    var maxTotal = itens[0].total;
+    var html = '';
+    itens.forEach(function(item, i) {
+      item.percentual = Math.round((item.total / maxTotal) * 100);
+      html += createBarRow(item, i === 0);
+    });
+    document.getElementById(containerId).innerHTML = html;
+  }
+
+  function calculateStats(ufData) {
+    var totalDespesas = 0;
+    var totalValor = 0;
+    if (ufData && ufData.itens) {
+      ufData.itens.forEach(function(item) {
+        totalDespesas += item.num_despesas;
+        totalValor += item.total;
+      });
+    }
+    return { totalDespesas: totalDespesas, totalValor: totalValor };
+  }
+
+  function updateInfo(ufData, partidoData) {
+    var stats = calculateStats(ufData);
+    var now = new Date();
+    var mesAtual = now.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+    var info = 'Dados atualizados em ' + mesAtual;
+    if (stats.totalDespesas > 0) {
+      info += ' · ' + stats.totalDespesas.toLocaleString('pt-BR') + ' despesas';
+      info += ' · ' + formatCurrency(stats.totalValor);
+    }
+    info += '. Números completos no dashboard.';
+    document.getElementById('pano-info').textContent = info;
+  }
+
+  function fetchAndRender() {
+    var ufPromise = fetchWithTimeout(API_BASE + '/agregacoes/por-uf?limite=6')
+      .then(function(r) { return r.json(); })
+      .catch(function() { return null; });
+
+    var partidoPromise = fetchWithTimeout(API_BASE + '/agregacoes/por-partido?limite=6')
+      .then(function(r) { return r.json(); })
+      .catch(function() { return null; });
+
+    Promise.all([ufPromise, partidoPromise]).then(function(results) {
+      var ufData = results[0];
+      var partidoData = results[1];
+      if (ufData && ufData.itens) {
+        updateSection('pano-uf', ufData.itens);
+      }
+      if (partidoData && partidoData.itens) {
+        updateSection('pano-partido', partidoData.itens);
+      }
+      updateInfo(ufData, partidoData);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fetchAndRender);
+  } else {
+    fetchAndRender();
+  }
+})();
 </script>
 </body>
 </html>
