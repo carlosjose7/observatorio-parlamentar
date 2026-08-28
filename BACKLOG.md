@@ -1180,8 +1180,8 @@ autenticação/alertas (backlog pós-v1, §1.5).
 - ☑ Ruff limpo (`ruff check .`)
 - ☑ Suíte completa verde, cobertura ≥ 80% (gate `fail_under`,
   Sprint 8) — 92.35% confirmado (398 passed)
-- ☑ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
-  PROJECT_CONTEXT §4/§6/§13)
+- ☐ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
+  PROJECT_CONTEXT §4/§6/§13) — Landing pendente (estático)
 
 **Branch:** `sprint/11-identidade-visual` (§14) → `develop` → `hml` →
 `main`
