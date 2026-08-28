@@ -1157,11 +1157,11 @@ sustenta os gráficos.
 
 ### Onda 4 — Landing, qualidade e fechamento
 
-- ☑ **Landing** — Panorama dinâmico via fetch (`/api/agregacoes/por-uf`
-  e `/por-partido?limite=6`); fallback estático quando Gold vazio;
-  seções `#pano-uf`/`#pano-partido` com IDs para JS; nota dinâmica
-  `#pano-info` (total de despesas/valor ao vivo). Commit `c4a05a7`
-  no `develop`, cherry-picked para a branch (`d0edcc1`).
+- ☐ **Landing** — Panorama re-gerado com retrato real de produção
+  (estático, sem fetch em runtime — ADR-036 preservado). Revertido
+  commit dinâmico (`d0edcc1`) por violação de ADR-036 sem novo ADR.
+  Pendente: re-geração manual dos números estáticos com dados de
+  produção + OG image.
 - ☑ **AppTest** — smoke das 11 páginas + fluxo busca→seleção
   (02/05/06/08), 15 testes verdes (`tests/dashboard/test_apptest.py`).
 - ☑ **Governança de fechamento** — BACKLOG, CHANGELOG e
