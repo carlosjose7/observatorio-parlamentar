@@ -71,6 +71,10 @@ Histórico das alterações, organizado por sprint (ver
   matplotlib `#e74c3c` — agora usa paleta verde (`#187A52`).
 - **`matplotlib`** restrito à exportação PDF de tabelas em `ui.py`
   (único uso remanescente, ADR-038 item 5).
+- **Landing `site/index.html`**: Panorama dinâmico via fetch
+  (`/api/agregacoes/por-uf` e `/por-partido?limite=6`) com fallback
+  estático; seções `#pano-uf`/`#pano-partido` com IDs; nota dinâmica
+  `#pano-info`.
 
 ---
 

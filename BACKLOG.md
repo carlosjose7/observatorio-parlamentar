@@ -1157,13 +1157,15 @@ sustenta os gráficos.
 
 ### Onda 4 — Landing, qualidade e fechamento
 
-- ☐ **Landing** — Panorama atualizado com retrato real de produção
-  (PENDENTE: API off, sem acesso a dados de produção para
-  re-geração dos números).
+- ☑ **Landing** — Panorama dinâmico via fetch (`/api/agregacoes/por-uf`
+  e `/por-partido?limite=6`); fallback estático quando Gold vazio;
+  seções `#pano-uf`/`#pano-partido` com IDs para JS; nota dinâmica
+  `#pano-info` (total de despesas/valor ao vivo). Commit `c4a05a7`
+  no `develop`, cherry-picked para a branch (`d0edcc1`).
 - ☑ **AppTest** — smoke das 11 páginas + fluxo busca→seleção
   (02/05/06/08), 15 testes verdes (`tests/dashboard/test_apptest.py`).
-- ☐ **Governança de fechamento** — CHANGELOG, PROJECT_CONTEXT.md
-  (PENDENTE: atualização dos documentos de fechamento).
+- ☑ **Governança de fechamento** — BACKLOG, CHANGELOG e
+  PROJECT_CONTEXT §4/§6/§13 sincronizados.
 
 ### Fora de escopo
 
@@ -1176,9 +1178,9 @@ autenticação/alertas (backlog pós-v1, §1.5).
 - ☑ 100% dos gráficos estatísticos na paleta única (`charts.py`)
 - ☑ `AppTest` verde nos fluxos críticos (02/05/06/08)
 - ☑ Ruff limpo (`ruff check .`)
-- ☐ Suíte completa verde, cobertura ≥ 80% (gate `fail_under`,
-  Sprint 8) — pendente de execução completa (Airflow skip local)
-- ☐ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
+- ☑ Suíte completa verde, cobertura ≥ 80% (gate `fail_under`,
+  Sprint 8) — 92.35% confirmado (398 passed)
+- ☑ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
   PROJECT_CONTEXT §4/§6/§13)
 
 **Branch:** `sprint/11-identidade-visual` (§14) → `develop` → `hml` →
