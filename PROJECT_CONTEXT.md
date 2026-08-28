@@ -55,13 +55,13 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | Categoria | Requisito |
 |---|---|
 | **Performance** | API deve responder em < 500ms (p95) para endpoints de consulta simples; < 2s para endpoints com agregação/rede |
-| **Disponibilidade** | Pipeline diário via GitHub Actions com taxa de sucesso ≥ 95%; dashboard com disponibilidade best-effort (Streamlit Community Cloud, sem SLA formal) |
+| **Disponibilidade** | Pipeline diário via GitHub Actions com taxa de sucesso ≥ 95%; dashboard com disponibilidade best-effort (Docker Compose único na VPS Oracle, atrás do Nginx em `/app/`, sem SLA formal) |
 | **Escalabilidade** | Arquitetura deve suportar crescimento incremental de dados (10+ anos de histórico) sem reescrita de camadas Bronze/Silver |
 | **Segurança/LGPD** | Nenhum CPF em texto claro nas camadas consumíveis (Silver/Gold/API) — pseudonimização HMAC-SHA256 na Silver (ADR-004/033); a Bronze mantém o dado bruto equivalente-público sob acesso restrito; apenas dados públicos oficiais |
 | **Observabilidade** | Logging estruturado (`structlog`) em todos os módulos; relatório de qualidade de dados gerado a cada execução |
 | **Manutenibilidade** | Cobertura de testes ≥ 80% (Pytest); zero hardcode — configuração externa via `config/*.yaml`/`.env` |
 | **Reprodutibilidade** | Qualquer execução anterior deve ser reproduzível a partir de `run_id` e `pipeline_version` |
-| **Custo** | Infraestrutura de deploy deve operar em camada gratuita (Oracle Cloud Free Tier + Streamlit Community Cloud) |
+| **Custo** | Infraestrutura de deploy deve operar em camada gratuita (Oracle Cloud Free Tier) |
 | **Portabilidade** | Toda a stack deve rodar via Docker Compose, sem dependência de serviço cloud proprietário |
 
 ---
@@ -177,7 +177,12 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
   (login root e autenticação por senha desabilitados); firewall
   local (`ufw`) replicando a mesma restrição de porta 22 da
   Security List (defesa em profundidade)
-- **Dashboard público:** Streamlit Community Cloud
+- **Dashboard público:** servido pelo mesmo Docker Compose da VPS Oracle,
+  atrás do Nginx em `/app/` (ADR-036) — **não** via Streamlit Community
+  Cloud. O ADR-007 original havia desenhado um deploy split (API/pipeline
+  na VPS + dashboard no Streamlit Community Cloud); esse tier nunca chegou
+  a ser usado — a implementação real sempre rodou tudo no mesmo Compose.
+  Nota de reconciliação abaixo, em ADR-007.
 - **Repositório:** GitHub (público)
 - **Secrets:** GitHub Secrets + `.env` local
 - **Custo estimado:** R$ 0/mês
@@ -227,10 +232,18 @@ Fontes Externas (APIs + CSVs)
            │
            ▼
 ┌──────────────────────┐
-│  Streamlit           │  ← Apresentação apenas
-│  Dashboard           │
+│  Streamlit            │  ← Apresentação apenas
+│  Dashboard (/app/)    │
 └──────────────────────┘
 ```
+
+> **Nota (ADR-036):** a raiz do domínio (`/`) serve uma landing page
+> estática institucional (`site/index.html`), sem acesso a dado
+> algum — puramente Nginx servindo arquivo, sem upstream. O Streamlit
+> vive no subcaminho `/app/`. Isso amenda o mapeamento de rota
+> originalmente descrito no ADR-007 (que previa `/` → Streamlit);
+> a decisão de fundo — Streamlit como única camada de apresentação de
+> *dados* — permanece inalterada.
  
 ---
  
@@ -717,7 +730,11 @@ GET  /agent/context
 
 **Ciclo de vida de branches:**
 
-- **Permanentes:** `main` (estável/produção) e `develop` (integração).
+- **Permanentes:** `main` (estável/produção), `hml` (homologação) e
+  `develop` (integração).
+- **Fluxo:** `sprint/*` → merge em `develop` → merge em `hml` para
+  validação no ambiente de homologação (`guia_deploy_operacao.md §7`) →
+  PR de `hml`/`develop` para `main` (dispara deploy, ADR-037).
 - **Temporárias:** branches de sprint (`sprint/{numero}-{descricao}`) são
   criadas no início de cada sprint para isolar o trabalho em andamento e são
   **deletadas após o merge em `develop`** com aprovação (ciclo da sprint,
@@ -801,3 +818,8 @@ timer `enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
 resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
 a+rwx data/`), fix S3 (httpfs/ADR-019), robustez CGU vazia, ambiente HML
 portado. Sprints 1-9 fechadas. ADRs 001-034.*
+
+*Atualização 26/08/2026 (Revisor Técnico): §5 amendado por ADR-036
+(landing estática na raiz `/`, Streamlit em `/app/`). Ver ADR-036 e
+BACKLOG.md — Sprint 10 para o restante das entregas dessa sprint
+(endpoint de gastos por fornecedor, agregações, fix de ADR-035).*

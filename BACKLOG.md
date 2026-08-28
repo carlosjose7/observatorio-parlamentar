@@ -784,6 +784,19 @@ instalação/deploy/operação, e fechar dívidas registradas.
 - ☐ Gitleaks como *required status check* na branch protection de `develop`
   (configuração no GitHub Settings; documentada, sem artefato de código).
   **Nota:** requer ajuste manual de branch protection (Gates em Settings).
+  ☑ **Concluído (27/08/2026):** Gitleaks, Ruff e pytest configurados como
+  required status checks em `develop` e `main` via GitHub API.
+
+### Gate 3 — Deploy automático (27/08/2026)
+
+- ☑ **Workflow `deploy.yml`** criado e testado: dispara em `push` para `main`,
+  roda em self-hosted runner na VPS, executa pull + build + restart containers.
+- ☑ **Self-hosted runner** (`github-runner.service`): agente GitHub Actions
+  rodando como serviço systemd, usuário `opc`, labels `self-hosted,linux,arm64`.
+- ☑ **Branch protection** configurada em `develop` e `main`: status checks
+  obrigatórios, review obrigatório, dismiss stale reviews.
+- ☑ **ADR-037** documenta a decisão, riscos e mitigações.
+- ☑ **Remoção de `observatorio-parlamentar.old`** após validação.
 
 ### Gate 2 — Execução diária (ADR-034, Opção B)
 
@@ -931,8 +944,6 @@ instalação/deploy/operação, e fechar dívidas registradas.
   `tests/api/`/`tests/unit/` (63 passed, sem regressão). Não requereu novo
   ADR — corrige comportamento para bater com a intenção já registrada,
   não reabre nenhuma decisão arquitetural.
-=======
->>>>>>> origin/main
 - ☐ **Higiene operacional:** ambiente HML derrubado em 25/08 (containers,
   rede e volumes `hml_*` removidos) para liberar recursos da VPS e eliminar
   ambiguidade de observação. HML nunca deve ficar residente por design
@@ -992,8 +1003,15 @@ comprometidas).
   produção (default ligado preserva DX em dev/HML).
 - ☑ **Fix overlay HML:** porta 18080 publicada em scheduler E webserver
   (conflito de bind quando ambos sobem) — removida do scheduler.
-- ☐ Rotacionar segredos do **PRD** junto com o deploy destas correções
-  (antes disso a senha nova também ficaria exposta).
+- ☑ **Rotação de segredos em PRD** (26/08): MINIO_ROOT_PASSWORD,
+  POSTGRES_PASSWORD (`ALTER USER`), AIRFLOW_ADMIN_PASSWORD e
+  AIRFLOW_FERNET_KEY renovados na VPS de produção; `.env` atualizado.
+  Validado pós-rotação: console MinIO `curl IP:9001` → connection refused;
+  API `{"status":"healthy"}`; webserver e scheduler do Airflow
+  reconectados ao Postgres. **Nota técnica:** `docker restart` não
+  recarrega variáveis de ambiente dos containers — foi necessário
+  `--force-recreate` para os containers do Airflow assumirem as novas
+  credenciais; registrar esse detalhe em runbook de rotação futura.
 - ☐ Normalizar CPF antes do HMAC-SHA256 — fontes entregam formatos distintos
   (`123.456.789-09` vs `12345678909`) e a mesma pessoa gera digests diferentes;
   exige reprocesso Bronze→Gold com chave versionada.
@@ -1014,3 +1032,76 @@ comprometidas).
   necessidade de sudo sem TTY no deploy (apontado no PRD, 25/08).
   Observação: `dbt.log` NUNCA esteve versionado (`.gitignore` cobre
   `pipeline/gold/logs/`) — o arquivo na VPS era resíduo de rsync antigo.
+
+---
+
+## Sprint 10 — Despesas por Fornecedor, Análises Agregadas e Fix do Fluxo de ML (26/08/2026)
+
+**Objetivo:** fechar o espelho fornecedor→parlamentar na API/dashboard,
+adicionar landing institucional para a banca avaliadora, expor camada de
+agregações para os novos gráficos, e corrigir bug crítico que zerava as
+tabelas analíticas de ML em produção desde a Sprint 9.
+
+- ☑ **Endpoint `GET /fornecedores/{cnpj_cpf_valor}/gastos`** — espelho de
+  `listar_gastos` (parlamentar→fornecedor); filtro `?ano=`, paginação
+  padrão 100 itens/página. Schemas `GastoFornecedorItem`/`GastosFornecedor`
+  (`api/schemas/fornecedores.py`), usando `Moeda` (ADR — hotfix pós-Sprint 9).
+- ☑ **Página 05 (fornecedor)** corrigida: consumia `/parlamentares` (sem
+  dados); passou a consumir `/gastos`, derivando parlamentares por
+  agregação. Filtros ano/mês e gráfico mensal replicados nas páginas
+  02–05 (`dashboard/ui.py::filtro_periodo`/`grafico_mensal`).
+- ☑ **Bug crítico corrigido — ondas de ML nunca executavam (ADR-035):**
+  o DAG ia direto bronze→silver→gold(dbt); os pontos de entrada das
+  cargas de ML nunca eram chamados, então `expense_outliers`,
+  `network_nodes`, `network_edges`, `politician_similarity` e
+  `risk_scores` nasciam vazios em toda execução — páginas de
+  Anomalias/Rede/Risco zeradas em produção desde a Sprint 9. Corrigido
+  com `gold_core → executar_analytics (pipeline/analytics_stage.py) →
+  gold_analytics` + guardrail `alertar_analytics_vazio`. Backfill
+  aplicado em produção: 2.418 outliers, 5.803 arestas, 432 risk_scores.
+- ☑ **Landing institucional** (`site/index.html`) servida estaticamente
+  pelo nginx em `/` (sem upstream, sem acesso a `/api/` — auditado);
+  Streamlit movido para `/app/`. **Governança:** esta mudança de
+  roteamento contradizia o texto literal do ADR-007/§5 sem ADR próprio —
+  formalizada retroativamente como **ADR-036** e refletida em
+  `PROJECT_CONTEXT.md §5` (Revisor Técnico, 26/08).
+- ☑ **Endpoints de agregação** `GET /agregacoes/{por-uf|por-partido|
+  top-parlamentares|no-tempo}` — GROUP BY sobre o Gold (fronteira
+  ADR-026 preservada), schemas `extra="forbid"`.
+- ☑ **Página "Análises"** (`11_analises.py`) — 4 gráficos Altair
+  (gastos por UF, por partido, série mensal, top parlamentares).
+- ☑ **Identidade visual do dashboard** (`.streamlit/config.toml` +
+  `aplicar_identidade()`) — paleta compartilhada com a landing.
+- ☑ Ruff limpo (`ruff check .` — All checks passed) e CI (Gitleaks +
+  Ruff + pytest) verde no merge para `main`.
+
+### Pendências abertas nesta sprint
+
+- ☑ **BACKLOG não fechado no fluxo padrão:** as entregas acima foram
+  registradas em CHANGELOG.md e no ADR-036, mas só reconciliadas aqui
+  retroativamente por auditoria de Revisor Técnico — não no fim natural
+  da sprint. Fechamento definitivo em `09cfb31` (remoção dos marcadores
+  de conflito órfãos + §14 com branch `hml` formalizada). Lição
+  permanente: reforçar o ciclo de Documentador (`sprint_rules`, passo 4)
+  antes do merge, não depois.
+- ☑ **§4 cita Streamlit Community Cloud:** confirmado com Carlos — o tier
+  nunca foi usado; dashboard sempre rodou no Docker Compose da VPS Oracle.
+  Corrigido em `2a6f8aa` (PROJECT_CONTEXT.md §4 + nota de reconciliação
+  no ADR-007, ADR-036 formaliza a arquitetura real).
+- ☑ Cobertura de testes validada localmente em 27/08 (Python 3.12 /
+  Windows): **92.35% total, gate de 80% atingido — 398 passed** em
+  1h48m. Zero falhas de rede (a máquina local acessa
+  `extensions.duckdb.org` normalmente, ao contrário do sandbox de
+  auditoria). 5 erros restantes, todos em `tests/pipeline/test_dag.py`
+  (`sqlite3.OperationalError: unable to open database file` na metadata
+  DB do Airflow) — atrito ambiental de Airflow em Windows (plataforma
+  não suportada); o CI em `ubuntu-latest` é o gate autoritativo e lá
+  esses testes passam.
+- ☑ **Bypass de branch protection em `develop`:** push direto de
+  `09cfb31` reportou `Bypassed rule violations`. Verificado via API do
+  GitHub em 27/08: proteções **ativas** nas duas branches conforme
+  ADR-037 (checks Gitleaks/Ruff/pytest strict, review ≥1, dismiss stale).
+  O bypass ocorre só em `develop`, que tem `enforce_admins=false` por
+  design (admin contorna com warning auditável); `main` tem
+  `enforce_admins=true` (ninguém contorna, só PR). Configuração confere
+  com o ADR — comportamento intencional, nenhuma ação necessária.

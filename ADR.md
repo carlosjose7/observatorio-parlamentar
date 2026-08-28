@@ -235,6 +235,16 @@ Consequências:
 - Para desenvolvimento local, `docker compose up` sobe toda a stack
   sem necessidade de Oracle Cloud.
 
+> **Nota de reconciliação (26/08/2026 — Revisor Técnico/Documentador):**
+> o item 4 desta decisão (dashboard no Streamlit Community Cloud) nunca
+> foi implementado. Da Sprint 0B até a Sprint 10, o dashboard sempre
+> rodou no mesmo Docker Compose da VPS Oracle, junto com API/nginx/MinIO
+> — nunca houve deploy separado. O ADR-036 (Sprint 10) formaliza o
+> estado real: dashboard em `/app/` atrás do mesmo Nginx, sem camada
+> Streamlit Community Cloud. Mantido aqui como registro histórico da
+> intenção original em Sprint 0B; a decisão vigente de deploy é
+> ADR-007 (itens 1–3, 5) + ADR-036.
+
 ---
 
 ADR-008
@@ -2177,5 +2187,112 @@ Consequências:
 - Falha na etapa ML derruba apenas `executar_gold_analytics`; o Gold core
   (fatos/dimensões consumidos pelos endpoints de negócio da API) permanece
   com a última execução íntegra.
+
+---
+
+ADR-036
+Título: Landing page institucional na raiz do domínio; Streamlit movido
+para `/app/`
+
+Status:
+Aceito — amenda o roteamento definido em ADR-007 (decisão #2) e
+PROJECT_CONTEXT.md §5/§11
+
+Contexto:
+ADR-007 (decisão #2) e PROJECT_CONTEXT.md §5 fixaram `/` (raiz) →
+Streamlit como roteamento do Nginx. Na Sprint 10, uma landing page
+estática (`site/index.html`) foi adicionada como vitrine institucional
+do case para a banca avaliadora, servida pela raiz do domínio
+(`observatorio-parlamentar.com.br/`), e o Streamlit foi movido para o
+subcaminho `/app/` (`--server.baseUrlPath=/app` no container, WebSocket
+via `proxy_http_version 1.1` + `Upgrade`/`Connection` no Nginx). Essa
+mudança foi implementada e registrada em CHANGELOG.md, mas nunca
+formalizada como ADR nem refletida em PROJECT_CONTEXT.md — divergência
+identificada em auditoria de Revisor Técnico (Sprint 10, pós-release).
+
+A landing page é puramente estática: não faz nenhuma chamada a `/api/`
+nem a qualquer dado do Gold/Semantic Layer (auditado — nenhuma
+ocorrência de `fetch(`, `XMLHttpRequest` ou `/api/` no HTML). Portanto
+não fere a decisão de fundo do ADR-007/§5 ("Streamlit como camada de
+apresentação exclusiva" refere-se à apresentação de *dados*, não à
+existência de uma página de apresentação do projeto em si) — mas o
+texto literal dos dois documentos ficou desatualizado.
+
+Decisão:
+1. Manter a landing page estática na raiz (`/`), servida diretamente
+   pelo Nginx a partir de `/var/www/site` (sem upstream, sem proxy) —
+   menor superfície de ataque possível para essa rota.
+2. Streamlit passa a viver em `/app/` (com redirect 301 de `/app` para
+   `/app/`), mantendo o Nginx como único reverse proxy na porta 443,
+   conforme já decidido em ADR-007 (decisão #2 é amendada apenas no
+   mapeamento de caminho, não na arquitetura de proxy único).
+3. `/api/`, `/docs` e `/openapi.json` continuam roteados para a
+   FastAPI sem alteração.
+4. Amendar ADR-007 (decisão #2) e PROJECT_CONTEXT.md §5/§11 para
+   refletir o novo mapeamento:
+   - `/` (raiz) → landing estática (Nginx, sem upstream)
+   - `/app/` → Streamlit (porta 8501)
+   - `/api/`, `/docs`, `/openapi.json` → FastAPI (porta 8000)
+   - `/minio/` → **não exposta** publicamente (ver nota de segurança
+     no próprio `nginx/default.conf`; console MinIO restrita a
+     `127.0.0.1:9001` + túnel SSH — atualização adicional em relação
+     ao ADR-007 original, que prescrevia `/minio/` via proxy)
+
+Consequências:
+- Nenhuma mudança de código adicional é necessária — este ADR apenas
+  formaliza uma decisão já implementada e testada em produção.
+- PROJECT_CONTEXT.md §5 (diagrama de arquitetura) e §11 (se citar
+  URLs) devem ser atualizados na próxima rodada de Documentador para
+  citar `/app/` em vez de `/` para o dashboard.
+- Links/documentação voltados à banca avaliadora (README) devem usar
+  `observatorio-parlamentar.com.br/app/` ao referenciar o dashboard.
+- Qualquer novo serviço de apresentação (ex: segunda landing page,
+  status page pública) deve seguir o mesmo padrão: estático e servido
+  direto pelo Nginx quando não precisar de dado dinâmico, evitando
+  proxy_pass desnecessário.
+
+---
+
+ADR-037
+Título: Deploy automático via GitHub Actions com self-hosted runner na VPS
+
+Status:
+Aceito
+
+Contexto:
+O projeto necessitava de deploy automático a cada merge na branch principal.
+As alternativas avaliadas foram: (1) deploy via SSH-action a partir do
+GitHub Actions cloud, (2) webhook simples na VPS, e (3) self-hosted runner
+na VPS. A opção (1) esbarra no firewall da Oracle Cloud (Security List não
+permite tráfego SSH de IPs externos sem configuração manual da VCN). A
+opção (2) exigiria expor um endpoint HTTP na VPS e manter um servidor
+webhook customizado. A opção (3) elimina a necessidade de portas externas
+e permite que o workflow execute localmente na VPS.
+
+Decisão:
+1. Utilizar self-hosted runner (label: self-hosted, linux, arm64) rodando
+   como serviço systemd na VPS, executado pelo usuário `opc` (nunca root).
+2. O workflow `deploy.yml` dispara exclusivamente no evento `push` para
+   `main` (não `pull_request`), garantindo que apenas merges aprovados
+   disparam deploy.
+3. Branch protection configurada em `develop` e `main` exigindo:
+   - Status checks obrigatórios: Gitleaks, Ruff, pytest
+   - Review obrigatório (≥1 aprovação)
+   - Dismiss stale reviews ativado
+   - `main` com enforce_admins (sem bypass para admins)
+4. Runner registrado como GitHub App com permissão read-only de código
+   (deploy key com write para push, mas o runner apenas faz pull).
+
+Consequências:
+- Deploy não depende de portas externas abertas na Oracle Cloud, eliminando
+  superfície de ataque de rede.
+- Self-hosted runner em repo público tem risco conhecido: workflows maliciosos
+  poderiam executar código na VPS. Mitigado por: (a) trigger exclusivo em
+  `push` a branches protegidas, (b) branch protection com review obrigatório,
+  (c) runner como usuário não-privilegiado (`opc`).
+- Runner requer manutenção: atualizações do GitHub Actions Agent devem ser
+  monitoradas (o serviço reinicia automaticamente após updates).
+- O diretório `observatorio-parlamentar.old` foi removido após validação de
+  que nenhum segredo ou dado não versionado foi perdido.
 
 ---
