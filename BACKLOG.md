@@ -1260,6 +1260,23 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
   `urlFoto` da API da Câmara na Bronze), não é escopo de dashboard.
   Registrado como backlog pós-v1.
 
+### Débito técnico identificado (pré-existente, não-Sprint 12)
+
+- 🔴 **`_tratar_erro_gold` NameError em `api/repo.py:106`** —
+  Decorator referenciado antes da definição (linha 106 vs 136).
+  Em produção isso significa que exceções do Gold explodem em
+  `NameError` em vez de serem capturadas pelo handler. Pode causar
+  500s silenciosos em endpoints que usam Gold. **Prioridade: alta.**
+  Correção: mover a definição de `_tratar_erro_gold` para antes
+  do primeiro uso, ou reorganizar a ordem das funções no módulo.
+
+- 🟡 **`streamlit` ausente em `.[dev]`** — testes de dashboard
+  (`test_ui.py`, `test_apptest.py`) não rodam no container `api-test`
+  porque `streamlit` é dependência de `.[dashboard]`, não de `.[dev]`.
+  Opções: (a) criar stage `dev-dashboard` no `dashboard/Dockerfile`,
+  ou (b) aceitar que testes de dashboard rodam em container separado.
+  **Prioridade: média.**
+
 ### Critérios de aceite
 
 - ☑ Batalha: dois parlamentares comparados lado a lado com radar
