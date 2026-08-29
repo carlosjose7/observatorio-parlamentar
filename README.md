@@ -220,8 +220,8 @@ da Sprint 6.5:
 | **Silver** | Limpeza, padronização multi-fonte (`normalize.py`), deduplicação independente por camada (ADR-013), validação com Pandera, pseudonimização de CPF via HMAC-SHA256 (ADR-033) e Data Quality Report. Validação real: Câmara 9.350 + Senado 63.874 registros de despesa; parlamentares 514 + 162; cartão ~120 mil; emenda 45.799. |
 | **Gold** | Star Schema (Fact Constellation) via dbt Core sobre DuckDB, com SCD Type 2 em `dim_parlamentar` (ADR-017), quarentena por construção (ADR-018), `pipeline_runs` (ADR-019) e tabelas analíticas (ADR-021). Validação real: `dbt build` **PASS=224, ERROR=0**, 12 execuções em `pipeline_runs`. |
 | **Analytics** | Anomalias estatísticas (Z-score + Isolation Forest, ADR-002), scorecard de risco (ADR-027/029), análise de redes parlamentar↔fornecedor (ADR-030), feature store (ADR-028). |
-| **API** | FastAPI REST com 30+ endpoints, OpenAPI/Swagger, paginação/filtros, e endpoints agent-ready (`/agent/*`, ADR-032) para consumo por LLMs — validada contra o Gold real do dbt via teste de contrato pipeline→Gold→API. |
-| **Dashboard** | Streamlit com 10 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados), exportações CSV/Excel/PDF (RF-08). |
+| **API** | FastAPI REST com 30+ endpoints, OpenAPI/Swagger, paginação/filtros, endpoints agent-ready (`/agent/*`, ADR-032) para consumo por LLMs e contador global de visitas (`/contador/visitas`, Sprint 12) — validada contra o Gold real do dbt via teste de contrato pipeline→Gold→API. |
+| **Dashboard** | Streamlit com 11 páginas (visão geral, parlamentar, partido, estado, fornecedor, rede, anomalias, ML/risco, qualidade, metadados, batalha parlamentar), exportações CSV/Excel/PDF (RF-08). |
 
 ### III.2 Números reais da validação
 

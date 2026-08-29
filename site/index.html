@@ -243,6 +243,24 @@ h1{
   border-bottom:0;
   border-radius:210px 210px 0 0;
 }
+/* Cúpula lateral esquerda (Senado) */
+.dome-side{
+  position:absolute;
+  width:80px;
+  height:80px;
+  border:1px solid var(--navy);
+  border-bottom:0;
+  border-radius:80px 80px 0 0;
+  bottom:48px;
+}
+.dome-side-left{
+  left:15%;
+  transform:translateX(-50%);
+}
+.dome-side-right{
+  right:15%;
+  transform:translateX(50%);
+}
 .tower{
   position:absolute;
   bottom:48px;
@@ -251,6 +269,14 @@ h1{
   height:130px;
   transform:translateX(-50%);
   background:var(--navy);
+}
+/* Colunas verticais do prédio */
+.column{
+  position:absolute;
+  bottom:48px;
+  width:2px;
+  background:var(--navy);
+  opacity:0.3;
 }
 .flag{
   position:absolute;
@@ -268,6 +294,7 @@ h1{
   width:35px;
   height:20px;
   background:var(--green);
+  border-bottom:5px solid var(--gold);
 }
 .art-label{
   position:absolute;
@@ -616,11 +643,19 @@ footer{
     <div class="hero-art" aria-hidden="true">
       <div class="congress">
         <div class="axis"></div>
+        <div class="dome-side dome-side-left"></div>
         <div class="dome"></div>
+        <div class="dome-side dome-side-right"></div>
         <div class="tower"></div>
+        <div class="column" style="left:30%;height:80px;"></div>
+        <div class="column" style="left:38%;height:90px;"></div>
+        <div class="column" style="left:46%;height:95px;"></div>
+        <div class="column" style="right:46%;height:95px;"></div>
+        <div class="column" style="right:38%;height:90px;"></div>
+        <div class="column" style="right:30%;height:80px;"></div>
         <div class="flag"></div>
         <div class="horizon"></div>
-        <span class="art-label">15°47′S · 47°52′W · BRASÍLIA, DF</span>
+        <span class="art-label">CONGRESSO NACIONAL · BRASÍLIA, DF</span>
       </div>
     </div>
   </section>
@@ -834,6 +869,7 @@ footer{
       <a href="https://dadosabertos.camara.leg.br" target="_blank" rel="noopener">CÂMARA DOS DEPUTADOS</a>
       <a href="https://www12.senado.leg.br/dados-abertos" target="_blank" rel="noopener">SENADO FEDERAL</a>
       <a href="https://portaldatransparencia.gov.br" target="_blank" rel="noopener">PORTAL DA TRANSPARÊNCIA/CGU</a>
+      <span id="visit-counter" style="margin-left: auto;"></span>
     </div>
   </div>
 </footer>
@@ -845,6 +881,30 @@ if (location.protocol === "file:") {
   });
 }
 
+/* Contador global de visitas (Sprint 12) — deduplicação por sessão */
+(function() {
+  var VISIT_KEY = 'op_visit_counted_' + new Date().toISOString().slice(0, 10);
+  var el = document.getElementById('visit-counter');
+  if (!el) return;
+
+  if (localStorage.getItem(VISIT_KEY)) {
+    /* Já contabilizado hoje nesta sessão — busca total sem incrementar */
+    var API = location.origin + '/api/contador/visitas';
+    fetch(API).then(function(r) { return r.json(); }).then(function(d) {
+      el.textContent = (d.total_geral || 0).toLocaleString('pt-BR') + ' visitas';
+    }).catch(function() { el.textContent = ''; });
+    return;
+  }
+
+  /* Primeira visita hoje — incrementa */
+  localStorage.setItem(VISIT_KEY, '1');
+  var API = location.origin + '/api/contador/visitas';
+  fetch(API).then(function(r) { return r.json(); }).then(function(d) {
+    el.textContent = (d.total_geral || 0).toLocaleString('pt-BR') + ' visitas';
+  }).catch(function() { el.textContent = ''; });
+})();
+
+/* Panorama dinâmico — fetch da API de agregações */
 (function() {
   var API_BASE = location.origin + '/api';
   var TIMEOUT_MS = 3000;

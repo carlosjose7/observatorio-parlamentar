@@ -13,6 +13,7 @@ import streamlit as st
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
+    botao_voltar,
     carregar_com_feedback,
     filtro_periodo,
     formatar_moeda,
@@ -22,6 +23,7 @@ from dashboard.ui import (
 
 st.set_page_config(page_title="Partido", page_icon="🏛️", layout="wide")
 aplicar_identidade()
+botao_voltar()
 st.title("🏛️ Partido")
 
 client = ApiClient()
