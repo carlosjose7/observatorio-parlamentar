@@ -8,6 +8,8 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+---
+
 ## Infraestrutura — Deploy automático via GitHub Actions (27/08/2026)
 
 ### Adicionado
@@ -89,7 +91,6 @@ Histórico das alterações, organizado por sprint (ver
   resultando em tabelas Gold (`expense_outliers`, `network_*`,
   `risk_scores`, `politician_similarity`) ausentes e HTTP 503 nos
   endpoints de rede, risco e agent/context.
-
 ---
 
 ## Sprint 10 — Despesas por fornecedor com filtros temporais (26/08/2026)
