@@ -10,6 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from dashboard.charts import barras_vert
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
@@ -58,7 +59,7 @@ def _agregados() -> None:
             df_ano = pd.DataFrame(por_ano).rename(
                 columns={"ano": "Ano", "quantidade": "Quantidade"}
             )
-            st.bar_chart(df_ano.set_index("Ano"))
+            barras_vert(df_ano, "Ano", "Quantidade", "Por ano")
         else:
             st.info("Sem dados por ano.")
     with c2:
@@ -68,7 +69,7 @@ def _agregados() -> None:
             df_crit = pd.DataFrame(por_criterio).rename(
                 columns={"criterio": "Critério", "quantidade": "Quantidade"}
             )
-            st.bar_chart(df_crit.set_index("Critério"))
+            barras_vert(df_crit, "Critério", "Quantidade", "Por critério")
         else:
             st.info("Sem dados por critério.")
 

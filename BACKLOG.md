@@ -1104,4 +1104,82 @@ tabelas analíticas de ML em produção desde a Sprint 9.
   O bypass ocorre só em `develop`, que tem `enforce_admins=false` por
   design (admin contorna com warning auditável); `main` tem
   `enforce_admins=true` (ninguém contorna, só PR). Configuração confere
-  com o ADR — comportamento intencional, nenhuma ação necessária.
+   com o ADR — comportamento intencional, nenhuma ação necessária.
+
+---
+
+## Sprint 11 — Identidade Visual e Experiência Analítica — EM ANDAMENTO
+
+**Objetivo:** unificar a identidade visual do dashboard com a landing
+(paleta navy/verde/dourado), eliminar gráficos default (`st.bar_chart`/
+matplotlib sem tema) fora da página 11, tornar a página de rede
+interativa, e absorver a dívida de `AppTest` registrada desde a
+Sprint 9/10. Sem endpoints novos — `/agregacoes/*` (Sprint 10) já
+sustenta os gráficos.
+
+### Onda 0 — Decisão de stack de visualização
+
+- ☑ **ADR-038** — Altair como padrão (rankings, séries, barras);
+  Plotly como complemento cirúrgico restrito a grafo de rede (página 06)
+  e radar (página 08); ECharts avaliado e descartado; matplotlib
+  mantido apenas para exportação PDF de tabelas em `ui.py`.
+
+### Onda 1 — Design system no Streamlit
+
+- ☑ **`dashboard/theme.py`** — paleta como constantes únicas no lado
+  Python (`theme.py`, consumido por `ui.py`/`charts.py`/páginas);
+  `.streamlit/config.toml` e `site/index.html` permanecem literais por
+  natureza estática. CSS ampliado (chrome, tabs, dataframes, expanders,
+  inputs, sidebar navy).
+- ☑ **`cabecalho_pagina()`** — componente editorial (kicker mono +
+  título + lede) replicando o padrão da landing.
+
+### Onda 2 — Biblioteca de gráficos tematizados
+
+- ☑ **`dashboard/charts.py`** — builders compartilhados: `barras_ranking`,
+  `serie_mensal`, `barras_vert`, `radar_risco`, `grafo_rede`.
+- ☑ Dependência `plotly>=5.22.0` no extra `dashboard` do
+  `pyproject.toml` (ADR-006 — nunca no Dockerfile).
+- ☑ **Migração de 100% dos gráficos fora da paleta:**
+  - `grafico_mensal()` em `ui.py` (páginas 02–05) → `barras_vert`
+  - Dois `st.bar_chart` de `07_anomalias.py` → `barras_vert`
+  - `st.bar_chart` de `06_rede.py` → `barras_ranking`
+  - Radar de `08_ml.py` (matplotlib → Plotly `radar_risco`)
+  - `11_analises.py` migra do Altair inline para `barras_ranking`/`serie_mensal`
+- ☑ `matplotlib` restrito à exportação PDF de tabelas em `ui.py`
+  (verificável via `git grep matplotlib` fora de `ui.py` = zero
+  ocorrências em gráficos).
+
+### Onda 3 — Página 06 Rede interativa
+
+- ☑ Grafo com hover/zoom/pan via Plotly (`grafo_rede`), sobre
+  NetworkX layout — sem recálculo por request, Gate 3 preservado.
+
+### Onda 4 — Landing, qualidade e fechamento
+
+- ☑ **Landing** — Panorama dinâmico via API (`/api/agregacoes/por-uf` e
+  `/por-partido`) com fallback estático obrigatório e timeout 3s (ADR-039).
+  Se o fetch falhar, o HTML estático permanece visível — nunca tela vazia.
+- ☑ **AppTest** — smoke das 11 páginas + fluxo busca→seleção
+  (02/05/06/08), 15 testes verdes (`tests/dashboard/test_apptest.py`).
+- ☑ **Governança de fechamento** — BACKLOG, CHANGELOG e
+  PROJECT_CONTEXT §4/§6/§13 sincronizados.
+
+### Fora de escopo
+
+Frontend dedicado fora do Streamlit; novos endpoints de API; dark mode;
+autenticação/alertas (backlog pós-v1, §1.5).
+
+### Critérios de aceite
+
+- ☑ Zero `st.bar_chart`/`st.line_chart` default remanescente
+- ☑ 100% dos gráficos estatísticos na paleta única (`charts.py`)
+- ☑ `AppTest` verde nos fluxos críticos (02/05/06/08)
+- ☑ Ruff limpo (`ruff check .`)
+- ☑ Suíte completa verde, cobertura ≥ 80% (gate `fail_under`,
+  Sprint 8) — 92.35% confirmado (398 passed)
+- ☑ Documentos de fechamento sincronizados (CHANGELOG, BACKLOG,
+  PROJECT_CONTEXT §4/§6/§13)
+
+**Branch:** `sprint/11-identidade-visual` (§14) → `develop` → `hml` →
+`main`

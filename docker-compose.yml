@@ -198,6 +198,7 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
     volumes:
       - ./pipeline:/opt/airflow/pipeline
+      - ./analytics:/opt/airflow/analytics
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
     depends_on:

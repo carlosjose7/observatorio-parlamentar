@@ -2,16 +2,16 @@
 
 Consome os endpoints `GET /agregacoes/*` (ADR-026: agregação no Gold pela
 API): gastos por UF, por partido, top parlamentares e série mensal. Os
-gráficos seguem a identidade visual da landing (navy `#0B1F33`, destaque
-verde `#187A52` para o líder do ranking).
+gráficos seguem a identidade visual da landing (paleta única via
+`dashboard.theme`, ADR-038).
 """
 
 from __future__ import annotations
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
+from dashboard.charts import barras_ranking, serie_mensal
 from dashboard.client import ApiClient
 from dashboard.ui import aplicar_identidade, carregar_com_feedback, formatar_moeda
 
@@ -21,10 +21,6 @@ st.title("📊 Análises")
 st.caption("Gastos parlamentares agregados na camada Gold — Câmara e Senado.")
 
 client = ApiClient()
-
-_NAVY = "#0B1F33"
-_GREEN = "#187A52"
-_GRID = "#D9DEE3"
 
 
 def _df_agregacao(payload: dict | None) -> pd.DataFrame:
@@ -39,46 +35,7 @@ def _df_agregacao(payload: dict | None) -> pd.DataFrame:
         df = df.rename(columns={"periodo": "rotulo"})
     df["total_num"] = df["total"].astype(float)
     df["total_fmt"] = df["total_num"].map(formatar_moeda)
-    df["lider"] = range(len(df)) == 0
     return df
-
-
-def _estilo(chart):
-    """Aplica fonte, grade e fundo da identidade visual a um gráfico."""
-    return (
-        chart.configure(font="'DM Sans', sans-serif")
-        .configure_axis(
-            labelColor="#5C6B7A",
-            titleColor="#5C6B7A",
-            labelFontSize=12,
-            titleFontSize=12,
-            grid=True,
-            gridColor=_GRID,
-            gridOpacity=0.6,
-        )
-        .configure_view(stroke=None)
-    )
-
-
-def _barras_ranking(df: pd.DataFrame, titulo_eixo: str) -> alt.Chart:
-    """Barras horizontais ordenadas por total (líder em verde)."""
-    return _estilo(
-        alt.Chart(df).mark_bar().encode(
-            x=alt.X("total_num:Q", title=titulo_eixo, axis=alt.Axis(format=",.0f")),
-            y=alt.Y("rotulo:N", sort="-x", title=None),
-            color=alt.condition(
-                "datum.lider",
-                alt.value(_GREEN),
-                alt.value(_NAVY),
-                legend=None,
-            ),
-            tooltip=[
-                alt.Tooltip("rotulo:N", title="Recorte"),
-                alt.Tooltip("total_fmt:N", title="Total"),
-                alt.Tooltip("num_despesas:Q", title="Despesas", format=",d"),
-            ],
-        ).properties(height=380, width="container")
-    )
 
 
 def _render_secao(titulo: str, payload: dict | None, grafico: str) -> None:
@@ -89,25 +46,15 @@ def _render_secao(titulo: str, payload: dict | None, grafico: str) -> None:
         st.info("Sem dados disponíveis para este recorte.")
         return
     if grafico == "tempo":
-        _render_serie_tempo(df)
+        st.altair_chart(
+            serie_mensal(df, "rotulo", "total_num"),
+            use_container_width=True,
+        )
         return
-    st.altair_chart(_barras_ranking(df, "Total (R$)"), use_container_width=True)
-
-
-def _render_serie_tempo(df: pd.DataFrame) -> None:
-    """Série mensal de gasto — barras verticais por mês (AAAAMM)."""
-    chart = _estilo(
-        alt.Chart(df).mark_bar(color=_NAVY).encode(
-            x=alt.X("rotulo:N", title="Mês (AAAAMM)", sort=None),
-            y=alt.Y("total_num:Q", title="Total (R$)", axis=alt.Axis(format=",.0f")),
-            tooltip=[
-                alt.Tooltip("rotulo:N", title="Mês"),
-                alt.Tooltip("total_fmt:N", title="Total"),
-                alt.Tooltip("num_despesas:Q", title="Despesas", format=",d"),
-            ],
-        ).properties(height=320, width="container")
+    st.altair_chart(
+        barras_ranking(df, "rotulo", "total_num"),
+        use_container_width=True,
     )
-    st.altair_chart(chart, use_container_width=True)
 
 
 def _render_janela(serie: dict | None) -> None:

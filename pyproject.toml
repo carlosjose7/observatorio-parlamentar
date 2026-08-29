@@ -47,6 +47,7 @@ dashboard = [
     "openpyxl>=3.1.0",
     "matplotlib>=3.8.0",
     "networkx>=3.2.0",
+    "plotly>=5.22.0",
 ]
 analytics = [
     "scikit-learn>=1.4.0",
