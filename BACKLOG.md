@@ -1015,7 +1015,8 @@ comprometidas).
 - ☐ Normalizar CPF antes do HMAC-SHA256 — fontes entregam formatos distintos
   (`123.456.789-09` vs `12345678909`) e a mesma pessoa gera digests diferentes;
   exige reprocesso Bronze→Gold com chave versionada.
-- ☐ Dependabot + pin das GitHub Actions por commit SHA (supply chain).
+- ☑ **Concluído (29/08):** Dependabot semanal para Actions + todas as actions
+  pinadas por SHA (checkout v4.2.2, setup-python v5.6.0, gitleaks-action v3.0.0).
 - ☐ Timeout explícito nos healthchecks de container (`urllib.urlopen` sem
   timeout pode travar a thread de healthcheck).
 - ☐ Alinhar direção da janela `_truncar_validacao` com watermark vazio:
@@ -1255,10 +1256,8 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
 
 ### Itens registrados (fora de escopo desta sprint)
 
-- ☐ **Foto do parlamentar** — o schema `AgentParlamentar` não
-  retorna `url_foto`. Requer alteração de pipeline (puxar
-  `urlFoto` da API da Câmara na Bronze), não é escopo de dashboard.
-  Registrado como backlog pós-v1.
+- ☑ **Concluído (29/08):** urlFoto pipeline completo (Bronze→Silver→Gold→API).
+  Câmara: 513/513 com URL. Senado: 81/81 NULL (API não fornece). PR #36.
 
 ### Débito técnico identificado (pré-existente, não-Sprint 12)
 
@@ -1271,12 +1270,9 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
   do primeiro uso, ou reorganizar a ordem das funções no módulo.
   **Corrigido na Sprint 12** (commit `0f06e7a`).
 
-- 🟡 **`streamlit` ausente em `.[dev]`** — testes de dashboard
-  (`test_ui.py`, `test_apptest.py`) não rodam no container `api-test`
-  porque `streamlit` é dependência de `.[dashboard]`, não de `.[dev]`.
-  Opções: (a) criar stage `dev-dashboard` no `dashboard/Dockerfile`,
-  ou (b) aceitar que testes de dashboard rodam em container separado.
-  **Prioridade: média.**
+- ☑ **Concluído (29/08):** Extra `.[dev-dashboard]` criado em `pyproject.toml`,
+  `api/Dockerfile` usa `.[dev-dashboard]` no stage dev. Testes de dashboard
+  rodam no container `api-test` com 63 testes passando.
 
 ### Critérios de aceite
 
