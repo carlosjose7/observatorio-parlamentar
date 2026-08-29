@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 WORKDIR /app
 
@@ -10,8 +10,10 @@ RUN pip install --no-cache-dir -e ".[api]" \
     && useradd --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /app
 
-EXPOSE 8000
+FROM base AS dev
+RUN pip install --no-cache-dir -e ".[dev]"
 
+FROM base AS production
 USER appuser
-
+EXPOSE 8000
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

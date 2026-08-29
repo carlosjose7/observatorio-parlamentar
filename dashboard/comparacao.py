@@ -38,6 +38,19 @@ def _meses_para_str(ano: int, mes: int) -> str:
     return f"{ano:04d}-{mes:02d}"
 
 
+def _de_total_meses(total: int) -> tuple[int, int]:
+    """Converte meses totais (1-indexed) de volta para (ano, mes).
+
+    Exemplos:
+        24288 → (2023, 12)  # 2023*12 + 12
+        24277 → (2023, 1)   # 2023*12 + 1
+    """
+    ano, mes = divmod(total, 12)
+    if mes == 0:
+        return ano - 1, 12
+    return ano, mes
+
+
 def calcular_sobreposicao(
     janela_inicio_a: str | None,
     janela_fim_a: str | None,
@@ -84,8 +97,8 @@ def calcular_sobreposicao(
             pct = meses_comum / menor_total
 
             # Converter de volta para YYYY-MM
-            ini_ano, ini_mes = divmod(inicio_meses, 12)
-            fim_ano, fim_mes = divmod(fim_meses, 12)
+            ini_ano, ini_mes = _de_total_meses(inicio_meses)
+            fim_ano, fim_mes = _de_total_meses(fim_meses)
 
             return SobreposicaoPeriodo(
                 inicio_a=_meses_para_str(*a),
