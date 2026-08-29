@@ -8,13 +8,11 @@ grafo com NetworkX + matplotlib (extra `dashboard`) e permite exportação
 
 from __future__ import annotations
 
-import io
-
-import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
 import streamlit as st
 
+from dashboard.charts import barras_ranking, grafo_rede
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
@@ -134,31 +132,15 @@ def _rede_do_parlamentar(id_parlamentar: int) -> None:
         grafo.add_node(id_forn, label=info["nome"], tipo="fornecedor")
         grafo.add_edge("eu", id_forn, weight=info["total"])
 
-    fig, ax = plt.subplots(figsize=(10, 7))
-    pos = nx.spring_layout(grafo, seed=42)
-    cores = {
-        "parlamentar": "#e74c3c",
-        "fornecedor": "#2980b9",
-    }
-    nx.draw_networkx_nodes(
-        grafo, pos,
-        node_color=[cores[grafo.nodes[n]["tipo"]] for n in grafo.nodes],
-        node_size=500,
-    )
-    nx.draw_networkx_labels(grafo, pos, font_size=7)
-    nx.draw_networkx_edges(grafo, pos, alpha=0.4)
-    ax.axis("off")
-    st.pyplot(fig)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
-    plt.close(fig)
-    st.download_button(
-        "📥 Baixar grafo (PNG)",
-        buf.getvalue(),
-        file_name=f"rede_{id_parlamentar}.png",
-        mime="image/png",
-    )
+    nodes_df = pd.DataFrame([
+        {"id": n, "label": grafo.nodes[n].get("label", str(n)), "tipo": grafo.nodes[n].get("tipo", "no")}
+        for n in grafo.nodes
+    ])
+    edges_df = pd.DataFrame([
+        {"source": u, "target": v, "weight": d.get("weight", 1)}
+        for u, v, d in grafo.edges(data=True)
+    ])
+    grafo_rede(nodes_df, edges_df)
 
     st.markdown(f"**Ranking de fornecedores ({len(ordenados)})**")
     if len(cortados) >= 2:
@@ -167,8 +149,11 @@ def _rede_do_parlamentar(id_parlamentar: int) -> None:
                 "Fornecedor": [info["nome"] for _, info in cortados[:10]],
                 "Total": [info["total"] for _, info in cortados[:10]],
             }
-        ).set_index("Fornecedor")
-        st.bar_chart(grafico_df)
+        )
+        st.altair_chart(
+            barras_ranking(grafico_df, "Fornecedor", "Total", "Total (R$)"),
+            use_container_width=True,
+        )
 
     total_rede = sum(info["total"] for _, info in ordenados)
     df = pd.DataFrame(
@@ -365,18 +350,15 @@ def _rede_do_fornecedor() -> None:
         )
         grafo.add_edge("fornecedor", id_parl, weight=info["total"])
 
-    fig, ax = plt.subplots(figsize=(10, 7))
-    pos = nx.spring_layout(grafo, seed=42)
-    cores = {"parlamentar": "#2980b9", "fornecedor": "#e74c3c"}
-    nx.draw_networkx_nodes(
-        grafo, pos,
-        node_color=[cores[grafo.nodes[n]["tipo"]] for n in grafo.nodes],
-        node_size=500,
-    )
-    nx.draw_networkx_labels(grafo, pos, font_size=7)
-    nx.draw_networkx_edges(grafo, pos, alpha=0.4)
-    ax.axis("off")
-    st.pyplot(fig)
+    nodes_df = pd.DataFrame([
+        {"id": n, "label": grafo.nodes[n].get("label", str(n)), "tipo": grafo.nodes[n].get("tipo", "no")}
+        for n in grafo.nodes
+    ])
+    edges_df = pd.DataFrame([
+        {"source": u, "target": v, "weight": d.get("weight", 1)}
+        for u, v, d in grafo.edges(data=True)
+    ])
+    grafo_rede(nodes_df, edges_df)
 
     st.markdown(f"**Ranking de parlamentares conectados ({len(visiveis)})**")
     if len(cortados) >= 2:
@@ -388,8 +370,11 @@ def _rede_do_fornecedor() -> None:
                 ],
                 "Total": [info["total"] for _, info in cortados[:10]],
             }
-        ).set_index("Parlamentar")
-        st.bar_chart(grafico_df)
+        )
+        st.altair_chart(
+            barras_ranking(grafico_df, "Parlamentar", "Total", "Total (R$)"),
+            use_container_width=True,
+        )
 
     total_recebido = float(dados.get("total_recebido") or 0)
     df = pd.DataFrame(

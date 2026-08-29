@@ -12,12 +12,38 @@ jobs:
     runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 15
     steps:
+      - name: Backup data layers
+        run: |
+          set -e
+          cd /home/opc/observatorio-parlamentar
+          # DuckDB (silver/gold) e MinIO volume ficam fora do git.
+          # git reset --hard pode afetar bind mounts — preservar antes.
+          if [ -d data/silver ] && [ "$(ls -A data/silver 2>/dev/null)" ]; then
+            cp -a data/silver /tmp/observatorio-silver-backup
+          fi
+          if [ -d data/gold ] && [ "$(ls -A data/gold 2>/dev/null)" ]; then
+            cp -a data/gold /tmp/observatorio-gold-backup
+          fi
+
       - name: Pull latest code
         run: |
           set -e
           cd /home/opc/observatorio-parlamentar
           git fetch origin main
           git reset --hard origin/main
+
+      - name: Restore data layers
+        run: |
+          set -e
+          cd /home/opc/observatorio-parlamentar
+          if [ -d /tmp/observatorio-silver-backup ]; then
+            cp -a /tmp/observatorio-silver-backup/* data/silver/ 2>/dev/null || true
+            rm -rf /tmp/observatorio-silver-backup
+          fi
+          if [ -d /tmp/observatorio-gold-backup ]; then
+            cp -a /tmp/observatorio-gold-backup/* data/gold/ 2>/dev/null || true
+            rm -rf /tmp/observatorio-gold-backup
+          fi
 
       - name: Build and restart containers
         run: |
