@@ -19,6 +19,6 @@ USER airflow
 # e reduz o espaço de busca do resolver.
 RUN pip install --no-cache-dir \
     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt" \
-    -e ".[pipeline]"
+    -e ".[pipeline,analytics]"
 
 ENV PYTHONPATH=/opt/airflow:$PYTHONPATH
