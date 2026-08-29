@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir -e ".[api]" \
     && chown -R appuser:appuser /app
 
 FROM base AS dev
-RUN pip install --no-cache-dir -e ".[dev]"
+RUN pip install --no-cache-dir -e ".[dev-dashboard]"
 
 FROM base AS production
 USER appuser

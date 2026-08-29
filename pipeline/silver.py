@@ -61,6 +61,7 @@ COLUNAS_SILVER_PARLAMENTAR = [
     "id_legislatura_fonte",
     "situacao_bruta",
     "situacao_normalizada",
+    "url_foto",
     "data",
     "run_id",
     "pipeline_version",

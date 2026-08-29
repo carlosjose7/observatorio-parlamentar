@@ -40,6 +40,7 @@ _DDL = {
             sigla_partido varchar,
             sigla_uf varchar,
             situacao_normalizada varchar,
+            url_foto varchar,
             id_legislatura bigint,
             effective_date date,
             end_date date,
@@ -201,14 +202,14 @@ def sembrar_gold(caminho) -> None:
     p1_v2 = 100000000000 + 1 * 1000 + 2  # camara, id 1, versão 2
     p2_v1 = 200000000000 + 2 * 1000 + 1  # senado, id 2, versão 1
     con.executemany(
-        "insert into dim_parlamentar values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "insert into dim_parlamentar values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (100000000000 + 1 * 1000 + 1, "camara", 1, "MARIA DA SILVA", "MARIA DA SILVA",
-             "PSDB", "DF", "Ativo", 55, date(2015, 1, 1), date(2018, 1, 1), False),
+             "PSDB", "DF", "Ativo", None, 55, date(2015, 1, 1), date(2018, 1, 1), False),
             (p1_v2, "camara", 1, "MARIA DA SILVA", "MARIA DA SILVA",
-             "PSDB", "DF", "Ativo", 57, date(2018, 1, 1), None, True),
+             "PSDB", "DF", "Ativo", "https://example.com/foto1.jpg", 57, date(2018, 1, 1), None, True),
             (p2_v1, "senado", 2, "ANA SOUZA", "ANA SOUZA",
-             "PT", "SP", "Ativo", 57, date(2019, 2, 1), None, True),
+             "PT", "SP", "Ativo", None, 57, date(2019, 2, 1), None, True),
         ],
     )
     con.executemany(

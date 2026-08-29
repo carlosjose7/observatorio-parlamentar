@@ -188,7 +188,8 @@ def _conexao() -> duckdb.DuckDBPyConnection:
 
 
 _NO_PARLAMENTARES = """
-    select id_parlamentar, nome, sigla_partido, sigla_uf, situacao_normalizada, fonte
+    select id_parlamentar, nome, sigla_partido, sigla_uf, situacao_normalizada, fonte,
+           url_foto
     from dim_parlamentar
     where is_current
 """
@@ -240,7 +241,7 @@ def listar_parlamentares(
             "limit ? offset ?",
             [*parametros, limite, offset],
         ).fetchall()
-        colunas = ["id_parlamentar", "nome", "sigla_partido", "sigla_uf", "situacao_normalizada", "fonte"]
+        colunas = ["id_parlamentar", "nome", "sigla_partido", "sigla_uf", "situacao_normalizada", "fonte", "url_foto"]
 
     itens = [ParlamentarResumo.model_validate(dict(zip(colunas, linha))) for linha in linhas]
     return ListaParlamentares(pagina=pagina, limite=limite, total=total, itens=itens)
@@ -348,8 +349,8 @@ def obter_perfil_parlamentar(id_parlamentar: int) -> PerfilParlamentar | None:
         linha = con.execute(
             """
             select id_parlamentar, surrogate_key, fonte, nome, nome_normalizado,
-                   sigla_partido, sigla_uf, situacao_normalizada, id_legislatura,
-                   effective_date, end_date, is_current
+                   sigla_partido, sigla_uf, situacao_normalizada, url_foto,
+                   id_legislatura, effective_date, end_date, is_current
             from dim_parlamentar
             where id_parlamentar = ? and is_current
             """,
@@ -359,8 +360,8 @@ def obter_perfil_parlamentar(id_parlamentar: int) -> PerfilParlamentar | None:
         return None
     colunas = [
         "id_parlamentar", "surrogate_key", "fonte", "nome", "nome_normalizado",
-        "sigla_partido", "sigla_uf", "situacao_normalizada", "id_legislatura",
-        "effective_date", "end_date", "is_current",
+        "sigla_partido", "sigla_uf", "situacao_normalizada", "url_foto",
+        "id_legislatura", "effective_date", "end_date", "is_current",
     ]
     return PerfilParlamentar.model_validate(dict(zip(colunas, linha)))
 
@@ -1009,6 +1010,7 @@ def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
         sigla_partido=perfil.sigla_partido,
         sigla_uf=perfil.sigla_uf,
         situacao_normalizada=perfil.situacao_normalizada,
+        url_foto=perfil.url_foto,
         periodo_vigente_desde=perfil.effective_date.isoformat(),
         janela_inicio=_mes_de_data_sk(janela[0]) if janela else None,
         janela_fim=_mes_de_data_sk(janela[1]) if janela else None,

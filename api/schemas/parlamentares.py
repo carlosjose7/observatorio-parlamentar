@@ -41,6 +41,7 @@ class ParlamentarResumo(_ContratoResposta):
     sigla_uf: str
     situacao_normalizada: str
     fonte: str
+    url_foto: str | None = Field(default=None, description="URL da foto do parlamentar na fonte")
 
 
 class ListaParlamentares(_ContratoResposta):
@@ -103,6 +104,7 @@ class PerfilParlamentar(_ContratoResposta):
     sigla_partido: str
     sigla_uf: str
     situacao_normalizada: str
+    url_foto: str | None = Field(default=None, description="URL da foto do parlamentar na fonte")
     id_legislatura: int | None = Field(default=None, description="Última legislatura observada na versão")
     effective_date: date = Field(..., description="Início da vigência da versão")
     end_date: date | None = Field(default=None, description="Fim da vigência — None na versão corrente")

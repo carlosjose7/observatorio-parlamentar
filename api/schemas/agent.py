@@ -11,7 +11,7 @@ ADR-032: dependem de `fact_presenca`/`fact_votacao`, ainda inexistentes.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Rigido(BaseModel):
@@ -72,6 +72,7 @@ class AgentParlamentar(_Rigido):
     sigla_partido: str | None
     sigla_uf: str | None
     situacao_normalizada: str | None
+    url_foto: str | None = Field(default=None, description="URL da foto do parlamentar na fonte")
     periodo_vigente_desde: str | None
     metricas: MetricasParlamentar
     risco: RiscoParlamentar | None
