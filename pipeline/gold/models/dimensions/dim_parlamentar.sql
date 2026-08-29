@@ -36,6 +36,7 @@ with observacoes as (
         sigla_uf,
         situacao_normalizada,
         id_legislatura,
+        url_foto,
         cast(data as date) as data,
         run_id,
         execution_timestamp
@@ -58,6 +59,7 @@ legado as (
                 or coalesce(lag(sigla_partido) over particao, '') <> coalesce(sigla_partido, '')
                 or coalesce(lag(sigla_uf) over particao, '') <> coalesce(sigla_uf, '')
                 or coalesce(lag(situacao_normalizada) over particao, '') <> coalesce(situacao_normalizada, '')
+                or coalesce(lag(url_foto) over particao, '') <> coalesce(url_foto, '')
             ) then
                 1
             else
@@ -106,7 +108,8 @@ atributos_versao as (
         vb.nome,
         vb.sigla_partido,
         vb.sigla_uf,
-        vb.situacao_normalizada
+        vb.situacao_normalizada,
+        vb.url_foto
     from versoes_brutas vb
     join versoes v
         on v.fonte = vb.fonte
@@ -136,6 +139,7 @@ select
     sigla_partido,
     sigla_uf,
     situacao_normalizada,
+    url_foto,
     id_legislatura,
     effective_date,
     end_date,

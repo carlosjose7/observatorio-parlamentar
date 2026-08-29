@@ -120,6 +120,9 @@ class CamaraBronzeDeputado(BaseModel):
     data_status: str = Field(
         ..., alias="data", description="Data de vigência do status (ISO)"
     )
+    url_foto: str | None = Field(
+        default=None, alias="urlFoto", description="URL da foto do deputado na fonte."
+    )
 
     metadata: LoadMetadata
 

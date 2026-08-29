@@ -68,6 +68,7 @@ SCHEMA_SILVER_PARLAMENTAR: dict[str, tuple[str, str]] = {
     "id_legislatura_fonte": ("BIGINT", "Legislatura bruta da fonte (auditoria)."),
     "situacao_bruta": ("VARCHAR", "Situação original informada pela fonte."),
     "situacao_normalizada": ("VARCHAR", "Situação na taxonomia canônica."),
+    "url_foto": ("VARCHAR", "URL da foto do parlamentar na fonte (Câmara/Senado)."),
     "data": ("TIMESTAMP_NS", "Data as-of do snapshot (chave do SCD2)."),
     "run_id": ("VARCHAR", "Identificador da execução do pipeline (RF-12)."),
     "pipeline_version": ("VARCHAR", "Versão do pipeline que gerou o registro (RF-12)."),
