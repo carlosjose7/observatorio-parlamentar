@@ -141,6 +141,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | Qualidade | Pandera | 0.18+ | Data contracts, validação de schema em runtime |
 | API | FastAPI | 0.110+ | Alta performance, OpenAPI automático, agent-ready |
 | Dashboard | Streamlit | 1.35+ | Camada de apresentação exclusivamente |
+| **Visualização** | **Altair + Plotly** | 5.22+ (Plotly) | Altair: gráficos estatísticos padrão. Plotly: grafo de rede e radar (ADR-038) |
 | ML | scikit-learn | 1.4+ | Isolation Forest, DBSCAN, KMeans, PCA |
 | Grafos | NetworkX | 3.2+ | Análise de redes; exportação para Gephi |
 | Testes | Pytest | 8.0+ | Cobertura mínima 80% |
@@ -334,11 +335,9 @@ observatorio-parlamentar/
 │   │   └── network.py                # Onda 3 — grafo bipartido parlamentar↔fornecedor
 │   └── suppliers/
 │       └── __init__.py               # scaffold
-├── dashboard/                        # Streamlit (scaffold, Sprint 7)
+├── dashboard/                        # Streamlit — apresentação (Sprint 7; tema/gráficos Sprint 11)
 │   ├── pages/
-│   │   ├── .gitkeep
-│   │   ├── 01_visao_geral.py        # ┐
-│   │   ├── 02_parlamentar.py        # │
+│   │   ├── 02_parlamentar.py        # ┐
 │   │   ├── 03_partido.py            # │
 │   │   ├── 04_estado.py             # │ Sprint 7
 │   │   ├── 05_fornecedor.py         # │
@@ -346,10 +345,15 @@ observatorio-parlamentar/
 │   │   ├── 07_anomalias.py          # │
 │   │   ├── 08_ml.py                 # │
 │   │   ├── 09_qualidade.py          # │
-│   │   └── 10_metadados.py          # ┘
+│   │   ├── 10_metadados.py          # ┘
+│   │   └── 11_analises.py           # Sprint 10
 │   ├── __init__.py
 │   ├── Dockerfile
-│   └── app.py
+│   ├── app.py                        # Página 01 — Visão Geral (Sprint 7)
+│   ├── client.py                     # Cliente HTTP da API (Sprint 7)
+│   ├── ui.py                         # Componentes reutilizáveis (Sprint 7)
+│   ├── theme.py                      # Sprint 11
+│   └── charts.py                     # Sprint 11
 ├── config/                           # Configuração externa (zero hardcode)
 │   ├── sources.yaml
 │   ├── pipeline.yaml
@@ -705,10 +709,15 @@ GET  /agent/context
 | **7** | Dashboard | Streamlit funcional | ✅ Concluída |
 | **8** | Testes | Cobertura ≥ 80% | ✅ Concluída |
 | **9** | Deploy + Docs | GitHub Actions + README completo | ✅ Concluída |
- 
-> Roadmap reconciliado com `docs/governance/sprint_rules.md` — ambos os documentos
-> agora concordam em 12 sprints, sem fusão entre Testes (8) e
-> Deploy+Docs (9).
+| **10** | Fornecedor + Agregações + Fix ML | Endpoint fornecedor→parlamentar, landing institucional, fix crítico do fluxo de ML (ADR-035/036) | ✅ Concluída |
+| **11** | Identidade Visual e Experiência Analítica | Design system, gráficos tematizados (Altair+Plotly), rede interativa, AppTest (ADR-038/039) | ✅ Concluída |
+
+> Roadmap estendido além das 12 sprints originais de
+> `docs/governance/sprint_rules.md` (0A–9) — Sprints 10 e 11 nasceram
+> de necessidades identificadas em produção após o fechamento do MVP
+> formal. `sprint_rules.md` permanece como registro histórico do
+> escopo original; este documento (§13) é a fonte viva do roadmap
+> real.
  
 ---
  
