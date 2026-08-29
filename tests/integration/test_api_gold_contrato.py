@@ -65,8 +65,9 @@ def _seed(db: Path) -> None:
         con.execute(
             "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
-            " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " situacao_normalizada varchar, url_foto varchar, data date, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
         )
         con.execute(
             "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
@@ -110,13 +111,13 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # JOSE SILVA: troca de partido em 2023 → versão SCD2 fechada + vigente
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", None, "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", None, "2023-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
                 # MARIA SANTOS: senado, resolvida por nome (id 6)
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", None, "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
             ],
         )
         con.executemany(

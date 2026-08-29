@@ -193,6 +193,7 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
             "situacao_normalizada": df_bronze["situacao"].map(
                 lambda v: normalizar_situacao("camara", v)
             ),
+            "url_foto": df_bronze.get("url_foto"),
             "data": data,
             "run_id": df_bronze["run_id"],
             "pipeline_version": df_bronze["pipeline_version"],

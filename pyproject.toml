@@ -53,6 +53,19 @@ analytics = [
     "scikit-learn>=1.4.0",
     "networkx>=3.2.0",
 ]
+dev-dashboard = [
+    # dashboard + dev para testes de UI no container api-test.
+    # O CI (ci.yml) já usa .[dashboard,dev] diretamente; este extra
+    # existe para o stage dev do api/Dockerfile.
+    "streamlit>=1.35.0",
+    "openpyxl>=3.1.0",
+    "matplotlib>=3.8.0",
+    "networkx>=3.2.0",
+    "plotly>=5.22.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.8.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",

@@ -205,6 +205,7 @@ def _construir_deputado(
             "situacao": ul.get("situacao"),
             "condicaoEleitoral": ul.get("condicaoEleitoral"),
             "data": ul.get("data"),
+            "urlFoto": ul.get("urlFoto"),
             "metadata": meta.model_dump(),
         }
     )

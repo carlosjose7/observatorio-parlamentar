@@ -194,7 +194,7 @@ def botao_voltar() -> None:
     """
     st.markdown(
         '<div style="margin-bottom: 0.5rem;">'
-        '<a href="/app/" style="'
+        '<a href="/" style="'
         "font-family: 'IBM Plex Mono', monospace; "
         "font-size: 12px; "
         "text-transform: uppercase; "
