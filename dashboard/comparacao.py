@@ -50,9 +50,11 @@ def calcular_sobreposicao(
     (compatível com `janela_inicio`/`janela_fim` do endpoint agent).
 
     Retorna `SobreposicaoPeriodo` com a interseção e o percentual de cobertura.
-    O percentual é calculado como `meses_comum / maior_periodo` — mede quanto
-    do mandato MAIOR é coberto pela interseção. Se não houver sobreposição,
-    `inicio_comum`/`fim_comum` são None e `pct_cobertura` é 0.0.
+    O percentual é calculado como `meses_comum / menor_periodo` — mede quanto
+    do mandato MENOR é coberto pela interseção. Se o parlamentar com menos
+    dados não está inteiramente na interseção, a comparação é potencialmente
+    enviesada. Se não houver sobreposição, `inicio_comum`/`fim_comum` são
+    None e `pct_cobertura` é 0.0.
     """
     a = _parse_mes(janela_inicio_a)
     b_fim = _parse_mes(janela_fim_a)
@@ -75,11 +77,11 @@ def calcular_sobreposicao(
         # Total de meses de cada lado
         total_a = a_fim - a_inicio + 1
         total_b = b_fim_total - b_inicio + 1
-        maior_total = max(total_a, total_b)
+        menor_total = min(total_a, total_b)
 
-        if inicio_meses <= fim_meses and maior_total > 0:
+        if inicio_meses <= fim_meses and menor_total > 0:
             meses_comum = fim_meses - inicio_meses + 1
-            pct = meses_comum / maior_total
+            pct = meses_comum / menor_total
 
             # Converter de volta para YYYY-MM
             ini_ano, ini_mes = divmod(inicio_meses, 12)

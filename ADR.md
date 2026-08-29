@@ -2475,6 +2475,13 @@ Decisão:
 3. Disclaimer visual (`st.warning`) quando a interseção cobrir
    menos de 75% do menor dos dois períodos, informando que
    valores totais não são diretamente comparáveis.
+   Denominador = menor período: mede quanto do mandato MENOR
+   é coberto pela interseção. Se o parlamentar com menos dados
+   não está inteiramente na interseção, a comparação é enviesada.
+   Exemplo: A=60 meses, B=36 meses, interseção=36 meses →
+   36/36 = 100% (sem disclaimer, B está totalmente coberto).
+   Exemplo: A=60 meses, B=42 meses, interseção=30 meses →
+   30/42 ≈ 71% (disclaimer, 29% dos dados de B ficam de fora).
 4. Utilitário `calcular_sobreposicao()` em `dashboard/comparacao.py`
    como função pura (dataclass `SobreposicaoPeriodo`), testável
    independentemente do Streamlit.
