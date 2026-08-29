@@ -1188,3 +1188,104 @@ autenticação/alertas (backlog pós-v1, §1.5).
 
 **Branch:** `sprint/11-identidade-visual` (§14) → `develop` → `hml` →
 `main`
+
+---
+
+## Sprint 12 — Batalha Parlamentar, Contador de Visitas e Congresso (29/08/2026)
+
+**Objetivo:** feature de comparativo entre parlamentares (estilo
+"tudocelular compare"), contador global de visitas real via backend,
+melhoria da representação CSS do Congresso Nacional e botão de retorno
+à página principal em todas as abas do dashboard.
+
+### Onda 1 — Botão "Voltar ao Início"
+
+- ☑ Nova função `botao_voltar()` em `dashboard/ui.py` — link
+  `← Voltar ao Início` no topo de cada página (02–11).
+- ☑ Adicionado em todas as 10 páginas do dashboard (02–11).
+
+### Onda 2 — Contador global de visitas
+
+- ☑ **ADR-040** — Contador global via backend (DuckDB dedicado
+  `data/analytics/visitas.duckdb`), separado do Gold read-only
+  (ADR-026). Decisão: persistência real em vez de localStorage
+  puro para fidelidade de audiência.
+- ☑ Schema `api/schemas/contador.py` — `ContadorVisitas`
+  (`total_hoje`, `total_geral`).
+- ☑ Router `api/routers/contador.py` — `GET /contador/visitas`
+  com incremento idempotente (UPSERT por data).
+- ☑ Repo `api/repo.py` — `incrementar_visitas()` com DuckDB
+  dedicado, criação automática da tabela `analytics.visitas`.
+- ☑ Frontend `site/index.html` — fetch do endpoint com
+  deduplicação por sessão (`localStorage` flag diária) e
+  fallback silencioso se API indisponível.
+- ☑ Contador visível no footer da landing page.
+
+### Onda 3 — Melhoria CSS do Congresso Nacional
+
+- ☑ Adicionadas duas cúpulas laterais (Senado/Câmara) via
+  `.dome-side-left`/`.dome-side-right`.
+- ☑ 6 colunas verticais representando a arquitetura do prédio.
+- ☑ Bandeira com detalhe dourado (cores da bandeira brasileira).
+- ☑ Label atualizado para "CONGRESSO NACIONAL · BRASÍLIA, DF".
+
+### Onda 4 — Batalha Parlamentar (Página 12)
+
+- ☑ **ADR-041** — Comparabilidade de período: cálculo de
+  interseção temporal (`dashboard/comparacao.py`) com disclaimer
+  quando cobertura < 75%. Duas visões: "total do mandato" e
+  "médias contextualizadas".
+- ☑ Módulo `dashboard/comparacao.py` — `calcular_sobreposicao()`
+  com `SobreposicaoPeriodo` (dataclass).
+- ☑ `dashboard/pages/12_batalha.py` — página completa:
+  - Dois seletores de parlamentar lado a lado
+  - Perfil resumido de cada um
+  - Métricas comparativas (total gasto, transações, fornecedores, HHI)
+  - Radar de risco duplo sobreposto (5 scores, ADR-029/038)
+  - Risk Index comparativo (barras de progresso)
+  - Anomalias lado a lado
+  - Top 5 fornecedores lado a lado
+  - Disclaimer de período quando aplicável
+
+### Documentação
+
+- ☑ README.md atualizado: 11 páginas no dashboard, novo endpoint
+  `/contador/visitas`.
+- ☑ BACKLOG.md — Sprint 12 documentada.
+
+### Itens registrados (fora de escopo desta sprint)
+
+- ☐ **Foto do parlamentar** — o schema `AgentParlamentar` não
+  retorna `url_foto`. Requer alteração de pipeline (puxar
+  `urlFoto` da API da Câmara na Bronze), não é escopo de dashboard.
+  Registrado como backlog pós-v1.
+
+### Débito técnico identificado (pré-existente, não-Sprint 12)
+
+- 🔴 **`_tratar_erro_gold` NameError em `api/repo.py:106`** —
+  Decorator referenciado antes da definição (linha 106 vs 136).
+  Em produção isso significa que exceções do Gold explodem em
+  `NameError` em vez de serem capturadas pelo handler. Pode causar
+  500s silenciosos em endpoints que usam Gold. **Prioridade: alta.**
+  Correção: mover a definição de `_tratar_erro_gold` para antes
+  do primeiro uso, ou reorganizar a ordem das funções no módulo.
+
+- 🟡 **`streamlit` ausente em `.[dev]`** — testes de dashboard
+  (`test_ui.py`, `test_apptest.py`) não rodam no container `api-test`
+  porque `streamlit` é dependência de `.[dashboard]`, não de `.[dev]`.
+  Opções: (a) criar stage `dev-dashboard` no `dashboard/Dockerfile`,
+  ou (b) aceitar que testes de dashboard rodam em container separado.
+  **Prioridade: média.**
+
+### Critérios de aceite
+
+- ☑ Batalha: dois parlamentares comparados lado a lado com radar
+  duplo, disclaimer de período quando aplicável
+- ☑ Botão voltar presente em todas as páginas 02–11
+- ☑ Congresso mais reconhecível com duas cúpulas e colunas
+- ☑ Contador de visitas global, persistido em DuckDB dedicado,
+  com deduplicação por sessão no frontend
+- ☑ README atualizado
+- ☑ Syntax check limpo (todos os arquivos parseiam sem erro)
+
+**Branch:** `sprint/12-batalha-contador` → `develop` → `hml` → `main`

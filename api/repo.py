@@ -77,6 +77,7 @@ from api.schemas.rede import (
     ListaComunidades,
     RedeFornecedor,
 )
+from api.schemas.contador import ContadorVisitas
 from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 
@@ -111,6 +112,52 @@ def _tratar_erro_gold(funcao):
             ) from exc
 
     return _invocar
+
+
+# ---------------------------------------------------------------------------
+# Contador de visitas — DuckDB dedicado (separado do Gold read-only, ADR-026)
+# ---------------------------------------------------------------------------
+
+_CAMINHO_VISITAS = REPO_ROOT / "data" / "analytics" / "visitas.duckdb"
+
+
+def _conexao_visitas() -> duckdb.DuckDBPyConnection:
+    """Abre (ou cria) o DuckDB dedicado ao contador de visitas."""
+    _CAMINHO_VISITAS.parent.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(_CAMINHO_VISITAS))
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS visitas ("
+        "  data DATE PRIMARY KEY,"
+        "  total BIGINT NOT NULL DEFAULT 0"
+        ")"
+    )
+    return con
+
+
+@_tratar_erro_gold
+def incrementar_visitas() -> ContadorVisitas:
+    """Incrementa o contador do dia e retorna os totais.
+
+    Usa UPSERT (INSERT OR REPLACE) para garantir idempotência.
+    """
+    from datetime import date
+
+    hoje = date.today()
+    with _conexao_visitas() as con:
+        con.execute(
+            "INSERT INTO visitas (data, total) VALUES (?, 1) "
+            "ON CONFLICT (data) DO UPDATE SET total = visitas.total + 1",
+            [hoje],
+        )
+        linha_hoje = con.execute(
+            "SELECT total FROM visitas WHERE data = ?", [hoje]
+        ).fetchone()
+        total_geral = con.execute("SELECT COALESCE(SUM(total), 0) FROM visitas").fetchone()[0]
+
+    return ContadorVisitas(
+        total_hoje=linha_hoje[0] if linha_hoje else 0,
+        total_geral=total_geral,
+    )
 
 
 def caminho_do_gold() -> Path:

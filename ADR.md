@@ -2414,3 +2414,85 @@ Consequências:
   protocolo Open Graph).
 
 ---
+
+ADR-040
+Título: Contador global de visitas via backend
+
+Status:
+Aceito
+
+Contexto:
+A landing page do Observatório Parlamentar precisa de um contador de
+visitas para medir audiência. As opções eram: (a) localStorage puro
+(sem persistência real, contagem por dispositivo), (b) counter
+global via backend com persistência em banco dedicado.
+
+Decisão:
+1. Criar endpoint `GET /contador/visitas` no FastAPI que incrementa
+   e retorna contagem de visitas por dia.
+2. Persistir em DuckDB dedicado (`data/analytics/visitas.duckdb`),
+   separado do Gold read-only (ADR-026) — o endpoint de visitas
+   pode escrever, o Gold não.
+3. Tabela `analytics.visitas` com schema `(data DATE PRIMARY KEY,
+   total BIGINT)` — granularidade diária permite série histórica
+   futura sem custo extra.
+4. Frontend deduplica por sessão usando `localStorage` com chave
+   diária (`op_visit_counted_YYYY-MM-DD`) — primeira visita do
+   dia incrementa, reloads subsequentes buscam sem incrementar.
+5. Fallback silencioso: se a API estiver indisponível, o footer
+   simplesmente não exibe o contador (nunca quebra a página).
+
+Consequências:
+- Contagem real de audiência (não por dispositivo/dispositivo).
+- Depende da API estar disponível na landing (já depende para o
+  Panorama dinâmico, ADR-039).
+- DuckDB dedicado para escrita evita conflito com o Gold read-only.
+- Granularidade diária é suficiente para métricas de audiência;
+  se necessária granularidade por visita, schema pode ser expandido
+  com coluna `timestamp`.
+
+---
+
+ADR-041
+Título: Comparabilidade de período na Batalha Parlamentar
+
+Status:
+Aceito
+
+Contexto:
+A feature de Batalha Parlamentar (Página 12) compara dois
+parlamentares lado a lado. Parlamentares com mandatos de duração
+muito diferente distorcem métricas absolutas — um com 8 anos de
+dados acumula muito mais gasto que um com 2 anos, mesmo com
+comportamento similar.
+
+Decisão:
+1. Calcular a interseção temporal entre os períodos de dados de
+   cada parlamentar (`janela_inicio`/`janela_fim` do endpoint
+   `/agent/parlamentar/{id}`).
+2. Exibir duas visões: "Total do mandato" (bruto) e contexto
+   das métricas (sempre coerente com o período disponível).
+3. Disclaimer visual (`st.warning`) quando a interseção cobrir
+   menos de 75% do menor dos dois períodos, informando que
+   valores totais não são diretamente comparáveis.
+   Denominador = menor período: mede quanto do mandato MENOR
+   é coberto pela interseção. Se o parlamentar com menos dados
+   não está inteiramente na interseção, a comparação é enviesada.
+   Exemplo: A=60 meses, B=36 meses, interseção=36 meses →
+   36/36 = 100% (sem disclaimer, B está totalmente coberto).
+   Exemplo: A=60 meses, B=42 meses, interseção=30 meses →
+   30/42 ≈ 71% (disclaimer, 29% dos dados de B ficam de fora).
+4. Utilitário `calcular_sobreposicao()` em `dashboard/comparacao.py`
+   como função pura (dataclass `SobreposicaoPeriodo`), testável
+   independentemente do Streamlit.
+5. Sem alteração de API — os campos `janela_inicio`/`janela_fim`
+   já existem no schema `AgentParlamentar` (ADR-032).
+
+Consequências:
+- Comparação justa mesmo com mandatos de duração diferente.
+- Disclaimer transparente educando o usuário sobre limitações.
+- Função pura `calcular_sobreposicao()` é reutilizável para
+  futuras análises comparativas.
+- Sem nova dependência de API ou dados — usa campos existentes.
+
+---

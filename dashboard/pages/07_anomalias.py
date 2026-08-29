@@ -14,6 +14,7 @@ from dashboard.charts import barras_vert
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
+    botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
     tabela_exportavel,
@@ -21,6 +22,7 @@ from dashboard.ui import (
 
 st.set_page_config(page_title="Anomalias", page_icon="🚨", layout="wide")
 aplicar_identidade()
+botao_voltar()
 st.title("🚨 Anomalias de Despesa")
 
 client = ApiClient()

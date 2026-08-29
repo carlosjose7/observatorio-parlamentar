@@ -13,10 +13,16 @@ import streamlit as st
 
 from dashboard.charts import barras_ranking, serie_mensal
 from dashboard.client import ApiClient
-from dashboard.ui import aplicar_identidade, carregar_com_feedback, formatar_moeda
+from dashboard.ui import (
+    aplicar_identidade,
+    botao_voltar,
+    carregar_com_feedback,
+    formatar_moeda,
+)
 
 st.set_page_config(page_title="Análises", page_icon="📊", layout="wide")
 aplicar_identidade()
+botao_voltar()
 st.title("📊 Análises")
 st.caption("Gastos parlamentares agregados na camada Gold — Câmara e Senado.")
 

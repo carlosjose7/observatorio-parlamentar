@@ -186,6 +186,26 @@ def filtro_periodo(df: pd.DataFrame, *, key_prefix: str) -> pd.DataFrame:
     return df[df["ano"].isin(sel_anos) & df["mes"].isin(sel_meses)]
 
 
+def botao_voltar() -> None:
+    """Link '← Voltar ao Início' no topo da página.
+
+    Chamado logo após `aplicar_identidade()` nas páginas 02–11 para
+    permitir retorno rápido à página principal do dashboard.
+    """
+    st.markdown(
+        '<div style="margin-bottom: 0.5rem;">'
+        '<a href="/app/" style="'
+        "font-family: 'IBM Plex Mono', monospace; "
+        "font-size: 12px; "
+        "text-transform: uppercase; "
+        "letter-spacing: 0.06em; "
+        "color: #5C6B7A; "
+        "text-decoration: none; "
+        '">← Voltar ao Início</a></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def grafico_mensal(df: pd.DataFrame, *, coluna_valor: str = "valor_liquido") -> None:
     """Gráfico de barras do total por mês (AAAA-MM), em ordem cronológica."""
     if df.empty:

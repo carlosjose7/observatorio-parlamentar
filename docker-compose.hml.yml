@@ -44,8 +44,30 @@ services:
     volumes:
       # :ro — mesmo do PRD: a API nunca escreve no Gold (ADR-026)
       - ./data.hml:/app/data:ro
+      # visitas.duckdb precisa de escrita — montagem separada
+      - ./data.hml/analytics:/app/data/analytics
     ports:
       - "127.0.0.1:18000:8000"
+
+  api-test:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      target: dev
+    volumes:
+      - ./data.hml:/app/data:ro
+      - ./tests:/app/tests:ro
+    environment:
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+    command: ["pytest", "tests/", "-v", "--tb=short"]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    profiles:
+      - test
 
   airflow-webserver:
     env_file: ${PIPELINE_ENV_FILE:-.env}
