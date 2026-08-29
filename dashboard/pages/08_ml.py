@@ -11,6 +11,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from dashboard.charts import radar_risco
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
@@ -70,10 +71,7 @@ def _selecionar_parlamentar() -> dict | None:
 
 
 def _radar(risco: dict) -> None:
-    """Gráfico de radar com os 5 scores de risco (ADR-029)."""
-    import matplotlib.pyplot as plt
-    import numpy as np
-
+    """Gráfico de radar com os 5 scores de risco (ADR-029/038)."""
     dimensoes = [
         "supplier_concentration_score",
         "political_exposure_score",
@@ -81,19 +79,8 @@ def _radar(risco: dict) -> None:
         "expense_anomaly_score",
         "network_influence_score",
     ]
-    valores = [risco.get(d) for d in dimensoes]
-    angulos = np.linspace(0, 2 * np.pi, len(dimensoes), endpoint=False).tolist()
-    valores += valores[:1]
-    angulos += angulos[:1]
-
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    ax.plot(angulos, valores, color="#e74c3c", linewidth=2)
-    ax.fill(angulos, valores, color="#e74c3c", alpha=0.25)
-    ax.set_xticks(angulos[:-1])
-    ax.set_xticklabels([d.replace("_score", "") for d in dimensoes], fontsize=8)
-    ax.set_ylim(0, 1)
-    st.pyplot(fig)
-    plt.close(fig)
+    scores = {d: risco.get(d, 0) for d in dimensoes}
+    radar_risco(scores)
 
 
 def _render(id_parlamentar: int) -> None:
