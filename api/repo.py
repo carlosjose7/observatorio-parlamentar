@@ -83,6 +83,37 @@ from pipeline.normalize import normalizar_nome_proprio
 
 logger = structlog.get_logger()
 
+
+class GoldIndisponivel(Exception):
+    """DuckDB da camada Gold inacessível (arquivo ausente ou falha de leitura)."""
+
+
+def _tratar_erro_gold(funcao):
+    """Converte falhas de driver/esquema do DuckDB em `GoldIndisponivel` (HTTP 503).
+
+    Um schema do Gold desatualizado (tabela ausente) ou um erro de
+    concorrência de conexão não vazam como 500 ao cliente — degradam como
+    "camada Gold indisponível", consistente com o ADR de fronteira de
+    leitura: a API depende do Gold estar construído.
+    """
+
+    @functools.wraps(funcao)
+    def _invocar(*args, **kwargs):
+        try:
+            return funcao(*args, **kwargs)
+        except GoldIndisponivel:
+            raise
+        except (duckdb.Error, OSError) as exc:
+            logger.error(
+                "gold_indisponivel", funcao=funcao.__name__, erro=str(exc)
+            )
+            raise GoldIndisponivel(
+                f"Falha ao consultar a camada Gold: {exc}"
+            ) from exc
+
+    return _invocar
+
+
 # ---------------------------------------------------------------------------
 # Contador de visitas — DuckDB dedicado (separado do Gold read-only, ADR-026)
 # ---------------------------------------------------------------------------
@@ -127,36 +158,6 @@ def incrementar_visitas() -> ContadorVisitas:
         total_hoje=linha_hoje[0] if linha_hoje else 0,
         total_geral=total_geral,
     )
-
-
-class GoldIndisponivel(Exception):
-    """DuckDB da camada Gold inacessível (arquivo ausente ou falha de leitura)."""
-
-
-def _tratar_erro_gold(funcao):
-    """Converte falhas de driver/esquema do DuckDB em `GoldIndisponivel` (HTTP 503).
-
-    Um schema do Gold desatualizado (tabela ausente) ou um erro de
-    concorrência de conexão não vazam como 500 ao cliente — degradam como
-    "camada Gold indisponível", consistente com o ADR de fronteira de
-    leitura: a API depende do Gold estar construído.
-    """
-
-    @functools.wraps(funcao)
-    def _invocar(*args, **kwargs):
-        try:
-            return funcao(*args, **kwargs)
-        except GoldIndisponivel:
-            raise
-        except (duckdb.Error, OSError) as exc:
-            logger.error(
-                "gold_indisponivel", funcao=funcao.__name__, erro=str(exc)
-            )
-            raise GoldIndisponivel(
-                f"Falha ao consultar a camada Gold: {exc}"
-            ) from exc
-
-    return _invocar
 
 
 def caminho_do_gold() -> Path:
