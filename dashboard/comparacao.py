@@ -50,8 +50,9 @@ def calcular_sobreposicao(
     (compatível com `janela_inicio`/`janela_fim` do endpoint agent).
 
     Retorna `SobreposicaoPeriodo` com a interseção e o percentual de cobertura.
-    Se não houver sobreposição, `inicio_comum`/`fim_comum` são None e
-    `pct_cobertura` é 0.0.
+    O percentual é calculado como `meses_comum / maior_periodo` — mede quanto
+    do mandato MAIOR é coberto pela interseção. Se não houver sobreposição,
+    `inicio_comum`/`fim_comum` são None e `pct_cobertura` é 0.0.
     """
     a = _parse_mes(janela_inicio_a)
     b_fim = _parse_mes(janela_fim_a)
@@ -60,26 +61,37 @@ def calcular_sobreposicao(
 
     # Se ambos os lados têm dados, calcula interseção
     if a and b_fim and b and d:
-        # Início = max dos inícios
-        inicio = (max(a[0], b[0]), max(a[1], b[1]))
-        # Fim = min dos fins
-        fim = (min(b_fim[0], d[0]), min(b_fim[1], d[1]))
+        # Converter para meses totais para comparação cronológica correta
+        a_inicio = a[0] * 12 + a[1]
+        a_fim = b_fim[0] * 12 + b_fim[1]
+        b_inicio = b[0] * 12 + b[1]
+        b_fim_total = d[0] * 12 + d[1]
+
+        # Início = max dos inícios (em meses)
+        inicio_meses = max(a_inicio, b_inicio)
+        # Fim = min dos fins (em meses)
+        fim_meses = min(a_fim, b_fim_total)
 
         # Total de meses de cada lado
-        total_a = (b_fim[0] - a[0]) * 12 + (b_fim[1] - a[1]) + 1
-        total_b = (d[0] - b[0]) * 12 + (d[1] - b[1]) + 1
-        menor_total = min(total_a, total_b)
+        total_a = a_fim - a_inicio + 1
+        total_b = b_fim_total - b_inicio + 1
+        maior_total = max(total_a, total_b)
 
-        if inicio <= fim and menor_total > 0:
-            meses_comum = (fim[0] - inicio[0]) * 12 + (fim[1] - inicio[1]) + 1
-            pct = meses_comum / menor_total
+        if inicio_meses <= fim_meses and maior_total > 0:
+            meses_comum = fim_meses - inicio_meses + 1
+            pct = meses_comum / maior_total
+
+            # Converter de volta para YYYY-MM
+            ini_ano, ini_mes = divmod(inicio_meses, 12)
+            fim_ano, fim_mes = divmod(fim_meses, 12)
+
             return SobreposicaoPeriodo(
                 inicio_a=_meses_para_str(*a),
                 fim_a=_meses_para_str(*b_fim),
                 inicio_b=_meses_para_str(*b),
                 fim_b=_meses_para_str(*d),
-                inicio_comum=_meses_para_str(*inicio),
-                fim_comum=_meses_para_str(*fim),
+                inicio_comum=f"{ini_ano:04d}-{ini_mes:02d}",
+                fim_comum=f"{fim_ano:04d}-{fim_mes:02d}",
                 pct_cobertura=min(1.0, pct),
             )
 
