@@ -8,6 +8,30 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 11 — Identidade Visual + Experiência Analítica (29/08/2026)
+
+### Adicionado
+- **Landing dinâmica** (`site/index.html`): fetch de dados reais via
+  `/api/agregacoes` (panorama com totais de gasto, parlamentares e
+  fornecedores), com fallback estático quando a API está indisponível.
+  ADR-039 documenta a decisão.
+- **Tema do dashboard** (`.streamlit/config.toml` + `aplicar_identidade()`):
+  paleta navy/verde/dourado compartilhada com a landing, tipografia
+  DM Sans/IBM Plex Mono. ADR-038.
+- **Página "Análises"** (`11_analises.py`): quatro gráficos Altair
+  (gastos por UF, por partido, série mensal e top parlamentares).
+- **Páginas 06-08 reescritas**: rede, anomalias e risco com a nova
+  identidade visual e componentes Altair.
+- **AppTest** para validação automatizada do dashboard (Streamlit
+  `testing.AppTest`).
+
+### Corrigido
+- **`deploy.yml`**: backup/restore de `data/silver` e `data/gold` antes
+  do `git reset --hard` — impede perda do DuckDB e dados MinIO durante
+  o deploy.
+
+---
+
 ## Infraestrutura — Deploy automático via GitHub Actions (27/08/2026)
 
 ### Adicionado

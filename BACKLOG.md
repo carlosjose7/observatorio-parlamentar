@@ -1108,7 +1108,7 @@ tabelas analíticas de ML em produção desde a Sprint 9.
 
 ---
 
-## Sprint 11 — Identidade Visual e Experiência Analítica — EM ANDAMENTO
+## Sprint 11 — Identidade Visual e Experiência Analítica — FECHADA
 
 **Objetivo:** unificar a identidade visual do dashboard com a landing
 (paleta navy/verde/dourado), eliminar gráficos default (`st.bar_chart`/
@@ -1164,6 +1164,11 @@ sustenta os gráficos.
   (02/05/06/08), 15 testes verdes (`tests/dashboard/test_apptest.py`).
 - ☑ **Governança de fechamento** — BACKLOG, CHANGELOG e
   PROJECT_CONTEXT §4/§6/§13 sincronizados.
+- ☑ **`deploy.yml`** — backup/restore de `data/silver` e `data/gold`
+  antes do `git reset --hard` durante o deploy.
+- ☑ **Fix airflow-scheduler** — extra `analytics` incluído no Dockerfile
+  e volume `./analytics` montado no compose; corrige ausência de
+  `scikit-learn`/`networkx` que impedia a execução das ondas de ML.
 
 ### Fora de escopo
 
