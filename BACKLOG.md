@@ -1262,13 +1262,14 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
 
 ### Débito técnico identificado (pré-existente, não-Sprint 12)
 
-- 🔴 **`_tratar_erro_gold` NameError em `api/repo.py:106`** —
+- ✅ **`_tratar_erro_gold` NameError em `api/repo.py:106`** —
   Decorator referenciado antes da definição (linha 106 vs 136).
   Em produção isso significa que exceções do Gold explodem em
   `NameError` em vez de serem capturadas pelo handler. Pode causar
   500s silenciosos em endpoints que usam Gold. **Prioridade: alta.**
   Correção: mover a definição de `_tratar_erro_gold` para antes
   do primeiro uso, ou reorganizar a ordem das funções no módulo.
+  **Corrigido na Sprint 12** (commit `0f06e7a`).
 
 - 🟡 **`streamlit` ausente em `.[dev]`** — testes de dashboard
   (`test_ui.py`, `test_apptest.py`) não rodam no container `api-test`
