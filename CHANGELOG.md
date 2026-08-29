@@ -8,30 +8,6 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 11 — Identidade Visual + Experiência Analítica (29/08/2026)
-
-### Adicionado
-- **Landing dinâmica** (`site/index.html`): fetch de dados reais via
-  `/api/agregacoes` (panorama com totais de gasto, parlamentares e
-  fornecedores), com fallback estático quando a API está indisponível.
-  ADR-039 documenta a decisão.
-- **Tema do dashboard** (`.streamlit/config.toml` + `aplicar_identidade()`):
-  paleta navy/verde/dourado compartilhada com a landing, tipografia
-  DM Sans/IBM Plex Mono. ADR-038.
-- **Página "Análises"** (`11_analises.py`): quatro gráficos Altair
-  (gastos por UF, por partido, série mensal e top parlamentares).
-- **Páginas 06-08 reescritas**: rede, anomalias e risco com a nova
-  identidade visual e componentes Altair.
-- **AppTest** para validação automatizada do dashboard (Streamlit
-  `testing.AppTest`).
-
-### Corrigido
-- **`deploy.yml`**: backup/restore de `data/silver` e `data/gold` antes
-  do `git reset --hard` — impede perda do DuckDB e dados MinIO durante
-  o deploy.
-
----
-
 ## Infraestrutura — Deploy automático via GitHub Actions (27/08/2026)
 
 ### Adicionado
@@ -67,7 +43,7 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 11 — Identidade Visual e Experiência Analítica (EM ANDAMENTO)
+## Sprint 11 — Identidade Visual e Experiência Analítica (29/08/2026) — FECHADA
 
 ### Adicionado
 - **ADR-038**: padronização de motor de gráficos — Altair (padrão
@@ -101,6 +77,18 @@ Histórico das alterações, organizado por sprint (ver
   `/api/agregacoes/por-uf` e `/por-partido` em runtime com fallback
   estático e timeout 3s (ADR-039 — emenda ao ADR-036). Se a API
   estiver indisponível, o HTML estático permanece visível.
+
+### Corrigido
+- **`deploy.yml`**: backup/restore de `data/silver` e `data/gold` antes
+  do `git reset --hard` — impede perda do DuckDB e dados MinIO durante
+  o deploy.
+- **`pipeline/Dockerfile` + `docker-compose.yml`**: extra `analytics`
+  incluído no build do `airflow-scheduler` (`.[pipeline,analytics]`) e
+  volume `./analytics` montado — corrige ausência de `scikit-learn`/
+  `networkx` que impedia a execução das ondas de ML (ondas 2–4),
+  resultando em tabelas Gold (`expense_outliers`, `network_*`,
+  `risk_scores`, `politician_similarity`) ausentes e HTTP 503 nos
+  endpoints de rede, risco e agent/context.
 
 ---
 
