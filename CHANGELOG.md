@@ -45,6 +45,65 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 13 — Hardening CI, urlFoto e Fotos do Dashboard (30/08/2026) — FECHADA
+
+### Adicionado
+- **Gitleaks v3.0.0**: substitui v2 em `ci.yml` (SHA-pinned).
+- **Dependabot semanal** (`.github/dependabot.yml`): monitoramento automático
+  de Actions do GitHub.
+- **Actions pinadas por SHA** em `ci.yml`: `checkout@v4.2.2`,
+  `setup-python@v5.6.0`, `gitleaks-action@v3.0.0`.
+- **Extra `dev-dashboard`** em `pyproject.toml` para testes de UI local.
+- **Pipeline urlFoto** Bronze→Silver→Gold→API:
+  - Bronze: `CamaraBronzeDeputado.url_foto` + extração em `_construir_deputado()`.
+  - Silver: `url_foto` em `COLUNAS_SILVER_PARLAMENTAR` + DDL + transform.
+  - Gold: `url_foto` em `dim_parlamentar.sql` (todas as CTEs Câmara).
+  - API: `url_foto` em `PerfilParlamentar`, `ParlamentarResumo`, `AgentParlamentar`.
+  - Resultado: 513/513 Câmara com URL, 81/81 Senado NULL (API não fornece).
+- **`avatar_parlamentar()`** em `ui.py`: componente reutilizável de foto
+  circular com fallback SVG silhouette cinza (`_SILHOUETTE_URI`).
+- **CSS `.op-avatar` / `.op-avatar-sm`** em `theme.py`: borda circular 2px
+  sólida, border-radius 50%.
+- **Foto do parlamentar** nas páginas 02 (perfil), 08 (ML/risco), 12 (batalha).
+
+### Corrigido
+- **"Voltar ao Início"**: `href="/app/"` → `href="/"` em `botao_voltar()` (`ui.py`).
+- **`Field` import** faltando em `api/schemas/agent.py`.
+- **Senado transform**: `url_foto=None` em `construir_silver_parlamentar()` (prevenia `KeyError` no Silver).
+- **4 erros ruff pre-existing**: I001 em `api/repo.py`, F401 em `12_batalha.py`, F401 em `test_comparacao.py`.
+
+### Nota
+- `config/pipeline.yaml`: `validacao.habilitado` temporariamente `true`
+  (histórico Bronze completo causa OOM; a ser revertido com otimização).
+
+---
+
+## Sprint 12 — Batalha Parlamentar, Contador de Visitas e Congresso (29/08/2026) — FECHADA
+
+### Adicionado
+- **`botao_voltar()`** em `ui.py`: botão reutilizável "Voltar ao Início".
+- **ADR-040**: contador global de visitas via backend DuckDB dedicado
+  (`data/visitas.duckdb`), com deduplicação por sessão.
+- **`api/schemas/contador.py`**, **`api/routers/contador.py`**,
+  **`api/repo.py::incrementar_visitas()`**: endpoint `GET /api/contador/visitas`.
+- **Fetch do contador** no frontend `site/index.html` com deduplicação
+  por sessão (cache 24h no navegador).
+- **CSS Congresso Nacional**: duplas cúpulas, 6 colunas, bandeira
+  desenrolada com estrelas via CSS puro.
+- **ADR-041**: comparabilidade de período — `SobreposicaoPeriodo` em
+  `dashboard/comparacao.py` com cálculo de meses de sobreposição.
+- **Página 12 — Batalha Parlamentar** (`dashboard/pages/12_batalha.py`):
+  comparativo lado a lado de dois parlamentares.
+- **Extra `dev-dashboard`** em `pyproject.toml`.
+
+### Corrigido
+- **`_tratar_erro_gold`**: NameError em `api/repo.py:106` — decorator
+  referenciado antes da definição da função.
+- **Cálculo de sobreposição** (commit `130b996`): denominador revertido
+  para "menor período" conforme ADR-041.
+
+---
+
 ## Sprint 11 — Identidade Visual e Experiência Analítica (29/08/2026) — FECHADA
 
 ### Adicionado
