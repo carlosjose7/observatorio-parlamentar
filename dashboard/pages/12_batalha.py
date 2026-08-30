@@ -13,7 +13,6 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from dashboard.charts import radar_risco
 from dashboard.client import ApiClient
 from dashboard.comparacao import calcular_sobreposicao
 from dashboard.ui import (
@@ -22,7 +21,6 @@ from dashboard.ui import (
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
-    tabela_exportavel,
 )
 
 st.set_page_config(page_title="Batalha Parlamentar", page_icon="⚔️", layout="wide")
