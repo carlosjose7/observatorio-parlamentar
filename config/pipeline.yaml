@@ -58,6 +58,7 @@ pipeline:
   # Modo de validação da carga inicial — NUNCA ativo em produção.
   # Quando habilitado: janela histórica truncada para limite_periodos e
   # watermark em namespace isolado (ver pipeline/config.py ValidacaoSettings).
+  # TEMP: habilitado para Gold inicial (Bronze estourou memória com histórico completo).
   validacao:
-    habilitado: false
+    habilitado: true
     limite_periodos: 2
