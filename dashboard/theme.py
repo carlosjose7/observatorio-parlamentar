@@ -148,6 +148,26 @@ hr { border: none; border-top: 1px solid #D9DEE3; }
     border-color: #145C3E;
 }
 
+/* --- Avatar parlamentar --- */
+.op-avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #D9DEE3;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+.op-avatar-sm {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #D9DEE3;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
 /* --- Sidebar --- */
 section[data-testid="stSidebar"] {
     background-color: #0B1F33;
