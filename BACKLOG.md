@@ -1192,6 +1192,76 @@ autenticação/alertas (backlog pós-v1, §1.5).
 
 ---
 
+## Sprint 13 — Hardening CI, urlFoto e Fotos do Dashboard (30/08/2026)
+
+**Objetivo:** fortalecimento do CI/CD, conclusão do pipeline de urlFoto
+(Bronze→Silver→Gold→API), exibição de fotos dos parlamentares no dashboard
+e correção de bugs de UX acumulados desde a Sprint 11.
+
+### Onda 1 — Hardening CI/CD
+
+- ☑ **Gitleaks v3.0.0** (substitui v2) — SHA-pinned em `ci.yml`.
+- ☑ **Dependabot semanal** (`.github/dependabot.yml`) — monitoramento
+  automático de Actions do GitHub.
+- ☑ **Actions pinadas por SHA** em `ci.yml`: `checkout@v4.2.2`,
+  `setup-python@v5.6.0`, `gitleaks-action@v3.0.0`.
+
+### Onda 2 — Pipeline urlFoto
+
+- ☑ **Bronze**: `CamaraBronzeDeputado.url_foto` + extração em
+  `_construir_deputado()` em `pipeline/camara/extract.py`.
+- ☑ **Silver**: `url_foto` adicionada a `COLUNAS_SILVER_PARLAMENTAR`
+  + DDL em `schema.sql` + transform em `pipeline/silver.py`.
+- ☑ **Gold**: `url_foto` em `dim_parlamentar.sql` (todas as CTEs Câmara).
+- ☑ **API**: `url_foto` em `PerfilParlamentar`, `ParlamentarResumo`,
+  `AgentParlamentar` (`api/schemas/`).
+- ☑ **Resultado**: 513/513 Câmara com URL, 81/81 Senado NULL
+  (API Senado não fornece url_foto — comportamento esperado).
+- ☑ **Fix Senado transform**: `url_foto=None` em
+  `construir_silver_parlamentar()` para prevenir `KeyError` no Silver.
+
+### Onda 3 — Correções de UX
+
+- ☑ **"Voltar ao Início"**: `href="/app/"` → `href="/"` em
+  `botao_voltar()` em `ui.py`.
+- ☑ **`Field` import** faltando em `api/schemas/agent.py`.
+
+### Onda 4 — Fotos no Dashboard
+
+- ☑ **`avatar_parlamentar()`** em `ui.py`: componente reutilizável de
+  foto circular com fallback SVG silhouette cinza (`_SILHOUETTE_URI`).
+- ☑ **CSS `.op-avatar` / `.op-avatar-sm`** em `theme.py`: borda circular
+  2px sólida, border-radius 50%.
+- ☑ **Foto do parlamentar** nas páginas 02 (perfil), 08 (ML/risco),
+  12 (batalha).
+
+### Correções de código (pré-existente)
+
+- ☑ **I001** em `api/repo.py` — import ordering corrigido.
+- ☑ **F401** em `12_batalha.py` — imports não utilizados removidos.
+- ☑ **F401** em `test_comparacao.py` — import não utilizado removido.
+
+### Documentação
+
+- ☑ Extra `dev-dashboard` em `pyproject.toml` para testes de UI local.
+- ☑ `config/pipeline.yaml`: `validacao.habilitado` temporariamente
+  `true` (histórico Bronze completo causa OOM; a ser revertido com
+  otimização de memória).
+
+### Critérios de aceite
+
+- ☑ CI pinado por SHA, Gitleaks v3, Dependabot semanal
+- ☑ Pipeline urlFoto completo: Bronze→Silver→Gold→API
+- ☑ Fotos visíveis nas páginas 02, 08 e 12
+- ☑ Botão "Voltar ao Início" funciona em todas as páginas
+- ☑ 145 testes passando (82 API + 63 dashboard)
+- ☑ Branch: `sprint/13-hardening` + `feature/sprint-13-fotos` →
+  `develop` → `hml` → `main`
+- ☑ Commits: `51d39a5`, `f036660`, `989affa`, `a9f810c`, `2755a4d`,
+  `6a5083b`
+
+---
+
 ## Sprint 12 — Batalha Parlamentar, Contador de Visitas e Congresso (29/08/2026)
 
 **Objetivo:** feature de comparativo entre parlamentares (estilo

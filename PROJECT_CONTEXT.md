@@ -711,6 +711,8 @@ GET  /agent/context
 | **9** | Deploy + Docs | GitHub Actions + README completo | ✅ Concluída |
 | **10** | Fornecedor + Agregações + Fix ML | Endpoint fornecedor→parlamentar, landing institucional, fix crítico do fluxo de ML (ADR-035/036) | ✅ Concluída |
 | **11** | Identidade Visual e Experiência Analítica | Design system, gráficos tematizados (Altair+Plotly), rede interativa, AppTest (ADR-038/039) | ✅ Concluída |
+| **12** | Batalha Parlamentar, Contador de Visitas e Congresso | Página comparativa, contador global DuckDB, CSS Congresso (ADR-040/041) | ✅ Concluída |
+| **13** | Hardening CI, urlFoto e Fotos do Dashboard | Gitleaks/Dependabot/SHA pins, pipeline urlFoto Bronze→API, avatar no dashboard | ✅ Concluída |
 
 > Roadmap estendido além das 12 sprints originais de
 > `docs/governance/sprint_rules.md` (0A–9) — Sprints 10 e 11 nasceram
@@ -812,23 +814,15 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 3.1 — **Sprint 9 FECHADA (DONE/QA APPROVED).** ADR-034 aceito
-(execução diária via systemd timer na VPS Oracle; GitHub Actions restrito a
-CI). Auditoria direta em `61c4c66` + fixes até `9ad47c2` confirma: **Gates
-1–5 concluídos e comprovados com evidência externa** (`ci.yml` real, Ruff
-estrito 374 passed/93,53% cobertura — medição limpa, substitui leituras
-anteriores de 93,59%/87% afetadas por cache de `.coverage` — README/guias
-sem pendências, TLS ao vivo verificado por fetch externo em
-`https://observatorio-parlamentar.com.br`). **Gate 2 fechado em 25/08** —
-timer `enabled`/`active (waiting)`, execução via systemd `SUCCESS` (run_id
-`4e52260e`, 1676s), `pipeline_runs` populado via MinIO/S3
-(`GET /api/pipeline/status` → `{"total":3}`; `GET /api/agent/context` →
-`pipeline.run_id` preenchido com dados novos na Gold). Causas raiz
-resolvidas: SELinux (`chcon -t bin_t`), permissões de dados (`chmod -R
-a+rwx data/`), fix S3 (httpfs/ADR-019), robustez CGU vazia, ambiente HML
-portado. Sprints 1-9 fechadas. ADRs 001-034.*
+*Versão atual: 3.2 — **Sprint 13 FECHADA.** urlFoto pipeline completo
+(Bronze→Silver→Gold→API), hardening CI (Gitleaks v3, Dependabot, SHA
+pins), fotos no dashboard, correções de UX. ADRs 001-041. Commits
+principais: `6a5083b` (main), `51d39a5`/`f036660` (sprint-13-hardening),
+`989affa`/`a9f810c` (fotos). 145 testes passando (82 API + 63 dashboard).*
 
-*Atualização 26/08/2026 (Revisor Técnico): §5 amendado por ADR-036
-(landing estática na raiz `/`, Streamlit em `/app/`). Ver ADR-036 e
-BACKLOG.md — Sprint 10 para o restante das entregas dessa sprint
-(endpoint de gastos por fornecedor, agregações, fix de ADR-035).*
+*Atualização 30/08/2026 (Revisor Técnico): Auditoria formal de
+fechamento das Sprints 12 e 13 (PR #43 — `docs/audit_sprint12_13.md`).
+Backlog.md §13, CHANGELOG.md e PROJECT_CONTEXT.md §13 sincronizados.
+Ver ADR-040 (contador visitas), ADR-041 (comparabilidade de período).
+Sprints 10-13 documentadas. `validacao.habilitado` temporariamente `true`
+(Bronze OOM com histórico completo — pendente otimização).*
