@@ -18,6 +18,7 @@ from dashboard.client import ApiClient
 from dashboard.comparacao import calcular_sobreposicao
 from dashboard.ui import (
     aplicar_identidade,
+    avatar_parlamentar,
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
@@ -85,6 +86,7 @@ def _carregar_agente(id_parlamentar: int) -> dict | None:
 
 def _render_perfil_lateral(label: str, agente: dict) -> None:
     """Perfil compacto de um parlamentar (coluna)."""
+    avatar_parlamentar(agente.get("url_foto"), nome=agente.get("nome", ""), tamanho="sm")
     st.markdown(f"### {label}")
     c1, c2 = st.columns(2)
     c1.metric("Partido", agente.get("sigla_partido"))
