@@ -48,6 +48,7 @@ from api.schemas.agregacoes import (
     TopFornecedorItem,
 )
 from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
+from api.schemas.contador import ContadorVisitas
 from api.schemas.fornecedores import (
     FornecedorContexto,
     FornecedorResumo,
@@ -77,7 +78,6 @@ from api.schemas.rede import (
     ListaComunidades,
     RedeFornecedor,
 )
-from api.schemas.contador import ContadorVisitas
 from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 

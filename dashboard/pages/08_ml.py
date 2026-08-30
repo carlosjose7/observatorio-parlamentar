@@ -15,6 +15,7 @@ from dashboard.charts import radar_risco
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
+    avatar_parlamentar,
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
@@ -93,6 +94,7 @@ def _render(id_parlamentar: int) -> None:
     if payload is None:
         return
 
+    avatar_parlamentar(payload.get("url_foto"), nome=payload.get("nome", ""))
     st.markdown(f"## {payload.get('nome')} ({payload.get('sigla_partido')}-{payload.get('sigla_uf')})")
 
     janela_ini, janela_fim = payload.get("janela_inicio"), payload.get("janela_fim")

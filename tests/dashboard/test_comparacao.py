@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from dashboard.comparacao import SobreposicaoPeriodo, calcular_sobreposicao
+from dashboard.comparacao import calcular_sobreposicao
 
 
 class TestCalcularSobreposicao:
