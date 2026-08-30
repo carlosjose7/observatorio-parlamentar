@@ -186,6 +186,34 @@ def filtro_periodo(df: pd.DataFrame, *, key_prefix: str) -> pd.DataFrame:
     return df[df["ano"].isin(sel_anos) & df["mes"].isin(sel_meses)]
 
 
+_SILHOUETTE_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">'
+    '<circle cx="48" cy="48" r="48" fill="#ECEDEA"/>'
+    '<circle cx="48" cy="36" r="16" fill="#B0B8C1"/>'
+    '<path d="M16 84c0-17.7 14.3-32 32-32s32 14.3 32 32" fill="#B0B8C1"/>'
+    "</svg>"
+)
+_SILHOUETTE_URI = "data:image/svg+xml," + _SILHOUETTE_SVG.replace(" ", "%20").replace("#", "%23")
+
+
+def avatar_parlamentar(
+    url_foto: str | None, *, nome: str = "", tamanho: str = "normal",
+) -> None:
+    """Renderiza foto do parlamentar ou silhouette cinza (fallback).
+
+    Args:
+        url_foto: URL da foto ou None.
+        nome: Nome do parlamentar (para alt text).
+        tamanho: 'normal' (96px) ou 'sm' (64px).
+    """
+    css = "op-avatar" if tamanho == "normal" else "op-avatar-sm"
+    src = url_foto if url_foto else _SILHOUETTE_URI
+    st.markdown(
+        f'<img class="{css}" src="{src}" alt="{nome}" />',
+        unsafe_allow_html=True,
+    )
+
+
 def botao_voltar() -> None:
     """Link '← Voltar ao Início' no topo da página.
 

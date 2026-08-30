@@ -13,15 +13,14 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from dashboard.charts import radar_risco
 from dashboard.client import ApiClient
 from dashboard.comparacao import calcular_sobreposicao
 from dashboard.ui import (
     aplicar_identidade,
+    avatar_parlamentar,
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
-    tabela_exportavel,
 )
 
 st.set_page_config(page_title="Batalha Parlamentar", page_icon="⚔️", layout="wide")
@@ -85,6 +84,7 @@ def _carregar_agente(id_parlamentar: int) -> dict | None:
 
 def _render_perfil_lateral(label: str, agente: dict) -> None:
     """Perfil compacto de um parlamentar (coluna)."""
+    avatar_parlamentar(agente.get("url_foto"), nome=agente.get("nome", ""), tamanho="sm")
     st.markdown(f"### {label}")
     c1, c2 = st.columns(2)
     c1.metric("Partido", agente.get("sigla_partido"))
