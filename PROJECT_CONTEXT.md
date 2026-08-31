@@ -245,6 +245,14 @@ Fontes Externas (APIs + CSVs)
 > originalmente descrito no ADR-007 (que previa `/` → Streamlit);
 > a decisão de fundo — Streamlit como única camada de apresentação de
 > *dados* — permanece inalterada.
+>
+> **Nota (ADR-042):** fisicamente, Silver e Gold vivem no MESMO
+> arquivo DuckDB (`data/silver/observatorio.duckdb`), em schemas
+> separados (`silver.*`, `gold.*`), não em arquivos distintos. O
+> schema `ml_staging` (ADR-026) e o schema `main` (apenas
+> `data_quality_report`, tabela de controle viva — ADR-015) também
+> residem nesse mesmo arquivo. O diagrama acima representa a
+> separação lógica de camadas, não a separação física de arquivos.
  
 ---
  
@@ -276,7 +284,7 @@ observatorio-parlamentar/
 │   │   └── agent.py
 │   ├── __init__.py
 │   ├── Dockerfile
-│   ├── repo.py                       # camada read-only sobre o Gold (ADR-026)
+│   ├── repo.py                       # camada read-only sobre o Gold — search_path='gold' (ADR-026, ADR-042)
 │   └── main.py
 ├── pipeline/                         # ETL (Sprint 3: Bronze + motor Silver; caminho de carga Silver — ADR-023, Sprint 4; Gold)
 │   ├── camara/
@@ -296,7 +304,7 @@ observatorio-parlamentar/
 │   │   └── transform.py              # ADR-023 (Sprint 4) — silver_cartao/silver_emenda
 │   ├── gold/                         # dbt (ADR-018) — Sprint 4
 │   │   ├── models/
-│   │   │   ├── sources.yml           # DuckDB Silver main.* como source (ADR-019)
+│   │   │   ├── sources.yml           # DuckDB Silver silver.* + control main.* (ADR-042)
 │   │   │   ├── dimensions/           # dim_fornecedor(+quarantine), dim_categoria_despesa(+quarantine), dim_data
 │   │   │   ├── control/              # pipeline_runs (incremental)
 │   │   │   ├── fatos/
@@ -360,11 +368,17 @@ observatorio-parlamentar/
 │   ├── analytics.yaml
 │   └── dashboard.yaml
 ├── data/                             # Dados persistidos (Docker volumes)
-│   ├── bronze/                       # Parquet raw
+│   ├── bronze/                       # Parquet raw — backend real é MinIO
+│   │                                 #   (bucket `bronze`); pasta local vazia
+│   │                                 #   por design (ADR-007)
 │   │   └── .gitkeep
-│   ├── silver/                       # DuckDB trusted
+│   ├── silver/                       # Arquivo único: schemas `silver`, `gold`,
+│   │                                 #   `ml_staging`, `main` (ADR-042)
 │   │   └── .gitkeep
-│   └── gold/                         # DuckDB warehouse
+│   └── gold/                         # Vestigial — Gold NÃO vive aqui.
+│                                     #   Vive no schema `gold` dentro de
+│                                     #   data/silver/observatorio.duckdb
+│                                     #   (ADR-042)
 │       └── .gitkeep
 ├── feature_store/                    # Features para ML
 │   └── registry.yaml
@@ -432,6 +446,10 @@ observatorio-parlamentar/
 ---
  
 ## 7. Modelo Dimensional — Gold Layer
+
+> **Nota de localização física (ADR-042):** todas as tabelas Gold
+> desta seção vivem no schema `gold` do arquivo único
+> `data/silver/observatorio.duckdb` — ver §5.
 
 > **Modelo de constelação de fatos (fact constellation / galaxy
 > schema)** — ADR-012. Três domínios de negócio distintos
