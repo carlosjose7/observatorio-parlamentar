@@ -68,21 +68,22 @@ def _seed(db: Path) -> None:
     """
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # parlamentar do despesa (id 1, camara), para dim_parlamentar
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
             ],
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -90,7 +91,7 @@ def _seed(db: Path) -> None:
             " execution_timestamp timestamp, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # D1: câmara resolve por id; fornecedor CNPJ = o do estabelecimento
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "PASSAGEM AEREA",
@@ -101,7 +102,7 @@ def _seed(db: Path) -> None:
         # (compartilha as mesmas dimensões selecionadas no build). Sem fatos
         # neste fixture do cartão, os testes passam.
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -109,7 +110,7 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -118,7 +119,7 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.executemany(
-            "insert into silver_cartao values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_cartao values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # C1: tudo resolve — setor cnpj casa no dim_fornecedor
                 (1, "2026-02-10", 100.50, "12345678000190", "CNPJ", "COMERCIO X",
@@ -184,7 +185,9 @@ def _seed(db: Path) -> None:
 
 
 def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(db))
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
 
 
 def _build(tmp_path, monkeypatch, selecao: str) -> None:
@@ -195,6 +198,10 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
+
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
+
     result = dbtRunner().invoke(
         [
             "build",
@@ -237,20 +244,20 @@ def test_cartao_promove_so_resolvido(tmp_path, monkeypatch):
     try:
         fato = con.execute(
             "select portador_nome, id_orgao, id_unidade_gestora, id_fornecedor, data_sk"
-            " from main.fact_cartao_cpgf"
+            " from fact_cartao_cpgf"
         ).fetchall()
         quar = {
             (id_, motivo)
             for id_, motivo in con.execute(
                 "select id, motivo_quarentena"
-                " from main.fact_cartao_cpgf_quarantine"
+                " from fact_cartao_cpgf_quarantine"
             ).fetchall()
         }
         dim_ug = con.execute(
-            "select id_unidade_gestora, codigo from main.dim_unidade_gestora"
+            "select id_unidade_gestora, codigo from dim_unidade_gestora"
         ).fetchall()
         id_forne_cnpj = con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
             " where cnpj_cpf_valor = '12345678000190'"
         ).fetchone()[0]
     finally:
@@ -285,9 +292,9 @@ def test_cartao_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         assert con.execute(
-            "select sigla, id_orgao from main.dim_orgao order by id_orgao"
+            "select sigla, id_orgao from dim_orgao order by id_orgao"
         ).fetchall() == [("CD", 1), ("SF", 2), ("EX", 3)]
-        con.execute("delete from main.dim_orgao where sigla = 'EX'")
+        con.execute("delete from dim_orgao where sigla = 'EX'")
     finally:
         con.close()
 
@@ -297,14 +304,14 @@ def test_cartao_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     try:
         portadores_no_fato = {
             p for (p,) in con.execute(
-                "select portador_nome from main.fact_cartao_cpgf"
+                "select portador_nome from fact_cartao_cpgf"
             ).fetchall()
         }
         quar = {
             (id_, motivo)
             for id_, motivo in con.execute(
                 "select id, motivo_quarentena"
-                " from main.fact_cartao_cpgf_quarantine"
+                " from fact_cartao_cpgf_quarantine"
             ).fetchall()
         }
     finally:
@@ -324,7 +331,7 @@ def _injetar_orfos(con, id_ug_valido: int, n_orfos: int, n_totais: int) -> None:
     nullable, não é contado). Órfãos desviam SÓ id_orgao=999 (ausente da
     dim, ADR-022.3a); as demais FKs continuam apontando para dimensões.
     """
-    con.execute("delete from main.fact_cartao_cpgf")
+    con.execute("delete from fact_cartao_cpgf")
     validas = [
         (
             i + 1, 3, id_ug_valido, None, 20230201, f"V{i}", "P V", 10,
@@ -340,7 +347,7 @@ def _injetar_orfos(con, id_ug_valido: int, n_orfos: int, n_totais: int) -> None:
         for i in range(n_orfos)
     ]
     con.executemany(
-        "insert into main.fact_cartao_cpgf (id_transacao, id_orgao,"
+        "insert into fact_cartao_cpgf (id_transacao, id_orgao,"
         " id_unidade_gestora, id_fornecedor, data_sk, portador_nome,"
         " portador_cpf_mascarado, valor_transacao, run_id, pipeline_version,"
         " execution_timestamp, source_version) values (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -383,7 +390,7 @@ def test_adr022_fk_orphan_pct_abaixo_do_limiar(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         id_ug = con.execute(
-            "select id_unidade_gestora from main.dim_unidade_gestora"
+            "select id_unidade_gestora from dim_unidade_gestora"
         ).fetchone()[0]
         _injetar_orfos(con, id_ug, n_orfos=9, n_totais=200)
     finally:
@@ -406,7 +413,7 @@ def test_adr022_fk_orphan_pct_acima_do_limiar(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         id_ug = con.execute(
-            "select id_unidade_gestora from main.dim_unidade_gestora"
+            "select id_unidade_gestora from dim_unidade_gestora"
         ).fetchone()[0]
         _injetar_orfos(con, id_ug, n_orfos=15, n_totais=200)
     finally:

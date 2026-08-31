@@ -67,21 +67,22 @@ def _seed(db: Path) -> None:
     """
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
             ],
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -89,7 +90,7 @@ def _seed(db: Path) -> None:
             " execution_timestamp timestamp, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # P1/2019: dois fornecedores — CNPJ (120) + CPF (80) → HHI = (120/200)^2+(80/200)^2
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "HOSPEDAGEM",
@@ -112,7 +113,7 @@ def _seed(db: Path) -> None:
         # silver_emenda / silver_cartao VAZIAS: exigidas pelos testes de FK de
         # fact_emenda/fact_cartao que o build com `+` agenda junto das dimensões.
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -120,7 +121,7 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -181,7 +182,9 @@ def _seed(db: Path) -> None:
 
 
 def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(db))
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
 
 
 def _build(tmp_path, monkeypatch, selecao: str) -> None:
@@ -192,6 +195,9 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
+
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
 
     result = dbtRunner().invoke(
         [
@@ -221,7 +227,7 @@ def _fornecedor(db: Path, doc: str) -> int:
     con = _conectar(db)
     try:
         return con.execute(
-            "select id_fornecedor from main.dim_fornecedor where cnpj_cpf_valor = ?",
+            "select id_fornecedor from dim_fornecedor where cnpj_cpf_valor = ?",
             [doc],
         ).fetchone()[0]
     finally:
@@ -240,7 +246,7 @@ def test_analytics_supplier_concentration(tmp_path, monkeypatch):
             (ano, id_par): (num_f, total, round(float(hhi), 6))
             for ano, id_par, num_f, total, hhi in con.execute(
                 "select ano, id_parlamentar, num_fornecedores, total_valor, hhi"
-                " from main.supplier_concentration order by ano, id_parlamentar"
+                " from supplier_concentration order by ano, id_parlamentar"
             ).fetchall()
         }
         # P1 2019: (120/200)^2 + (80/200)^2 = .36 + .16 = .52
@@ -264,7 +270,7 @@ def test_analytics_supplier_growth_yoy(tmp_path, monkeypatch):
             (ano, id_f): (valor, ant, var)
             for ano, id_f, valor, ant, var in con.execute(
                 "select ano, id_fornecedor, valor_recebido, valor_ano_anterior, variacao_pct"
-                " from main.supplier_growth"
+                " from supplier_growth"
             ).fetchall()
         }
         forne_cnpj = _fornecedor(tmp_path / "gold.duckdb", "12345678000190")
@@ -291,19 +297,19 @@ def test_analytics_nao_contamina_quarentena(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         cnpj_d6 = con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
             " where cnpj_cpf_valor = '33333333000100'"
         ).fetchone()
         # O fornecedor existe na dimensão (dimensão deriva da silver inteira)...
         assert cnpj_d6 is not None
         # ...mas não vaza para os agregados, que só leem o fato promovido.
         ids_growth = {r[0] for r in con.execute(
-            "select id_fornecedor from main.supplier_growth"
+            "select id_fornecedor from supplier_growth"
         ).fetchall()}
         assert cnpj_d6[0] not in ids_growth
         # Nenhuma linha fantasma de um parlamentar não resolvido.
         assert con.execute(
-            "select count(*) from main.supplier_concentration"
+            "select count(*) from supplier_concentration"
         ).fetchone()[0] == 3
     finally:
         con.close()

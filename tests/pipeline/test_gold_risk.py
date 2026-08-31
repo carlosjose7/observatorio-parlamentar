@@ -75,21 +75,22 @@ def _seed_silver(db: Path) -> None:
     """
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
             ],
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -97,7 +98,7 @@ def _seed_silver(db: Path) -> None:
             " execution_timestamp timestamp, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "HOSPEDAGEM",
                  "12345678000190", "CNPJ", "COMERCIO X", 120, 0, "r", "p", "2026-01-01 00:00:00", "s"),
@@ -114,7 +115,7 @@ def _seed_silver(db: Path) -> None:
             ],
         )
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -122,7 +123,7 @@ def _seed_silver(db: Path) -> None:
             " source_version varchar)"
         )
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -186,6 +187,9 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
 
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
+
     result = dbtRunner().invoke(
         [
             "build",
@@ -202,6 +206,12 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
     assert result.success, result.exception
 
 
+def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
+
+
 # FASE 1 — materializar a malha dimensional + fatos + analytics com o
 # `ml_staging` VAZIO (mesmo seed/molde de test_gold_expense_outliers).
 # `+risk_scores` garante que a Gold seja criada e os testes de contrato do
@@ -216,12 +226,12 @@ _SELECAO_FATO = (
 
 def _fact_despesa(db: Path) -> pd.DataFrame:
     """Lê o `fact_despesa` materializado (ids de verdade para o ml_staging)."""
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         return con.execute(
             "select id_despesa, id_parlamentar, id_fornecedor, data_sk,"
             " valor_liquido, run_id, pipeline_version, source_version"
-            " from main.fact_despesa"
+            " from fact_despesa"
         ).fetchdf()
     finally:
         con.close()
@@ -229,10 +239,10 @@ def _fact_despesa(db: Path) -> pd.DataFrame:
 
 def _supplier_concentration(db: Path) -> pd.DataFrame:
     """Lê a Gold `supplier_concentration` (raw do score de concentração)."""
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         return con.execute(
-            "select ano, id_parlamentar, hhi from main.supplier_concentration"
+            "select ano, id_parlamentar, hhi from supplier_concentration"
         ).fetchdf()
     finally:
         con.close()
@@ -272,7 +282,7 @@ def _preparar_staging(db: Path, fatos: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
     )
     executar_carga_ml_rede(fatos, run_id=_FATO_RUN_ID, db_path=str(db), source_version="v1")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         outliers = con.execute(
             "select id_despesa, id_parlamentar, id_fornecedor, data_sk,"
@@ -322,9 +332,9 @@ def test_risk_gold_fluxo_duas_fases(tmp_path, monkeypatch):
     _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
 
     # FASE 1 — staging vazio → Gold risk_scores vazia (contrato ADR-026).
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
-        assert con.execute("select count(*) from main.risk_scores").fetchone()[0] == 0
+        assert con.execute("select count(*) from risk_scores").fetchone()[0] == 0
     finally:
         con.close()
 
@@ -333,18 +343,18 @@ def test_risk_gold_fluxo_duas_fases(tmp_path, monkeypatch):
     # FASE 2 — com o staging populado, rebuild da Gold risk_scores.
     _build_selecao(tmp_path, monkeypatch, "risk_scores")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         linhas = con.execute(
             "select periodo, id_parlamentar, "
             + ", ".join(_SCORES)
-            + ", risk_index, run_id from main.risk_scores"
+            + ", risk_index, run_id from risk_scores"
         ).fetchall()
         assert linhas
         assert all(r[-1] == _FATO_RUN_ID for r in linhas)
 
         ids_dim = {r[0] for r in con.execute(
-            "select id_parlamentar from main.dim_parlamentar"
+            "select id_parlamentar from dim_parlamentar"
         ).fetchall()}
         for periodo, id_parlamentar, *valores, risk_index, _ in linhas:
             # Grão (periodo, id_parlamentar) — parlamentar PROMOVIDO (ADR-018).
@@ -372,19 +382,19 @@ def test_risk_gold_so_parlamentar_promovido(tmp_path, monkeypatch):
     _escrever_ml_staging(db)
     _build_selecao(tmp_path, monkeypatch, "risk_scores")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         ids_gold = {int(r[0]) for r in con.execute(
-            "select distinct id_parlamentar from main.risk_scores"
+            "select distinct id_parlamentar from risk_scores"
         ).fetchall()}
         ids_dim = {int(r[0]) for r in con.execute(
-            "select id_parlamentar from main.dim_parlamentar"
+            "select id_parlamentar from dim_parlamentar"
         ).fetchall()}
         assert ids_gold
         assert ids_gold <= ids_dim
         # ZONA FANTASMA (id 9999 se houvesse) não aparece — quarentena.
         ids_fato = {int(r[0]) for r in con.execute(
-            "select distinct id_parlamentar from main.fact_despesa"
+            "select distinct id_parlamentar from fact_despesa"
         ).fetchall()}
         assert ids_gold <= ids_fato
     finally:

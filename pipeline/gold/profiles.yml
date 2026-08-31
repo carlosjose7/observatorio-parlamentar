@@ -4,6 +4,7 @@ observatorio_gold:
     dev:
       type: duckdb
       path: "{{ env_var('DUCKDB_DATABASE_PATH', 'data/silver/observatorio.duckdb') }}"
+      schema: main
       threads: 4
       # httpfs permite ao DuckDB ler o controle `pipeline_runs` do MinIO
       # (ADR-019 em produção). O secret S3 aponta para o MinIO interno
@@ -25,6 +26,7 @@ observatorio_gold:
     prod:
       type: duckdb
       path: "{{ env_var('DUCKDB_DATABASE_PATH') }}"
+      schema: gold
       threads: 4
       extensions:
         - httpfs
