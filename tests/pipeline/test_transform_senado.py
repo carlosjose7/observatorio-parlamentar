@@ -219,7 +219,7 @@ class TestCarregarParlamentarSenado:
         con = duckdb.connect(str(tmp_path / "silver.duckdb"))
         try:
             linhas = con.execute(
-                "select id_parlamentar, nome from silver_parlamentar"
+                "select id_parlamentar, nome from silver.silver_parlamentar"
             ).fetchall()
         finally:
             con.close()

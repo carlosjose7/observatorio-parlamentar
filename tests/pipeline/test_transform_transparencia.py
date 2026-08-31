@@ -183,7 +183,7 @@ class TestCarregarCgu:
         con = duckdb.connect(str(tmp_path / "silver.duckdb"))
         try:
             linha = con.execute(
-                "select id, unidade_gestora_codigo from silver_cartao"
+                "select id, unidade_gestora_codigo from silver.silver_cartao"
             ).fetchall()
         finally:
             con.close()
