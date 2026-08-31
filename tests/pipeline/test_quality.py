@@ -332,7 +332,7 @@ class TestPersistenciaDedupSilver:
         assert len(resultado.deduplicadas) == 1
         assert len(resultado.aceitos) == 1
 
-        removidas = self._query(tmp_path, "SELECT cod_documento FROM dedup_removidas_silver_despesa")
+        removidas = self._query(tmp_path, "SELECT cod_documento FROM silver.dedup_removidas_silver_despesa")
         assert removidas == [("AAA",)]
 
         report = self._query(

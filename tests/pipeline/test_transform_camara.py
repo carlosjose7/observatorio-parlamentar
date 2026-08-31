@@ -102,7 +102,7 @@ class TestCarregarCamara:
         storage = LocalParquetStorage(root)
         storage.write_file(Path("camara"), df_bronze, "run-1.parquet")
 
-        db_path = tmp_path / "silver.duckdb"
+        db_path = tmp_path / "observatorio.duckdb"
         config.load_env_settings.cache_clear()
         old = os.environ.get("DUCKDB_DATABASE_PATH")
         os.environ["DUCKDB_DATABASE_PATH"] = str(db_path)
@@ -126,7 +126,7 @@ class TestCarregarCamara:
 
         import duckdb
 
-        con = duckdb.connect(str(tmp_path / "silver.duckdb"))
+        con = duckdb.connect(str(tmp_path / "observatorio.duckdb"))
         try:
             linhas = con.execute(
                 "select fonte, cod_documento from silver.silver_despesa"
@@ -241,7 +241,7 @@ class TestCarregarParlamentarCamara:
         storage = LocalParquetStorage(root)
         storage.write_file(Path("parlamento/camara"), df_bronze, "run-1.parquet")
 
-        db_path = tmp_path / "silver.duckdb"
+        db_path = tmp_path / "observatorio.duckdb"
         config.load_env_settings.cache_clear()
         old = os.environ.get("DUCKDB_DATABASE_PATH")
         os.environ["DUCKDB_DATABASE_PATH"] = str(db_path)
@@ -265,7 +265,7 @@ class TestCarregarParlamentarCamara:
 
         import duckdb
 
-        con = duckdb.connect(str(tmp_path / "silver.duckdb"))
+        con = duckdb.connect(str(tmp_path / "observatorio.duckdb"))
         try:
             linhas = con.execute(
                 "select id_parlamentar, nome from silver.silver_parlamentar"

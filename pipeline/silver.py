@@ -145,7 +145,9 @@ def _conectar_duckdb():
 
     caminho = Path(get_env().duckdb_database_path)
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(str(caminho))
+    con = duckdb.connect(str(caminho))
+    con.execute("CREATE SCHEMA IF NOT EXISTS silver")
+    return con
 
 
 def _tabela_com_schema(tabela: str, schema: str = "silver") -> str:
@@ -230,11 +232,12 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
                     )
 
     # Migração de schema legado: adiciona colunas novas presentes no DataFrame.
+    schema_qualificado = tabela_full.split(".")[0]
     existentes = {
         linha[0]
         for linha in con.execute(
             f"SELECT column_name FROM information_schema.columns"
-            f" WHERE table_name = '{tabela}' AND table_schema = 'silver'"
+            f" WHERE table_name = '{tabela}' AND table_schema = '{schema_qualificado}'"
         ).fetchall()
     }
     novos = [col for col in df.columns if col not in existentes]
