@@ -45,6 +45,78 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 14 — Separação de Schemas Silver/Gold (31/08/2026) — FECHADA
+
+### Adicionado
+- **ADR-042**: formaliza a separação de Silver e Gold em schemas
+  próprios (`silver.*`, `gold.*`) dentro do mesmo arquivo DuckDB
+  (`data/silver/observatorio.duckdb`), alinhando ao padrão já usado
+  pelo `ml_staging` (ADR-026) e ao padrão de mercado de isolamento
+  por schema/catálogo por camada.
+- **Schemas `silver` e `gold`** criados no arquivo de produção,
+  coexistindo com `ml_staging` (5 tabelas) e `main` (reduzido a
+  1 tabela — `data_quality_report`, controle vivo, ADR-015).
+- **Smoke check de startup** (`api/_verificar_tabelas_gold`):
+  confirma as 12 tabelas Gold em `gold.*` na primeira conexão da
+  API; falha explícita (`RuntimeError`) em vez de fallback
+  silencioso para `main`.
+- Backup `observatorio_pos_onda4.duckdb` (347MB) — estado íntegro
+  pós-cutover da API, antes do `DROP` das tabelas antigas.
+
+### Alterado
+- `pipeline/silver.py`: toda escrita Silver qualificada com
+  `silver.*` (exceção deliberada: `data_quality_report` permanece
+  em `main`).
+- `pipeline/gold/dbt_project.yml` + `generate_schema_name.sql`:
+  todos os model groups materializam em `gold.*`.
+- `pipeline/gold/models/sources.yml`: source `silver` aponta para
+  schema `silver`; novo source `control` (schema `main`, apenas
+  `data_quality_report`).
+- `api/repo.py`: `_conexao()` seta `SET search_path = 'gold'` — as
+  66 queries de leitura (12 tabelas) passam a resolver contra
+  `gold.*` sem prefixo explícito.
+- `PROJECT_CONTEXT.md` (§5, §6, §7) e `docs/data/data_dictionary.md`:
+  documentam a localização física real das camadas pós-ADR-042.
+
+### Corrigido
+- Regressão em 4 arquivos de teste (`test_quality.py`,
+  `test_transform_camara.py`, `test_transform_senado.py`,
+  `test_transform_transparencia.py`): 8 queries sem schema
+  qualificado, quebradas pela migração da Onda 1.
+- `pipeline/silver.py`: `_criar_tabela_se_necessario` consultava
+  `information_schema` com `table_schema = 'silver'` hardcoded,
+  ignorando tabelas legitimamente fora desse schema (ex:
+  `data_quality_report` em `main`).
+- Colisão de nome catálogo/schema no DuckDB 1.5.x: arquivos de
+  teste nomeados `silver.duckdb` colidiam com o schema `silver`;
+  renomeados para `observatorio.duckdb`.
+
+### Removido
+- 23 tabelas obsoletas do schema `main` (cópia pré-ADR-042 da
+  Gold), após validação de zero divergência de linhas contra
+  `gold.*` e confirmação de que a API já lia de `gold.*` havia
+  sido validada (Onda 4). `data_quality_report` preservada
+  deliberadamente — é fonte viva do dbt (`source('control', ...)`),
+  não uma cópia obsoleta.
+
+### Migração
+- 12 tabelas Silver migradas de `main` para `silver` — zero perda
+  de linha (1.670.529 despesas, 1.506.736 cartões e demais tabelas
+  auditadas individualmente).
+- `dbt build --full-refresh` reconstruiu 28 tabelas em `gold.*`
+  (24 equivalentes às antigas + 4 novas: `desp_parlamento`,
+  `desp_parlamento_quarantine`, `emenda_autor`,
+  `emenda_autor_quarantine`) — zero divergência de linha contra as
+  24 tabelas antigas de `main`.
+
+### Backups
+- `observatorio_pre_sprint14.duckdb` (290MB) — estado pré-ADR-042.
+- `observatorio_pos_onda3.duckdb` (347MB) — pós-build da Gold.
+- `observatorio_pos_onda4.duckdb` (347MB) — pós-cutover da API,
+  pré-`DROP`.
+
+---
+
 ## Sprint 13 — Hardening CI, urlFoto e Fotos do Dashboard (30/08/2026) — FECHADA
 
 ### Adicionado
