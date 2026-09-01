@@ -425,7 +425,8 @@ def test_camara_usa_idlegislatura_e_ano_mes_em_vez_de_datainicio(ambiente):
     despesas nunca envie `dataInicio` e sempre envie os três filtros."""
     requisicoes: list = []
     client = _cliente_mock(camara_requisicoes=requisicoes)
-    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+    ts = datetime(2026, 8, 15, tzinfo=UTC)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS, execution_timestamp=ts)
 
     despesas = [r for r in requisicoes if "idLegislatura" in r]
     assert despesas
@@ -550,9 +551,11 @@ def test_backfill_cartoes_multi_mes(ambiente, monkeypatch):
 
     monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(mes="07/2026"))
     client = _cliente_mock(cartao_dinamico=True)
+    ts = datetime(2026, 8, 15, tzinfo=UTC)
 
     run = run_pipeline(
-        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS,
+        execution_timestamp=ts,
     )
 
     assert run.status == "success"
