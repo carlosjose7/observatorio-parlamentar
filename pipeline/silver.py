@@ -145,7 +145,21 @@ def _conectar_duckdb():
 
     caminho = Path(get_env().duckdb_database_path)
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(str(caminho))
+    con = duckdb.connect(str(caminho))
+    con.execute("CREATE SCHEMA IF NOT EXISTS silver")
+    return con
+
+
+def _tabela_com_schema(tabela: str, schema: str = "silver") -> str:
+    """Qualifica o nome da tabela com o schema (ADR-042).
+
+    Tabelas Silver ficam em `silver.*`, quarantine e dedup também.
+    Tabelas de controle (`data_quality_report`) ficam em `main` —
+    a API já lê de lá e a mudança de schema é tema separado.
+    """
+    if tabela == "data_quality_report":
+        return f"main.{tabela}"
+    return f"{schema}.{tabela}"
 
 
 def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
@@ -183,30 +197,32 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
         cols_ddl = ", ".join(
             f'"{col}" {tipo}' for col, (tipo, _desc) in esquema.items()
         )
-        con.execute(f"CREATE TABLE IF NOT EXISTS {tabela} ({cols_ddl})")
+        tabela_full = _tabela_com_schema(tabela)
+        con.execute(f"CREATE TABLE IF NOT EXISTS {tabela_full} ({cols_ddl})")
         descricao = descricao_para_tabela(tabela)
         if descricao:
             con.execute(
-                f"COMMENT ON TABLE {tabela} IS "
+                f"COMMENT ON TABLE {tabela_full} IS "
                 f"'{descricao.replace(chr(39), chr(39) * 2)}'"
             )
     else:
+        tabela_full = _tabela_com_schema(tabela)
         con.execute(
-            f"CREATE TABLE IF NOT EXISTS {tabela} AS SELECT * FROM tmp_define LIMIT 0"
+            f"CREATE TABLE IF NOT EXISTS {tabela_full} AS SELECT * FROM tmp_define LIMIT 0"
         )
 
         # Corrige inferência incorreta: coluna de texto (object/string) inferida
         # como numérica porque todos os valores são nulos na primeira carga.
         tipos_inferidos = {
             linha[0]: linha[1]
-            for linha in con.execute(f"DESCRIBE {tabela}").fetchall()
+            for linha in con.execute(f"DESCRIBE {tabela_full}").fetchall()
         }
         numericos = {"INTEGER", "BIGINT", "DOUBLE", "FLOAT", "HUGEINT", "SMALLINT"}
         for col in definicao.columns:
             if definicao[col].dtype.kind in ("O", "U", "S"):
                 if tipos_inferidos.get(col) in numericos:
                     con.execute(
-                        f'ALTER TABLE {tabela} ALTER COLUMN "{col}" TYPE VARCHAR'
+                        f'ALTER TABLE {tabela_full} ALTER COLUMN "{col}" TYPE VARCHAR'
                     )
                     logger.warning(
                         "correcao_tipo_texto",
@@ -216,11 +232,12 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
                     )
 
     # Migração de schema legado: adiciona colunas novas presentes no DataFrame.
+    schema_qualificado = tabela_full.split(".")[0]
     existentes = {
         linha[0]
         for linha in con.execute(
             f"SELECT column_name FROM information_schema.columns"
-            f" WHERE table_name = '{tabela}'"
+            f" WHERE table_name = '{tabela}' AND table_schema = '{schema_qualificado}'"
         ).fetchall()
     }
     novos = [col for col in df.columns if col not in existentes]
@@ -236,7 +253,7 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
         }
         for col in novos:
             tipo = tipos.get(col) or tipos_inferidos.get(col)
-            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipo}")
+            con.execute(f"ALTER TABLE {tabela_full} ADD COLUMN {col} {tipo}")
         logger.info(
             "migracao_schema_silver",
             tabela=tabela,
@@ -249,7 +266,7 @@ def _criar_tabela_se_necessario(con, tabela: str, df: pd.DataFrame) -> None:
             if col not in existentes:
                 continue
             con.execute(
-                f"COMMENT ON COLUMN {tabela}.{col} IS "
+                f"COMMENT ON COLUMN {tabela_full}.{col} IS "
                 f"'{desc.replace(chr(39), chr(39) * 2)}'"
             )
 
@@ -262,7 +279,8 @@ def _insert_por_nome(con, tabela: str, registro: str, colunas: list[str]) -> Non
     a tabela legada tem um subconjunto de colunas.
     """
     cols = ", ".join(f'"{c}"' for c in colunas)
-    con.execute(f"INSERT INTO {tabela} ({cols}) SELECT {cols} FROM {registro}")
+    tabela_full = _tabela_com_schema(tabela)
+    con.execute(f"INSERT INTO {tabela_full} ({cols}) SELECT {cols} FROM {registro}")
 
 
 def escrever_validos_duckdb(
@@ -287,8 +305,9 @@ def escrever_validos_duckdb(
         con.register("tmp_validos", df)
         if chaves_dedup:
             cond = " and ".join(f"t.{col} = v.{col}" for col in chaves_dedup)
+            tabela_full = _tabela_com_schema(tabela)
             con.execute(
-                f"DELETE FROM {tabela} t USING tmp_validos v WHERE {cond}"
+                f"DELETE FROM {tabela_full} t USING tmp_validos v WHERE {cond}"
             )
         _insert_por_nome(con, tabela, "tmp_validos", list(df.columns))
     finally:

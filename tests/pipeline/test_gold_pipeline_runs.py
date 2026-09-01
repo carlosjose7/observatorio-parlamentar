@@ -47,6 +47,9 @@ def _build(tmp_path, monkeypatch, dir_controle: Path) -> None:
 
     vars_dbt = {**get_dbt_vars(), "bronze_pipeline_runs_dir": str(dir_controle / "*.parquet")}
 
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
+
     result = dbtRunner().invoke(
         [
             "build",

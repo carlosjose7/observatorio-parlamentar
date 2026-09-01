@@ -44,21 +44,29 @@ models:
       columns: true
     dimensions:
       +materialized: table
+      +schema: gold
     facts:
       +materialized: table
+      +schema: gold
     analytics:
       +materialized: table
+      +schema: gold
     control:
       +materialized: incremental
+      +schema: gold
     emenda:
       +materialized: table
+      +schema: gold
     despesa:
       +materialized: table
+      +schema: gold
     cartao:
       +materialized: table
+      +schema: gold
 
 seeds:
   observatorio_gold:
+    +schema: gold
     dim_orgao:
       +column_types:
         id_orgao: bigint

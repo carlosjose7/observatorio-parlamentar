@@ -2496,3 +2496,63 @@ Consequências:
 - Sem nova dependência de API ou dados — usa campos existentes.
 
 ---
+
+ADR-042
+Título: Separação de schemas por camada (Silver/Gold) no arquivo DuckDB único
+
+Status:
+Aceito
+
+Contexto:
+Silver e Gold coexistem hoje no schema `main` do arquivo
+`data/silver/observatorio.duckdb`, distinguidos apenas por convenção
+de nome (`silver_*` vs. `dim_*`/`fact_*`/tabelas analíticas). O
+`ml_staging` (ADR-026) já tem schema próprio — o projeto já sabe
+fazer isolamento por schema, só não aplicou o mesmo padrão a
+Silver/Gold. Padrão de mercado (Databricks Unity Catalog, convenção
+usual de projetos dbt via `generate_schema_name`) isola camadas por
+schema/catálogo, não por prefixo de nome. Sem isolamento formal: risco
+de colisão de nomes conforme o projeto cresce, e nenhuma forma de
+aplicar controle de acesso por camada no futuro (ex: permissão
+read-only só na Gold).
+
+Decisão:
+1. Criar schemas explícitos `silver` e `gold` dentro do mesmo arquivo
+   `.duckdb` (sem separar arquivos — mantém a simplicidade
+   operacional já validada pelo projeto, incluindo o precedente do
+   ADR-040 de usar arquivo dedicado só quando há conflito real de
+   escrita).
+2. `pipeline/silver.py`: qualificar toda criação/escrita de tabela
+   com `silver.` (ou `CREATE SCHEMA IF NOT EXISTS silver` + conexão
+   com schema padrão setado).
+3. `pipeline/gold/`: configurar `+schema: gold` nos model groups do
+   `dbt_project.yml` (dimensions, facts, analytics, control, emenda,
+   despesa, cartao), com macro `generate_schema_name` customizada
+   para não duplicar prefixo.
+4. `sources.yml`: atualizar o source `silver` para `schema: silver`
+   (hoje mapeado para `main`).
+5. `api/`: qualificar queries de leitura com `gold.` (e
+   `ml_staging.` onde aplicável), revisando se a API acessa Silver
+   diretamente em algum ponto.
+6. Script de migração one-shot: mover as tabelas existentes de
+   `main` para os schemas corretos, com backup do arquivo `.duckdb`
+   antes de qualquer DDL.
+7. Atualizar testes (`AppTest`, integração) que hoje assumem nome de
+   tabela sem schema.
+8. Atualizar `PROJECT_CONTEXT.md` §5/§6/§7 e `data_dictionary.md`
+   para refletir os schemas reais.
+
+Consequências:
+- Isolamento lógico correto por camada, alinhado ao padrão de mercado
+  e ao próprio `ml_staging`.
+- Migração de dados existentes exige backup e execução cuidadosa — é
+  o maior risco técnico da sprint.
+- Todo ponto que hoje assume tabela sem schema (API, dashboard, dbt
+  sources) precisa de revisão — risco de quebra silenciosa se algo
+  passar despercebido.
+- Não resolve a nomenclatura do arquivo físico
+  (`data/silver/observatorio.duckdb` continua guardando Gold e
+  `ml_staging` também) — fica registrado como item separado, fora do
+  escopo deste ADR.
+
+---

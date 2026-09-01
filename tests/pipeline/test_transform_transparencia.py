@@ -154,7 +154,7 @@ class TestCarregarCgu:
         storage = LocalParquetStorage(root)
         storage.write_file(Path(diretorio), df_bronze, "run-1.parquet")
 
-        db_path = tmp_path / "silver.duckdb"
+        db_path = tmp_path / "observatorio.duckdb"
         config.load_env_settings.cache_clear()
         old = os.environ.get("DUCKDB_DATABASE_PATH")
         os.environ["DUCKDB_DATABASE_PATH"] = str(db_path)
@@ -180,10 +180,10 @@ class TestCarregarCgu:
         assert resultado is not None
         assert len(resultado.aceitos) == 1
 
-        con = duckdb.connect(str(tmp_path / "silver.duckdb"))
+        con = duckdb.connect(str(tmp_path / "observatorio.duckdb"))
         try:
             linha = con.execute(
-                "select id, unidade_gestora_codigo from silver_cartao"
+                "select id, unidade_gestora_codigo from silver.silver_cartao"
             ).fetchall()
         finally:
             con.close()

@@ -45,6 +45,137 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 14 — Separação de Schemas Silver/Gold (31/08/2026) — FECHADA
+
+### Adicionado
+- **ADR-042**: formaliza a separação de Silver e Gold em schemas
+  próprios (`silver.*`, `gold.*`) dentro do mesmo arquivo DuckDB
+  (`data/silver/observatorio.duckdb`), alinhando ao padrão já usado
+  pelo `ml_staging` (ADR-026) e ao padrão de mercado de isolamento
+  por schema/catálogo por camada.
+- **Schemas `silver` e `gold`** criados no arquivo de produção,
+  coexistindo com `ml_staging` (5 tabelas) e `main` (reduzido a
+  1 tabela — `data_quality_report`, controle vivo, ADR-015).
+- **Smoke check de startup** (`api/_verificar_tabelas_gold`):
+  confirma as 12 tabelas Gold em `gold.*` na primeira conexão da
+  API; falha explícita (`RuntimeError`) em vez de fallback
+  silencioso para `main`.
+- Backup `observatorio_pos_onda4.duckdb` (347MB) — estado íntegro
+  pós-cutover da API, antes do `DROP` das tabelas antigas.
+
+### Alterado
+- `pipeline/silver.py`: toda escrita Silver qualificada com
+  `silver.*` (exceção deliberada: `data_quality_report` permanece
+  em `main`).
+- `pipeline/gold/dbt_project.yml` + `generate_schema_name.sql`:
+  todos os model groups materializam em `gold.*`.
+- `pipeline/gold/models/sources.yml`: source `silver` aponta para
+  schema `silver`; novo source `control` (schema `main`, apenas
+  `data_quality_report`).
+- `api/repo.py`: `_conexao()` seta `SET search_path = 'gold'` — as
+  66 queries de leitura (12 tabelas) passam a resolver contra
+  `gold.*` sem prefixo explícito.
+- `PROJECT_CONTEXT.md` (§5, §6, §7) e `docs/data/data_dictionary.md`:
+  documentam a localização física real das camadas pós-ADR-042.
+
+### Corrigido
+- Regressão em 4 arquivos de teste (`test_quality.py`,
+  `test_transform_camara.py`, `test_transform_senado.py`,
+  `test_transform_transparencia.py`): 8 queries sem schema
+  qualificado, quebradas pela migração da Onda 1.
+- `pipeline/silver.py`: `_criar_tabela_se_necessario` consultava
+  `information_schema` com `table_schema = 'silver'` hardcoded,
+  ignorando tabelas legitimamente fora desse schema (ex:
+  `data_quality_report` em `main`).
+- Colisão de nome catálogo/schema no DuckDB 1.5.x: arquivos de
+  teste nomeados `silver.duckdb` colidiam com o schema `silver`;
+  renomeados para `observatorio.duckdb`.
+
+### Removido
+- 23 tabelas obsoletas do schema `main` (cópia pré-ADR-042 da
+  Gold), após validação de zero divergência de linhas contra
+  `gold.*` e confirmação de que a API já lia de `gold.*` havia
+  sido validada (Onda 4). `data_quality_report` preservada
+  deliberadamente — é fonte viva do dbt (`source('control', ...)`),
+  não uma cópia obsoleta.
+
+### Migração
+- 12 tabelas Silver migradas de `main` para `silver` — zero perda
+  de linha (1.670.529 despesas, 1.506.736 cartões e demais tabelas
+  auditadas individualmente).
+- `dbt build --full-refresh` reconstruiu 28 tabelas em `gold.*`
+  (24 equivalentes às antigas + 4 novas: `desp_parlamento`,
+  `desp_parlamento_quarantine`, `emenda_autor`,
+  `emenda_autor_quarantine`) — zero divergência de linha contra as
+  24 tabelas antigas de `main`.
+
+### Backups
+- `observatorio_pre_sprint14.duckdb` (290MB) — estado pré-ADR-042.
+- `observatorio_pos_onda3.duckdb` (347MB) — pós-build da Gold.
+- `observatorio_pos_onda4.duckdb` (347MB) — pós-cutover da API,
+  pré-`DROP`.
+
+---
+
+## Sprint 13 — Hardening CI, urlFoto e Fotos do Dashboard (30/08/2026) — FECHADA
+
+### Adicionado
+- **Gitleaks v3.0.0**: substitui v2 em `ci.yml` (SHA-pinned).
+- **Dependabot semanal** (`.github/dependabot.yml`): monitoramento automático
+  de Actions do GitHub.
+- **Actions pinadas por SHA** em `ci.yml`: `checkout@v4.2.2`,
+  `setup-python@v5.6.0`, `gitleaks-action@v3.0.0`.
+- **Extra `dev-dashboard`** em `pyproject.toml` para testes de UI local.
+- **Pipeline urlFoto** Bronze→Silver→Gold→API:
+  - Bronze: `CamaraBronzeDeputado.url_foto` + extração em `_construir_deputado()`.
+  - Silver: `url_foto` em `COLUNAS_SILVER_PARLAMENTAR` + DDL + transform.
+  - Gold: `url_foto` em `dim_parlamentar.sql` (todas as CTEs Câmara).
+  - API: `url_foto` em `PerfilParlamentar`, `ParlamentarResumo`, `AgentParlamentar`.
+  - Resultado: 513/513 Câmara com URL, 81/81 Senado NULL (API não fornece).
+- **`avatar_parlamentar()`** em `ui.py`: componente reutilizável de foto
+  circular com fallback SVG silhouette cinza (`_SILHOUETTE_URI`).
+- **CSS `.op-avatar` / `.op-avatar-sm`** em `theme.py`: borda circular 2px
+  sólida, border-radius 50%.
+- **Foto do parlamentar** nas páginas 02 (perfil), 08 (ML/risco), 12 (batalha).
+
+### Corrigido
+- **"Voltar ao Início"**: `href="/app/"` → `href="/"` em `botao_voltar()` (`ui.py`).
+- **`Field` import** faltando em `api/schemas/agent.py`.
+- **Senado transform**: `url_foto=None` em `construir_silver_parlamentar()` (prevenia `KeyError` no Silver).
+- **4 erros ruff pre-existing**: I001 em `api/repo.py`, F401 em `12_batalha.py`, F401 em `test_comparacao.py`.
+
+### Nota
+- `config/pipeline.yaml`: `validacao.habilitado` temporariamente `true`
+  (histórico Bronze completo causa OOM; a ser revertido com otimização).
+
+---
+
+## Sprint 12 — Batalha Parlamentar, Contador de Visitas e Congresso (29/08/2026) — FECHADA
+
+### Adicionado
+- **`botao_voltar()`** em `ui.py`: botão reutilizável "Voltar ao Início".
+- **ADR-040**: contador global de visitas via backend DuckDB dedicado
+  (`data/visitas.duckdb`), com deduplicação por sessão.
+- **`api/schemas/contador.py`**, **`api/routers/contador.py`**,
+  **`api/repo.py::incrementar_visitas()`**: endpoint `GET /api/contador/visitas`.
+- **Fetch do contador** no frontend `site/index.html` com deduplicação
+  por sessão (cache 24h no navegador).
+- **CSS Congresso Nacional**: duplas cúpulas, 6 colunas, bandeira
+  desenrolada com estrelas via CSS puro.
+- **ADR-041**: comparabilidade de período — `SobreposicaoPeriodo` em
+  `dashboard/comparacao.py` com cálculo de meses de sobreposição.
+- **Página 12 — Batalha Parlamentar** (`dashboard/pages/12_batalha.py`):
+  comparativo lado a lado de dois parlamentares.
+- **Extra `dev-dashboard`** em `pyproject.toml`.
+
+### Corrigido
+- **`_tratar_erro_gold`**: NameError em `api/repo.py:106` — decorator
+  referenciado antes da definição da função.
+- **Cálculo de sobreposição** (commit `130b996`): denominador revertido
+  para "menor período" conforme ADR-041.
+
+---
+
 ## Sprint 11 — Identidade Visual e Experiência Analítica (29/08/2026) — FECHADA
 
 ### Adicionado

@@ -196,6 +196,8 @@ _DDL = {
 def sembrar_gold(caminho) -> None:
     """Cria o DuckDB Gold de teste com o grão dos fixtures Gold determinísticos."""
     con = duckdb.connect(str(caminho))
+    con.execute("CREATE SCHEMA IF NOT EXISTS gold")
+    con.execute("SET search_path = 'gold'")
     for tabela in _DDL:
         con.execute(_DDL[tabela])
 
@@ -322,6 +324,8 @@ def sembrar_gold(caminho) -> None:
 @pytest.fixture()
 def _cliente(tmp_path, monkeypatch):
     """TestClient apontando para o DuckDB Gold determinístico semeado."""
+    import api.repo as _repo
+    _repo._gold_verificado = False
     db_path = tmp_path / "gold.duckdb"
     sembrar_gold(db_path)
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(db_path))

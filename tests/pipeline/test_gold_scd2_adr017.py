@@ -49,35 +49,36 @@ def _seed(db: Path) -> None:
     """Popula as Silver exigidas pelos modelos Gold alvo."""
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint, nome varchar,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint, nome varchar,"
             " sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, source_version varchar)"
         )
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar, tipo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar, tipo_emenda varchar,"
             " nome_autor varchar, funcao varchar, subfuncao varchar, localidade_do_gasto varchar,"
             " valor_empenhado bigint, valor_liquidado bigint, valor_pago bigint,"
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # JOSE SILVA troca de partido em 2019 — vira versão nova
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 56, "Ativo", "2019-07-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 56, "Ativo", "2019-07-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
                 # PEDRO só vigente a partir de 2020 (emenda de 2019 → fora de cobertura)
-                ("camara", 2, "PEDRO ALVES", "PARTIDO C", "RJ", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 2, "PEDRO ALVES", "PARTIDO C", "RJ", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
                 # homônimos em casas distintas, vigentes em 2020
-                ("camara", 3, "JOAO DO NORTE", "PARTIDO D", "PA", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("senado", 4, "JOAO DO NORTE", "PARTIDO E", "AM", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 3, "JOAO DO NORTE", "PARTIDO D", "PA", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("senado", 4, "JOAO DO NORTE", "PARTIDO E", "AM", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
             ],
         )
         con.executemany(
-            "insert into silver_emenda values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_emenda values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # E1: resolvido — JOSE SILVA tem versão vigente em 2019
                 (2019, "E1", "Emenda Individual - Transferências", "JOSE SILVA", "0", "0", "l", 100, 0, 0, "r", "p", "2026-01-01 00:00:00", "s"),
@@ -97,7 +98,7 @@ def _seed(db: Path) -> None:
         # fact_despesa (que compartilham dim_orgao/dim_data/dim_parlamentar)
         # são agendados junto com as dimensões selecionadas; sem fatos, passam.
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -108,7 +109,7 @@ def _seed(db: Path) -> None:
         # que agora é modelo Gold e tem testes de FK agendados junto com
         # dim_orgao/dim_data nos builds selecionados aqui; sem linhas, passam.
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -166,7 +167,9 @@ def _seed(db: Path) -> None:
 
 
 def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(db))
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
 
 
 def _build(tmp_path, monkeypatch, selecao: str) -> None:
@@ -185,6 +188,9 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
+
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
 
     result = dbtRunner().invoke(
         [
@@ -224,9 +230,9 @@ def test_scd2_dim_parlamentar(tmp_path, monkeypatch):
         linhas = con.execute(
             "select fonte, id_parlamentar, sigla_partido, strftime(effective_date, '%Y-%m-%d'),"
             " strftime(end_date, '%Y-%m-%d'), is_current "
-            "from main.dim_parlamentar order by fonte, id_parlamentar, effective_date"
+            "from dim_parlamentar order by fonte, id_parlamentar, effective_date"
         ).fetchall()
-        chaves = con.execute("select surrogate_key from main.dim_parlamentar").fetchall()
+        chaves = con.execute("select surrogate_key from dim_parlamentar").fetchall()
     finally:
         con.close()
 
@@ -246,12 +252,12 @@ def test_adr017_classificacao_completa(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         resolvidos = {
-            cod for (cod,) in con.execute("select codigo_emenda from main.emenda_autor").fetchall()
+            cod for (cod,) in con.execute("select codigo_emenda from emenda_autor").fetchall()
         }
         quarentena = {
             (cod, motivo)
             for cod, motivo in con.execute(
-                "select codigo_emenda, motivo from main.emenda_autor_quarantine"
+                "select codigo_emenda, motivo from emenda_autor_quarantine"
             ).fetchall()
         }
     finally:
@@ -273,7 +279,7 @@ def test_emenda_autor_usa_versao_vigente_no_ano(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         row = con.execute(
-            "select id_parlamentar, surrogate_key from main.emenda_autor where codigo_emenda = 'E1'"
+            "select id_parlamentar, surrogate_key from emenda_autor where codigo_emenda = 'E1'"
         ).fetchone()
     finally:
         con.close()
@@ -295,12 +301,12 @@ def test_fact_emenda_promove_so_resolvido(tmp_path, monkeypatch):
     try:
         fato = con.execute(
             "select ano, codigo_emenda, id_parlamentar, id_orgao, data_sk, tipo_emenda,"
-            " valor_empenhado from main.fact_emenda order by codigo_emenda"
+            " valor_empenhado from fact_emenda order by codigo_emenda"
         ).fetchall()
         quarentena = {
             (codigo, motivo)
             for codigo, motivo in con.execute(
-                "select codigo_emenda, motivo_quarentena from main.fact_emenda_quarantine"
+                "select codigo_emenda, motivo_quarentena from fact_emenda_quarantine"
             ).fetchall()
         }
     finally:
@@ -334,9 +340,9 @@ def test_fact_emenda_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         assert con.execute(
-            "select sigla, id_orgao from main.dim_orgao order by id_orgao"
+            "select sigla, id_orgao from dim_orgao order by id_orgao"
         ).fetchall() == [("CD", 1), ("SF", 2), ("EX", 3)]
-        con.execute("delete from main.dim_orgao where sigla = 'CD'")
+        con.execute("delete from dim_orgao where sigla = 'CD'")
     finally:
         con.close()
 
@@ -345,12 +351,12 @@ def test_fact_emenda_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         fato = {
-            cod for (cod,) in con.execute("select codigo_emenda from main.fact_emenda").fetchall()
+            cod for (cod,) in con.execute("select codigo_emenda from fact_emenda").fetchall()
         }
         quarentena = {
             (codigo, motivo)
             for codigo, motivo in con.execute(
-                "select codigo_emenda, motivo_quarentena from main.fact_emenda_quarantine"
+                "select codigo_emenda, motivo_quarentena from fact_emenda_quarantine"
             ).fetchall()
         }
     finally:
@@ -373,9 +379,9 @@ def _injetar_orfos(con, n_orfos: int, n_totais: int) -> None:
     `surrogate_key=999` (ausentes em `dim_parlamentar`). `id_orgao` e `data_sk`
     ficam sempre válidos, isolando o disparo nas FKs de parlamentar.
     """
-    con.execute("delete from main.fact_emenda")
+    con.execute("delete from fact_emenda")
     con.executemany(
-        "INSERT INTO main.fact_emenda (id_emenda, ano, codigo_emenda,"
+        "INSERT INTO fact_emenda (id_emenda, ano, codigo_emenda,"
         " id_parlamentar, surrogate_key, id_orgao, id_unidade_gestora, data_sk,"
         " tipo_emenda, nome_autor, funcao, subfuncao, localidade_do_gasto,"
         " valor_empenhado, valor_liquidado, valor_pago, run_id,"
@@ -408,7 +414,7 @@ def _injetar_orfos(con, n_orfos: int, n_totais: int) -> None:
         ],
     )
     con.executemany(
-        "INSERT INTO main.fact_emenda (id_emenda, ano, codigo_emenda,"
+        "INSERT INTO fact_emenda (id_emenda, ano, codigo_emenda,"
         " id_parlamentar, surrogate_key, id_orgao, id_unidade_gestora, data_sk,"
         " tipo_emenda, nome_autor, funcao, subfuncao, localidade_do_gasto,"
         " valor_empenhado, valor_liquidado, valor_pago, run_id,"

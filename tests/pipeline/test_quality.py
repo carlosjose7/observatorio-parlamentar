@@ -332,7 +332,7 @@ class TestPersistenciaDedupSilver:
         assert len(resultado.deduplicadas) == 1
         assert len(resultado.aceitos) == 1
 
-        removidas = self._query(tmp_path, "SELECT cod_documento FROM dedup_removidas_silver_despesa")
+        removidas = self._query(tmp_path, "SELECT cod_documento FROM silver.dedup_removidas_silver_despesa")
         assert removidas == [("AAA",)]
 
         report = self._query(
@@ -387,7 +387,7 @@ class TestPersistenciaDedupSilver:
 
         linhas = self._query(
             tmp_path,
-            "SELECT fonte, cod_documento FROM silver_despesa WHERE cod_documento = 'AAA'",
+            "SELECT fonte, cod_documento FROM silver.silver_despesa WHERE cod_documento = 'AAA'",
         )
         assert linhas == [("camara", "AAA")]  # 1 linha, nunca 2
 
@@ -413,7 +413,7 @@ class TestPersistenciaDedupSilver:
 
         linhas = self._query(
             tmp_path,
-            "SELECT cod_documento, valor_liquido FROM silver_despesa WHERE cod_documento = 'AAA'",
+            "SELECT cod_documento, valor_liquido FROM silver.silver_despesa WHERE cod_documento = 'AAA'",
         )
         assert linhas == [("AAA", 250.0)]
 
@@ -457,7 +457,7 @@ class TestPersistenciaDedupSilver:
 
         linhas = self._query(
             tmp_path,
-            "SELECT cod_documento, valor_liquido, valor_glosa FROM silver_despesa"
+            "SELECT cod_documento, valor_liquido, valor_glosa FROM silver.silver_despesa"
             " WHERE cod_documento = 'AAA'",
         )
         assert linhas == [("AAA", 100.0, 0.0)]
@@ -508,7 +508,7 @@ class TestPersistenciaDedupSilver:
 
         linhas = self._query(
             tmp_path,
-            "SELECT fonte, nome_parlamentar FROM silver_despesa"
+            "SELECT fonte, nome_parlamentar FROM silver.silver_despesa"
             " ORDER BY fonte, cod_documento",
         )
         assert linhas == [
