@@ -215,10 +215,25 @@ def _rodar_build_subprocess(db: Path, selecao: str, dir_controle: Path | None = 
     `dbt_project.yml` é relativo ao cwd do subprocesso). Sem isso, um DuckDB
     dev com runs do E2E real contaminaria o build de teste (pipeline_runs
     não vazio).
+
+    Corretivo Sprint 14: cria um profiles.yml temporário sem httpfs/secrets
+    S3 para evitar falha no CI onde MinIO não existe (endpoint vazio faz
+    dbt-duckdb rejeitar o secret S3).
     """
     if dir_controle is None:
         dir_controle = Path(tempfile.mkdtemp()) / "controle_vazio"
         dir_controle.mkdir(parents=True, exist_ok=True)
+    profile_dir = Path(tempfile.mkdtemp())
+    profile_yaml = profile_dir / "profiles.yml"
+    profile_yaml.write_text(
+        "observatorio_gold:\n"
+        "  target: dev\n"
+        "  outputs:\n"
+        "    dev:\n"
+        "      type: duckdb\n"
+        '      path: "{{ env_var(\'DUCKDB_DATABASE_PATH\', \'data/silver/observatorio.duckdb\') }}"\n'
+        "      threads: 4\n"
+    )
     codigo = (
         "import json, sys\n"
         f"sys.path.insert(0, {str(_RAIZ)!r})\n"
@@ -230,7 +245,7 @@ def _rodar_build_subprocess(db: Path, selecao: str, dir_controle: Path | None = 
         f"r = dbtRunner().invoke([\n"
         f"    'build',\n"
         f"    '--project-dir', {str(_GOLD)!r},\n"
-        f"    '--profiles-dir', {str(_GOLD)!r},\n"
+        f"    '--profiles-dir', {str(profile_dir)!r},\n"
         f"    '--select', {selecao!r},\n"
         f"    '--vars', json.dumps(vars_dbt),\n"
         "]\n"

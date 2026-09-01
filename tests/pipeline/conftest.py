@@ -10,6 +10,8 @@ testes de verificação (ADR-042: Gold vive no schema 'gold')."""
 import duckdb
 import pytest
 
+from pipeline.config import load_pipeline_settings, load_sources_settings
+
 
 @pytest.fixture(autouse=True)
 def _reset_duckdb_env():
@@ -37,3 +39,15 @@ def _gold_search_path(monkeypatch):
         return con
 
     monkeypatch.setattr(duckdb, "connect", _patched_connect)
+
+
+@pytest.fixture(autouse=True)
+def _clear_config_cache():
+    """Reset lru_cache for pipeline config between tests.
+
+    get_pipeline() and get_sources() are @lru_cache(maxsize=1). Tests that
+    monkeypatch config sources or pipeline settings must not leak state.
+    """
+    yield
+    load_pipeline_settings.cache_clear()
+    load_sources_settings.cache_clear()
