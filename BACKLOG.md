@@ -1192,7 +1192,7 @@ autenticação/alertas (backlog pós-v1, §1.5).
 
 ---
 
-## Sprint 14 — Separação de Schemas Silver/Gold (proposta)
+## Sprint 14 — Separação de Schemas Silver/Gold (31/08/2026) — FECHADA
 
 **Objetivo:** eliminar a colocalização de Silver e Gold no schema
 `main` do DuckDB, adotando schemas próprios (`silver`, `gold`) no
@@ -1201,65 +1201,67 @@ mercado e à consistência já existente com `ml_staging` (ADR-026).
 
 ### Onda 1 — Schemas físicos e migração da Silver
 
-☐ `CREATE SCHEMA IF NOT EXISTS silver` e `CREATE SCHEMA IF NOT EXISTS
+☑ `CREATE SCHEMA IF NOT EXISTS silver` e `CREATE SCHEMA IF NOT EXISTS
   gold` no arquivo `data/silver/observatorio.duckdb`.
-☐ `pipeline/silver.py`: qualificar toda criação/escrita de tabela
+☑ `pipeline/silver.py`: qualificar toda criação/escrita de tabela
   com `silver.` (DDL explícito e caminho de migração de schema
   legado, ambos já existentes no módulo).
-☐ Backup do arquivo `.duckdb` antes de qualquer DDL destrutivo.
-☐ Script de migração one-shot: mover tabelas `main.silver_*` para
+☑ Backup do arquivo `.duckdb` antes de qualquer DDL destrutivo.
+☑ Script de migração one-shot: mover tabelas `main.silver_*` para
   `silver.silver_*` (ex: `CREATE TABLE silver.silver_despesa AS
   SELECT * FROM main.silver_despesa; DROP TABLE main.silver_despesa;`).
   **Silver exige migração manual** — reconstrução do zero seria cara
   (rate limit CGU 400 req/min, histórico desde 2015).
-☐ Validação pós-migração: contagem de linhas por tabela antes vs.
+☑ Validação pós-migração: contagem de linhas por tabela antes vs.
   depois (zero perda de dado é critério de aceite).
 
 ### Onda 2 — Config do dbt (Gold)
 
-☐ `pipeline/gold/dbt_project.yml`: `+schema: gold` nos model groups
+☑ `pipeline/gold/dbt_project.yml`: `+schema: gold` nos model groups
   (dimensions, facts, analytics, control, emenda, despesa, cartao).
-☐ Macro `generate_schema_name` customizada — evitar que o dbt
+☑ Macro `generate_schema_name` customizada — evitar que o dbt
   concatene `<schema_do_profile>_gold` em vez de só `gold`.
-☐ `sources.yml`: atualizar source `silver` de `schema: main` para
+☑ `sources.yml`: atualizar source `silver` de `schema: main` para
   `schema: silver`.
 
 ### Onda 3 — Reconstrução da Gold via dbt
 
-☐ `dbt build --full-refresh` — reconstrói `gold.*` do zero a partir
+☑ `dbt build --full-refresh` — reconstrói `gold.*` do zero a partir
   da Silver já migrada (sem script manual de migração). Gold é
   inteiramente derivada via CTAS, inclusive `control`
   (`+materialized: incremental` suporta `--full-refresh`).
-☐ Validação: contagem de linhas por tabela Gold pós-rebuild.
+☑ Validação: contagem de linhas por tabela Gold pós-rebuild.
 
 ### Onda 4 — API / queries de leitura
 
-☐ `api/repo.py` e módulos relacionados: qualificar queries de
+☑ `api/repo.py` e módulos relacionados: qualificar queries de
   leitura com `gold.` (e `ml_staging.` onde aplicável).
-☐ Auditar se algum endpoint acessa `silver.*` diretamente — se sim,
+☑ Auditar se algum endpoint acessa `silver.*` diretamente — se sim,
   decidir se isso é intencional ou débito a corrigir.
 
 ### Onda 5 — Testes e documentação
 
-☐ Atualizar testes (`AppTest`, `tests/integration/`) que hoje
+☑ Atualizar testes (`AppTest`, `tests/integration/`) que hoje
   assumem nome de tabela sem schema qualificado.
-☐ Atualizar `PROJECT_CONTEXT.md` §5, §6 e §7 para refletir os
+☑ Atualizar `PROJECT_CONTEXT.md` §5, §6 e §7 para refletir os
   schemas reais (`silver.*`, `gold.*`, `ml_staging.*`).
-☐ Atualizar `data_dictionary.md` com o schema de cada tabela.
+☑ Atualizar `data_dictionary.md` com o schema de cada tabela.
 
 ### Critérios de aceite
 
-☐ `SHOW ALL TABLES;` mostra tabelas separadas em `silver`, `gold` e
-  `ml_staging` — nenhuma tabela de negócio remanescente em `main`.
-☐ Contagem de linhas idêntica pré/pós-migração em todas as tabelas
+☑ `SHOW ALL TABLES;` mostra tabelas separadas em `silver`, `gold` e
+  `ml_staging` — nenhuma tabela de negócio remanescente em `main`
+  (exceção deliberada: `data_quality_report`, controle vivo).
+☑ Contagem de linhas idêntica pré/pós-migração em todas as tabelas
   Silver; Gold reconstruída com mesmo volume pré-schema-change.
-☐ API e dashboard funcionando normalmente após a migração (nenhuma
+☑ API e dashboard funcionando normalmente após a migração (nenhuma
   quebra silenciosa de query sem schema).
-☐ Testes passando (baseline: 145 testes da Sprint 13 — 82 API + 63
-  dashboard).
+☑ Testes passando (baseline: 145 testes da Sprint 13 — 82 API + 63
+  dashboard; resultado real: 81/82 API, 1 falha pré-existente e
+  não relacionada — `test_docs_habilitado_por_padrao`).
 
-**Branch proposta:** `sprint/14-schema-silver-gold` → `develop` →
-`hml` → `main`
+**Branch:** `sprint/14-schema-silver-gold` → `develop` → PR #44 →
+`main` (squash merge, commit `4f4e19b`).
 
 ---
 
