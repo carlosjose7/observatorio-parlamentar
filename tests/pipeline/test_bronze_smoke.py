@@ -218,10 +218,19 @@ def _fontes_com_janelas(ano: int = 2026, mes: str = "07/2026"):
 
 @pytest.fixture(autouse=True)
 def _janelas_recentes(monkeypatch):
-    """Mantém os testes existentes no período corrente (1 período por fonte)."""
+    """Mantém os testes existentes no período corrente (1 período por fonte).
+
+    Desliga validação por padrão — o config real (`pipeline.yaml`) tem
+    ``habilitado: true`` mas a maioria dos testes não testa modo validação.
+    Sem este patch, ``run_pipeline`` envolve o store num namespace ``validacao:``
+    e trunca a janela histórica, quebrando watermarks e seleção de meses.
+    """
     import pipeline.bronze as bronze
 
     monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas())
+    cfg = get_pipeline().model_copy(deep=True)
+    cfg.validacao.habilitado = False
+    monkeypatch.setattr(bronze, "get_pipeline", lambda: cfg)
 
 
 @pytest.fixture(autouse=True)
@@ -636,8 +645,10 @@ def test_camara_primeira_carga_trunca_janela_no_modo_validacao(monkeypatch):
     assert bronze._camara_filtro_inicial("01/2015", run_meta) == ["08/2026"]
 
     # Sem o modo validação, o backfill permanece integral (2015 → 2026)
-    monkeypatch.setattr(bronze, "get_pipeline", get_pipeline)
-    monkeypatch.setattr(config, "get_pipeline", get_pipeline)
+    cfg_off = get_pipeline().model_copy(deep=True)
+    cfg_off.validacao.habilitado = False
+    monkeypatch.setattr(bronze, "get_pipeline", lambda: cfg_off)
+    monkeypatch.setattr(config, "get_pipeline", lambda: cfg_off)
     meses = bronze._camara_filtro_inicial("01/2015", run_meta)
     assert meses[0] == "01/2015"
     assert meses[-1] == "08/2026"
