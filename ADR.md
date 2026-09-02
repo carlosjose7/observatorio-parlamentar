@@ -2556,3 +2556,66 @@ Consequências:
   escopo deste ADR.
 
 ---
+
+ADR-043
+Título: Backfill real de partido/UF histórico da Câmara via SOAP legado
+
+Status:
+Proposto
+
+Contexto:
+Auditoria em produção (DuckDB, container observatorio-parlamentar-api-1)
+identificou quarentena estrutural em gold.desp_parlamento_quarantine para
+fonte='camara': 833.401 despesas (58,6% do total silver_despesa Câmara,
+1.421.214 linhas), atingindo 337 deputados distintos. Causa raiz: a
+extração da Câmara consome apenas `ultimoStatus` (situação vigente) via
+API REST, sem histórico de filiações partidárias anteriores — logo
+`dim_parlamentar` (SCD2, ADR-020) não cobre janelas de tempo em que o
+deputado esteve em partido diferente do atual, e despesas históricas
+nessas janelas não encontram versão correspondente na dimensão
+(desp_parlamento_classificacao.sql), caindo em quarentena.
+
+A branch fix/senado-foto-backfill-scd2 (não mergeada) resolveu problema
+análogo para o Senado via aproximação: snapshots sintéticos que aplicam
+o partido/UF *atual* retroativamente para legislaturas sem observação
+direta, marcados com partido_uf_aproximado=true. Essa aproximação é
+necessária para o Senado porque a fonte não oferece endpoint de histórico
+de filiação partidária.
+
+A Câmara, diferentemente, expõe o webservice SOAP legado
+Deputados.asmx (ObterDetalhesDeputado?ideCadastro=X&numLegislatura=Y),
+que retorna filiacoesPartidarias com data exata de cada filiação. Logo,
+para a Câmara não é necessário aproximar — é possível obter o dado real.
+
+Decisão:
+1. Implementar cliente SOAP isolado (módulo dedicado em
+   pipeline/camara/), consumindo Deputados.asmx para as legislaturas
+   54–57, sem propagar dependência de parsing SOAP/XML para o resto do
+   pipeline.
+2. Backfill cobre todo deputado presente em despesas (não apenas os 337
+   já identificados na quarentena atual) — janela incompleta reabre para
+   qualquer deputado que troque de partido no futuro se o escopo for
+   restrito aos 337 atuais.
+3. Toda linha gerada por este backfill recebe partido_uf_aproximado=false
+   — dado real, não aproximado. Isso distingue explicitamente a garantia
+   de qualidade da Câmara (dado real via SOAP) da aproximação aceita para
+   o Senado (ADR equivalente do Senado, a formalizar).
+4. dim_parlamentar.sql deve tratar partido_uf_aproximado=false do
+   backfill da Câmara com a mesma regra de não geração de versão
+   espúria já aplicada à aproximação do Senado.
+
+Consequências:
+- Elimina a causa estrutural da quarentena da Câmara (meta: 833.401 → 0,
+  ou residual documentado com causa distinta).
+- Introduz uma dependência de webservice SOAP legado (menos documentado,
+  sem SLA formal) — mitigada por isolamento do módulo (consequência
+  aceitável, não deve vazar para o restante do pipeline).
+- partido_uf_aproximado passa a ser campo de qualidade que distingue
+  fontes: false=dado real (Câmara, pós-backfill), true=aproximação
+  (Senado). Qualquer consumidor (dashboard, API) que exiba esse campo
+  deve refletir essa distinção ao usuário.
+- Backfill cobrindo "todo deputado em despesas" (não só os 337 atuais)
+  aumenta o volume de chamadas SOAP, mas resolve o problema
+  estruturalmente ao invés de por lista fixa.
+
+---
