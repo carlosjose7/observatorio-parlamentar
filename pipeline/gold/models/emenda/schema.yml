@@ -44,6 +44,14 @@ models:
           - not_null
           - accepted_values:
               values: [true, false]
+      - name: partido_uf_aproximado
+        description: >
+          True quando partido/UF são aproximados (backfill SCD2, API Senado
+          não fornece histórico). False para snapshots com dados reais da API.
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
 
   - name: dim_parlamentar_quarantine
     description: Linhas de silver_parlamentar rejeitadas em dim_parlamentar (ADR-018).

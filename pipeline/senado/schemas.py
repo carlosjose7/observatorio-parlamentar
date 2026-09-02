@@ -113,6 +113,7 @@ class SenadoBronzeParlamentar(BaseModel):
     sigla_uf: str | None = Field(default=None, description="UF do mandato vigente.")
     id_legislatura: int = Field(default=0, description="Legislatura bruta da fonte (auditoria, ADR-024).")
     situacao: str | None = Field(default=None, description="Descrição de participação no mandato (ex: Titular).")
+    url_foto: str | None = Field(default=None, description="URL da foto oficial (API Senado, campo UrlFotoParlamentar).")
     data_status: str = Field(
         ..., description="Data de vigência do snapshot (ISO, data de execução)"
     )

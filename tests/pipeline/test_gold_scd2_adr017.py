@@ -54,7 +54,7 @@ def _seed(db: Path) -> None:
             "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint, nome varchar,"
             " sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, url_foto varchar, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, partido_uf_aproximado boolean, source_version varchar)"
         )
         con.execute(
             "create table silver.silver_emenda (ano bigint, codigo_emenda varchar, tipo_emenda varchar,"
@@ -64,17 +64,17 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.executemany(
-            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # JOSE SILVA troca de partido em 2019 — vira versão nova
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 56, "Ativo", "2019-07-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 56, "Ativo", "2019-07-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
                 # PEDRO só vigente a partir de 2020 (emenda de 2019 → fora de cobertura)
-                ("camara", 2, "PEDRO ALVES", "PARTIDO C", "RJ", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("camara", 2, "PEDRO ALVES", "PARTIDO C", "RJ", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
                 # homônimos em casas distintas, vigentes em 2020
-                ("camara", 3, "JOAO DO NORTE", "PARTIDO D", "PA", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
-                ("senado", 4, "JOAO DO NORTE", "PARTIDO E", "AM", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("camara", 3, "JOAO DO NORTE", "PARTIDO D", "PA", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("senado", 4, "JOAO DO NORTE", "PARTIDO E", "AM", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
             ],
         )
         con.executemany(
