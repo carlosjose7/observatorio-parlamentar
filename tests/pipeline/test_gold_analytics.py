@@ -72,13 +72,13 @@ def _seed(db: Path) -> None:
             "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, url_foto varchar, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, partido_uf_aproximado boolean, source_version varchar)"
         )
         con.executemany(
-            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
             ],
         )
         con.execute(

@@ -45,6 +45,65 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Incidente — Sprint 14 nunca rodou em produção (01/09/2026) — CORRIGIDO
+
+### Contexto
+
+A Sprint 14 (ADR-042, separação de schemas Silver/Gold) foi marcada
+como "FECHADA" no BACKLOG.md e CHANGELOG.md em 31/08/2026, com PR #44
+mergado em `main` (squash, commit `4f4e19b`). No entanto, as Ondas
+1–5 foram executadas contra uma **cópia local do DuckDB**, não contra
+o arquivo de produção na VPS (`data/silver/observatorio.duckdb`).
+
+### Descoberta
+
+Em 01/09/2026, o endpoint `/rede/comunidades` retornou "API
+indisponível". Investigação revelou:
+- `SET search_path = 'gold'` falhava: schema `gold` não existia
+- `information_schema` mostrava todas as tabelas em `main.*`
+- `pipeline_runs` vazio de evidências de Sprint 14
+- `git log -- data/silver/observatorio.duckdb` retornava vazio
+  (arquivo nunca commitado)
+- Birth do arquivo: `2026-08-28` (criado antes das Ondas)
+
+### Causa raiz
+
+Nenhuma das Ondas 1–5 persistiu no arquivo de produção. O `dbt build
+--full-refresh` e a migração Silver foram executados em diretório de
+trabalho do opencode ou container temporário — o DuckDB de produção
+nunca recebeu as alterações.
+
+### Fix aplicado (01/09/2026)
+
+- **Silver**: 4 tabelas base + 4 quarantines/dedup migradas de
+  `main.*` para `silver.*` (zero perda: 3.220.815 linhas)
+- **Gold**: `dbt build --full-refresh` + 2 tabelas manuais
+  (`fact_cartao_cpgf`: 1.178.642 rows, `fact_cartao_cpgf_quarantine`:
+  328.094 rows) + `pipeline_runs` populada de `main` (9 runs)
+- **Limpeza**: 4 duplicatas dropadas de `main` (`desp_parlamento`,
+  `desp_parlamento_quarantine`, `emenda_autor`,
+  `emenda_autor_quarantine`)
+- Estado final: silver=8, gold=28, main=22, ml_staging=5 (63 total)
+
+### Pendências registradas
+
+1. **Segunda rodada de limpeza**: 21 duplicatas restantes em `main`
+2. **Root cause `pipeline_runs`**: var `bronze_pipeline_runs_dir`
+   aponta pra path local em vez de MinIO/S3 — `INSERT` manual é
+   vulnerável ao próximo `dbt build` agendado
+3. **Root cause `cartao_unidade`**: efêmero quebrado impede dbt de
+   reconstruir `fact_cartao_cpgf*` — cópias manuais vulneráveis ao
+   mesmo risco
+
+### Lição de processo
+
+"FECHADA" no BACKLOG.md não é evidência de deploy. A partir de agora,
+a validação de Sprint inclui verificação de que o DuckDB de produção
+reflete o estado documentado (query `information_schema` + contagens
+de linha).
+
+---
+
 ## Sprint 14 — Separação de Schemas Silver/Gold (31/08/2026) — FECHADA
 
 ### Adicionado

@@ -62,6 +62,7 @@ COLUNAS_SILVER_PARLAMENTAR = [
     "situacao_bruta",
     "situacao_normalizada",
     "url_foto",
+    "partido_uf_aproximado",
     "data",
     "run_id",
     "pipeline_version",

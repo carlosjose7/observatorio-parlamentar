@@ -176,6 +176,7 @@ def _construir_senador(item: dict[str, Any], run_meta: LoadMetadata) -> SenadoBr
         sigla_uf=ident.get("UfParlamentar") or None,
         id_legislatura=int(leg) if leg else 0,
         situacao=(mandato.get("DescricaoParticipacao") or None),
+        url_foto=ident.get("UrlFotoParlamentar"),
         data_status=run_meta.execution_timestamp.date().isoformat(),
         metadata=meta,
     )
