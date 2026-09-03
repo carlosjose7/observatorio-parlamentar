@@ -127,3 +127,44 @@ class CamaraBronzeDeputado(BaseModel):
     metadata: LoadMetadata
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class CamaraFiliacaoPartidaria(BaseModel):
+    """Registro de filiação partidária extraído do webservice SOAP legado.
+
+    Fonte: Deputados.asmx → ObterDetalhesDeputado?ideCadastro=X&numLegislatura=Y.
+    Dado real (não aproximado) — ADR-043 item 3.
+    """
+
+    id_deputado: int = Field(
+        ...,
+        description="Identificador do deputado na fonte (ideCadastro do SOAP).",
+    )
+    sigla_partido: str = Field(
+        ...,
+        alias="siglaPartido",
+        description="Sigla do partido na data de filiação.",
+    )
+    data_filiacao: str = Field(
+        ...,
+        alias="dataFiliacaoPartidoPosterior",
+        description="Data da filiação partidária (timestamp exato da fonte SOAP).",
+    )
+    id_legislatura: int = Field(
+        ...,
+        alias="numLegislatura",
+        description="Legislatura consultada na requisição SOAP.",
+    )
+    uf: str | None = Field(
+        default=None,
+        alias="siglaUf",
+        description="UF do deputado (nunca muda — verificação empírica: zero mudanças em 3.089 linhas).",
+    )
+    partido_uf_aproximado: bool = Field(
+        default=False,
+        description=" false = dado real via SOAP (ADR-043 item 3); true = aproximação (Senado).",
+    )
+
+    metadata: LoadMetadata
+
+    model_config = ConfigDict(populate_by_name=True)
