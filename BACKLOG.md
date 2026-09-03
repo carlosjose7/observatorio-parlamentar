@@ -1397,6 +1397,35 @@ SOAP, similar ao padrão do Senado.
 **Branch:** `sprint/15-backfill-camara-soap` → `main` (via PR, mesmo
 padrão da Sprint 14).
 
+### 🔴 Reabertura formal — Onda 0 Senado (bug desde PR #46)
+
+**Bug:** `_gerar_backfill_scd2` em `pipeline/senado/transform.py:180`
+comparava `nome` (camel case do Bronze: `"Astronauta Marcos Pontes"`)
+com `nome_parlamentar` (MAIÚSCULAS do `silver_despesa`: `"ASTRONAUTA
+MARCOS PONTES"`). A comparação `== nome` nunca retornava True → 0
+backfill rows geradas desde o PR #46.
+
+**Impacto:** PR #46 (Sprint 14/Onda 0) nunca funcionou em produção.
+O "residual Senado" era **100%**, não parcial. Todos os 249.315
+registros de despesa do Senado estavam em quarentena.
+
+**Correção:** Adicionado `.upper()` na comparação (PR #48,
+branch `fix/senado-backfill-case-mismatch`).
+
+**Resultado pós-fix:**
+- `dim_parlamentar` senado: 81 (janela corrige de 2026-08-30 para
+  data real da primeira despesa)
+- `desp_parlamento` senado: 129.281 (antes: 0)
+- Cobertura total: 57.8% (antes: 50%)
+- Marcos Pontes: 1.278 despesas (antes: 0)
+
+**Teste de regressão:** `test_backfill_scd2_case_mismatch_entre_bronze_
+e_despesas` adicionado ao suite (22/22 passando).
+
+**Nota:** O PR #46 foi marcado como "resolvido" no fechamento da
+Sprint 14. Este item reabre formalmente a Onda 0 Senado como pendente
+de correção, com o fix já implementado no PR #48.
+
 ---
 
 ## Sprint 13 — Hardening CI, urlFoto e Fotos do Dashboard (30/08/2026)
