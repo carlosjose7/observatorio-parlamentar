@@ -1323,7 +1323,7 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
   boundary (5 colunas: nome, sigla_partido, sigla_uf,
   situacao_normalizada, url_foto) — é flag de auditoria, não
   atributo rastreado (dim_parlamentar.sql:102-103).
-☐ `dbt build --full-refresh` reconstrói `gold.dim_parlamentar` e
+☑ `dbt build --full-refresh` reconstrói `gold.dim_parlamentar` e
   `gold.desp_parlamento` com a cobertura nova.
 
 ### Onda 4 — Testes
@@ -1350,7 +1350,7 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 ☑ Validar: quarentena da Câmara cai de 833.401 para ~0 (residual
   esperado, se houver, deve ter motivo diferente e documentado —
   não reaproveitar "58,6%" como número aceitável).
-☐ Validar API: `/api/parlamentares/{id}/gastos` mostra despesas
+☑ Validar API: `/api/parlamentares/{id}/gastos` mostra despesas
   históricas mesmo para deputados que trocaram de partido.
 
 ### Critérios de aceite
@@ -1359,10 +1359,10 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
   incompleta cai a zero (ou residual documentado com causa distinta).
 ☑ 100% das linhas de backfill da Câmara com
   `partido_uf_aproximado = false`.
-☐ Testes passando, suite completa sem regressão nos números já
+☑ Testes passando, suite completa sem regressão nos números já
   auditados nesta sessão (594/1.251 deputados, contagens de
   `dim_parlamentar`, `fact_despesa`, etc.).
-☐ Zero perda de dado — mesma disciplina de contagem pré/pós
+☑ Zero perda de dado — mesma disciplina de contagem pré/pós
   aplicada em todas as Ondas da Sprint 14.
 
 ### Residual documentado (quarentena 585.219 linhas)
