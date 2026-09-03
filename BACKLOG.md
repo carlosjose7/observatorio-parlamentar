@@ -1339,7 +1339,7 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 ☑ Teste de classificação: despesa antiga com partido diferente do
   atual casa corretamente no `desp_parlamento_classificacao.sql` —
   TestClassificacaoComBackfill (dbt build + assert).
-☐ Teste de integração: `fact_despesa` sem quarentena residual por
+☑ Teste de integração: `fact_despesa` sem quarentena residual por
   essa causa específica.
 
 ### Onda 5 — Rebuild e validação em produção
