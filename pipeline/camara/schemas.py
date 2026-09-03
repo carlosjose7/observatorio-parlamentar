@@ -158,7 +158,7 @@ class CamaraFiliacaoPartidaria(BaseModel):
     uf: str | None = Field(
         default=None,
         alias="siglaUf",
-        description="UF do deputado (nunca muda, ADR-043 — confirmado: zero mudanças em 3.089 linhas).",
+        description="UF do deputado (nunca muda — verificação empírica: zero mudanças em 3.089 linhas).",
     )
     partido_uf_aproximado: bool = Field(
         default=False,

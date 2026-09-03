@@ -10,6 +10,7 @@ Cobre:
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -36,13 +37,13 @@ def _run_meta(**override) -> LoadMetadata:
 
 
 def _filiacao(id_dep: int, partido: str, data: str, leg: int = 57) -> dict:
-    """Helper para criar filiação SOAP como dict."""
+    """Helper para criar filiação SOAP como dict (nomes Python, não aliases)."""
     return {
         "id_deputado": id_dep,
-        "siglaPartido": partido,
-        "dataFiliacaoPartidoPosterior": data,
-        "numLegislatura": leg,
-        "siglaUf": "SP",
+        "sigla_partido": partido,
+        "data_filiacao": data,
+        "id_legislatura": leg,
+        "uf": "SP",
         "partido_uf_aproximado": False,
     }
 

@@ -6,7 +6,7 @@ especificamente o endpoint `ObterDetalhesDeputado` que retorna
 
 Este módulo NÃO propaga dependência de SOAP/XML para o resto do pipeline
 (ADR-043, item 1). Usa `httpx` + `lxml` para parsing manual de XML,
-sem引入 `zeep`.
+sem introduzir zeep.
 
 Fonte: https://www.camara.leg.br/SitCamaraWS/Deputados.asmx
 """
@@ -31,12 +31,16 @@ LEGISLATURES = [54, 55, 56, 57]
 NAMESPACE = {"s": "http://www.camara.leg.br/SitCamaraWS/Deputados.asmx"}
 
 
-def _limitador_taxa_fixa(requisicoes_por_minuto: int = 30) -> RateLimiter:
+def _limitador_taxa_fixa(requisicoes_por_minuto: int | None = None) -> RateLimiter:
     """Throttling proativo para o webservice SOAP legado.
 
     SOAP legado não tem rate limit documentado — usa 30 req/min como
-    margem conservadora (vs 100 da API REST).
+    margem conservadora (vs 100 da API REST). O valor pode ser
+    sobrescrito via parâmetro (futuro: config/pipeline.yaml).
     """
+    if requisicoes_por_minuto is None:
+        import os
+        requisicoes_por_minuto = int(os.environ.get("SOAP_RATE_LIMIT_RPM", "30"))
     return RateLimiter(requisicoes_por_minuto)
 
 
@@ -62,7 +66,7 @@ def _request_soap(
         resp.raise_for_status()
         return resp.content
 
-    return _tentativa(settings)(_do_request)()
+    return _tentativa(settings)(_do_request)
 
 
 def _parse_filiacoes(
@@ -135,9 +139,9 @@ def _extrair_uf_do_deputado(
 ) -> str | None:
     """Obtém a UF do deputado via a primeira resposta SOAP válida.
 
-    A UF nunca muda para a Câmara (confirmado: 3.089 linhas, 1.251
-    deputados, zero mudanças — ADR-043), então basta extrair de uma
-    única requisição.
+    A UF nunca muda para a Câmara (verificação empírica: 3.089 linhas,
+    1.251 deputados, zero mudanças), então basta extrair de uma única
+    requisição.
     """
     xml = _request_soap(client, id_deputado, LEGISLATURES[0], retry_settings, limiter)
     root = etree.fromstring(xml)  # noqa: S320

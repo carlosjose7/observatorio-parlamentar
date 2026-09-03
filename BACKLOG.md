@@ -1274,7 +1274,7 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 
 ### Onda 0 — Merge do backfill Senado (pré-requisito)
 
-☐ Merge PR #46 (`fix/senado-foto-backfill-scd2`, commit `b28e65f`)
+☑ Merge PR #46 (`fix/senado-foto-backfill-scd2`, commit `a74dc49`)
   — resolve `gold.desp_parlamento` Senado = 0 (backfill sintético
   com `partido_uf_aproximado=true`). ADR retroativo pendente
   (padrão ADR-002/003/004).
