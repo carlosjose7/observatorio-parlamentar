@@ -1416,7 +1416,7 @@ branch `fix/senado-backfill-case-mismatch`).
 - `dim_parlamentar` senado: 81 (janela corrige de 2026-08-30 para
   data real da primeira despesa)
 - `desp_parlamento` senado: 129.281 (antes: 0)
-- Cobertura total: 57.8% (antes: 50%)
+- Cobertura total Senado: 51.9% (129.281/249.315)
 - Marcos Pontes: 1.278 despesas (antes: 0)
 
 **Teste de regressão:** `test_backfill_scd2_case_mismatch_entre_bronze_
@@ -1425,6 +1425,30 @@ e_despesas` adicionado ao suite (22/22 passando).
 **Nota:** O PR #46 foi marcado como "resolvido" no fechamento da
 Sprint 14. Este item reabre formalmente a Onda 0 Senado como pendente
 de correção, com o fix já implementado no PR #48.
+
+**Residual pós-fix (120.034 linhas — 48,1% do Senado — ACEITO):**
+
+**Causa:** A REST API do Senado (`GET /senador/lista/atual.json`)
+retorna apenas senadores em exercício (81). Senadores aposentados/
+fora do mandato (162 nomes distintos com despesas) não têm dados
+Bronze, então o backfill não cria versões para eles. O Gold classifica
+essas despesas como `parlamentar_nao_resolvido`.
+
+**Números:**
+- Total despesas Senado: 249.315
+- Resolvidas (desp_parlamento): 129.281 (51,9%)
+- Quarentena: 120.034 (48,1%)
+  - `parlamentar_nao_resolvido`: 119.008 (senadores fora do mandato)
+  - `parlamentar_fora_cobertura`: 956 (despesas antes de 2015-02-01)
+  - `data_nao_resolvida`: 70 (data nula)
+
+**Impacto:** Despesas de senadores aposentados desde 2015 ficam
+invisíveis na API. Dados dos 81 senadores atuais estão completos.
+
+**Pendência Sprint 16 (candidata):** obter lista histórica de
+senadores (ex: `GET /senador/lista/atual.json` não basta; talvez
+`/senador/lista/legislatura/{id}.json`) para criar backfill de
+senadores fora do mandato.
 
 ---
 
