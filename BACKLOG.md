@@ -1323,7 +1323,7 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
   boundary (5 colunas: nome, sigla_partido, sigla_uf,
   situacao_normalizada, url_foto) — é flag de auditoria, não
   atributo rastreado (dim_parlamentar.sql:102-103).
-☑ `dbt build --full-refresh` reconstrói `gold.dim_parlamentar` e
+☐ `dbt build --full-refresh` reconstrói `gold.dim_parlamentar` e
   `gold.desp_parlamento` com a cobertura nova.
 
 ### Onda 4 — Testes
@@ -1346,8 +1346,8 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 
 ☑ Backup do arquivo real antes de qualquer DDL.
 ☑ Re-run Silver (`carregar_silver_parlamentar`, Câmara).
-☑ `dbt build --full-refresh` (Gold).
-☑ Validar: quarentena da Câmara cai de 833.401 para ~0 (residual
+☐ `dbt build --full-refresh` (Gold).
+☐ Validar: quarentena da Câmara cai de 833.401 para ~0 (residual
   esperado, se houver, deve ter motivo diferente e documentado —
   não reaproveitar "58,6%" como número aceitável).
 ☐ Validar API: `/api/parlamentares/{id}/gastos` mostra despesas
@@ -1355,9 +1355,9 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 
 ### Critérios de aceite
 
-☑ Quarentena de despesas da Câmara por causa de janela SCD2
+☐ Quarentena de despesas da Câmara por causa de janela SCD2
   incompleta cai a zero (ou residual documentado com causa distinta).
-☑ 100% das linhas de backfill da Câmara com
+☐ 100% das linhas de backfill da Câmara com
   `partido_uf_aproximado = false`.
 ☐ Testes passando, suite completa sem regressão nos números já
   auditados nesta sessão (594/1.251 deputados, contagens de
