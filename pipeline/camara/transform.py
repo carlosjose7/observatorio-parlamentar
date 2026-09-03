@@ -71,7 +71,7 @@ DIRETORIO_BRONZE = Path("camara")
 
 DIRETORIO_PARLAMENTO = Path("parlamento/camara")
 
-DIRETORIO_FILIACOES = Path("bronze/camara/filiacoes")
+DIRETORIO_FILIACOES = Path("camara/filiacoes")
 
 
 def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
