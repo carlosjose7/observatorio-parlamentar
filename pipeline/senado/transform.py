@@ -177,7 +177,9 @@ def _gerar_backfill_scd2(
         if not nome:
             continue
 
-        despesas_senador = df_despesas[df_despesas["nome_parlamentar"] == nome]
+        despesas_senador = df_despesas[
+            df_despesas["nome_parlamentar"] == nome.upper()
+        ]
         if despesas_senador.empty:
             continue
 

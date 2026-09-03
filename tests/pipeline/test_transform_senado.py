@@ -259,6 +259,36 @@ class TestConstruirParlamentarSenado:
         assert len(df) == 1
         assert not df.iloc[0]["partido_uf_aproximado"]
 
+    def test_backfill_scd2_case_mismatch_entre_bronze_e_despesas(self):
+        """Regressão: Bronze tem nomes em camel case, silver_despesa em MAIÚSCULAS.
+
+        O bug original (PR #46) comparava ``nome`` (camel) direto com
+        ``nome_parlamentar`` (UPPER) — a comparação nunca retornava True,
+        gerando 0 backfill rows. Este teste garante que o .upper() corrige
+        o match independentemente do case.
+        """
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar(
+            nome_parlamentar=["Alan Rick"],  # camel case (como a API real)
+            data_status=["2026-08-30T00:00:00"],
+        )
+        df_despesas = pd.DataFrame(
+            {
+                "nome_parlamentar": ["ALAN RICK"] * 2,  # UPPER (como silver_despesa real)
+                "data_documento": pd.to_datetime(["2020-01-01", "2024-06-15"]),
+            }
+        )
+
+        df = construir_silver_parlamentar(df_bronze, df_despesas)
+
+        # Deve gerar backfill apesar do case mismatch
+        backfill = df[df["partido_uf_aproximado"]]
+        assert len(backfill) >= 1, (
+            "Backfill vazio — case mismatch não resolvido. "
+            "Bronze='Alan Rick', silver_despesa='ALAN RICK'"
+        )
+
     def test_flag_aproximado_propaga_corretamente(self):
         from pipeline.senado.transform import construir_silver_parlamentar
 
