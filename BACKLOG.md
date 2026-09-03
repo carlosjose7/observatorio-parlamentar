@@ -1283,53 +1283,62 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 
 ☑ ADR-043 formalizado em `ADR.md` (texto aprovado, inserido nesta
   sessão — Status: Proposto).
-☐ Cliente SOAP isolado (`pipeline/camara/soap_extract.py` ou
-  equivalente) — `zeep` ou parsing manual de XML via `httpx`+`lxml`,
-  sem propagar a dependência pro resto do pipeline (ADR-043, item 1).
-☐ Função para consultar `ObterDetalhesDeputado?ideCadastro=X&
+☑ Cliente SOAP isolado (`pipeline/camara/soap_extract.py`) —
+  parsing manual de XML via `httpx`+`lxml`, sem propagar a
+  dependência pro resto do pipeline (ADR-043, item 1).
+☑ Função para consultar `ObterDetalhesDeputado?ideCadastro=X&
   numLegislatura=Y` para as legislaturas 54, 55, 56, 57, por
   deputado.
-☐ Parse de `filiacoesPartidarias`, extraindo `siglaPartido` +
+☑ Parse de `filiacoesPartidarias`, extraindo `siglaPartido` +
   `dataFiliacaoPartidoPosterior` (timestamp exato).
-☐ Schema Pydantic pro registro de filiação (`CamaraFiliacaoPartidaria`
-  ou nome equivalente).
-☐ Retry/rate limiting consistente com o padrão `tenacity` já usado
+☑ Schema Pydantic pro registro de filiação (`CamaraFiliacaoPartidaria`)
+  em `pipeline/camara/schemas.py`.
+☑ Retry/rate limiting consistente com o padrão `tenacity` já usado
   no resto do `pipeline/camara/`.
-☐ Cache persistente (Parquet ou DuckDB) em `bronze/camara/filiacoes/`
+☑ Cache persistente (Parquet) em `bronze/camara/filiacoes/`
   — idempotência na camada de extração, não só na de carga.
 
 ### Onda 2 — Backfill real no Silver
 
-☐ Escopo: rodar para **todo deputado presente em despesas**, não só
+☑ Escopo: rodar para **todo deputado presente em despesas**, não só
   os 337 já identificados — evita reabrir o mesmo buraco pra
   deputados que troquem de partido depois de hoje.
-☐ Merge das filiações das 4 legislaturas por deputado numa timeline
+☑ Merge das filiações das 4 legislaturas por deputado numa timeline
   SCD2 ordenada (`dataFiliacaoPartidoPosterior` vira `effective_date`
   de cada versão).
-☐ `partido_uf_aproximado = false` em todas as linhas geradas por
+☑ `partido_uf_aproximado = false` em todas as linhas geradas por
   esse backfill (dado real, ADR-043 item 3).
-☐ Dedup/idempotência: rodar duas vezes não duplica linhas (mesmo
+☑ Dedup/idempotência: rodar duas vezes não duplica linhas (mesmo
   padrão de chave usado no backfill do Senado).
-☐ Garantir que a versão "atual" vinda do REST (`ultimoStatus`) não
+☑ Garantir que a versão "atual" vinda do REST (`ultimoStatus`) não
   duplica com a versão SOAP equivalente ao mesmo intervalo.
 
 ### Onda 3 — dbt / Gold
 
-☐ Validar que `dim_parlamentar.sql` (com a lógica `lag()` já
+☑ Validar que `dim_parlamentar.sql` (com a lógica `lag()` já
   ajustada pro Senado) lida corretamente com múltiplas versões de
   Câmara vindas do backfill, sem disparar versão nova por causa do
   `partido_uf_aproximado` (mesma regra já aplicada ao Senado).
+  Validação: `partido_uf_aproximado` NÃO está na detecção de
+  boundary (5 colunas: nome, sigla_partido, sigla_uf,
+  situacao_normalizada, url_foto) — é flag de auditoria, não
+  atributo rastreado (dim_parlamentar.sql:102-103).
 ☐ `dbt build --full-refresh` reconstrói `gold.dim_parlamentar` e
   `gold.desp_parlamento` com a cobertura nova.
 
 ### Onda 4 — Testes
 
-☐ Testes unitários do parser SOAP/XML (mock de resposta).
-☐ Teste: deputado com múltiplas trocas de partido gera múltiplas
-  versões SCD2 corretas.
-☐ Teste de dedup/idempotência (mesmo padrão da Sprint 14).
-☐ Teste de classificação: despesa antiga com partido diferente do
-  atual casa corretamente no `desp_parlamento_classificacao.sql`.
+☑ Testes unitários do parser SOAP/XML (mock de resposta) —
+  `tests/pipeline/test_soap_extract.py` (TestParseFiliacoes,
+  TestExtrairFiliacoesDeputado, TestSalvarCacheFiliacoes).
+☑ Teste: deputado com múltiplas trocas de partido gera múltiplas
+  versões SCD2 corretas — `test_backfill_camara_scd2.py`.
+☑ Teste de dedup/idempotência (mesmo padrão da Sprint 14) —
+  dedup por (id_deputado, sigla_partido, data_filiacao) +
+  re-run seguro em carregar_silver_parlamentar.
+☑ Teste de classificação: despesa antiga com partido diferente do
+  atual casa corretamente no `desp_parlamento_classificacao.sql` —
+  TestClassificacaoComBackfill (dbt build + assert).
 ☐ Teste de integração: `fact_despesa` sem quarentena residual por
   essa causa específica.
 

@@ -19,7 +19,12 @@ Onda 2: snapshot de dados mestres dos deputados (ADR-020). O bronze de
 `parlamento/` (um Parquet por dia de execução) é consolidado em
 `silver_parlamentar` — Deduplicação colapsa snapshots idênticos e o gate
 Pandera (`carregar_tabela_silver`) garante a chave de negócio
-(`fonte`, `id_parlamentar`, `data`), base do SCD2 em Gold.
+(`fonte`, id_parlamentar`, `data`), base do SCD2 em Gold.
+
+Onda 2 (Sprint 15): backfill SOAP — filiações partidárias históricas
+via Deputados.asmx (ADR-043). Lê o cache Parquet em
+`bronze/camara/filiacoes/`, mergeia por deputado em timeline SCD2
+ordenada e gera snapshots com `partido_uf_aproximado=False` (dado real).
 """
 
 from __future__ import annotations
@@ -65,6 +70,8 @@ COLUNAS_SILVER = [
 DIRETORIO_BRONZE = Path("camara")
 
 DIRETORIO_PARLAMENTO = Path("parlamento/camara")
+
+DIRETORIO_FILIACOES = Path("bronze/camara/filiacoes")
 
 
 def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
@@ -205,6 +212,134 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
     return df[COLUNAS_SILVER_PARLAMENTAR]
 
 
+def _carregar_cache_filiacoes(storage: Storage) -> pd.DataFrame:
+    """Lê o cache Parquet de filiações SOAP (`bronze/camara/filiacoes/`).
+
+    Returns:
+        DataFrame com colunas: id_deputado, sigla_partido,
+        data_filiacao, id_legislatura, uf, partido_uf_aproximado.
+        Vazio se o cache não existir ou estiver vazio.
+    """
+    df = storage.read_dir(DIRETORIO_FILIACOES)
+    if df.empty:
+        logger.warning("cache_filiacoes_vazio")
+        return df
+    logger.info(
+        "cache_filiacoes_carregado",
+        linhas=len(df),
+        deputados_unicos=df["id_deputado"].nunique()
+        if "id_deputado" in df.columns
+        else 0,
+    )
+    return df
+
+
+def _gerar_backfill_scd2_camara(
+    df_filiacoes: pd.DataFrame,
+    df_bronze: pd.DataFrame,
+    run_meta_source_version: str,
+) -> pd.DataFrame:
+    """Gera snapshots de backfill para filiações partidárias históricas (ADR-043).
+
+    Diferente do Senado (que usa snapshots sintéticos com partido
+    aproximado), a Câmara fornece dados REAIS via SOAP — cada filiação
+    gera um snapshot com a data exata da mudança de partido.
+
+    Args:
+        df_filiacoes: DataFrame de filiações SOAP (cache Parquet).
+        df_bronze: Snapshot Bronze dos deputados (para obter nome, UF, etc.).
+        run_meta_source_version: source_version para os metadados.
+
+    Returns:
+        DataFrame com snapshots de backfill (mesmo schema de
+        `construir_silver_parlamentar`) ou vazio.
+    """
+    if df_filiacoes.empty:
+        return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
+
+    # Indexa o bronze por id_deputado para enriquecer os snapshots
+    bronze_por_id: dict[int, dict] = {}
+    if not df_bronze.empty and "id_deputado" in df_bronze.columns:
+        for _, row in df_bronze.iterrows():
+            bronze_por_id[int(row["id_deputado"])] = row.to_dict()
+
+    rows_backfill: list[dict] = []
+
+    for id_dep, grupo in df_filiacoes.groupby("id_deputado"):
+        # Ordena por data de filiação (timeline cronológica)
+        grupo = grupo.sort_values("data_filiacao")
+
+        info_bronze = bronze_por_id.get(id_dep, {})
+        nome = info_bronze.get("nome_eleitoral") or info_bronze.get(
+            "nome_civil", ""
+        )
+        if not nome:
+            # Fallback: tenta extrair do próprio grupo (se disponível)
+            continue
+
+        uf = grupo["uf"].iloc[0] if "uf" in grupo.columns and len(grupo) > 0 else None
+        if not uf:
+            uf = info_bronze.get("sigla_uf")
+
+        # Metadados compartilhados para todas as linhas deste deputado
+        run_id = info_bronze.get("run_id", "")
+        pipeline_version = info_bronze.get("pipeline_version", "")
+        execution_timestamp = info_bronze.get("execution_timestamp", "")
+
+        for _, fil in grupo.iterrows():
+            data_filiacao = fil["data_filiacao"]
+            data_snapshot = pd.Timestamp(data_filiacao)
+
+            # Deriva id_legislatura do calendário (ADR-024)
+            try:
+                data_date = data_snapshot.date()
+                id_leg = legislatura_para_data(data_date) or 0
+            except Exception:
+                id_leg = 0
+
+            rows_backfill.append(
+                {
+                    "fonte": "camara",
+                    "id_parlamentar": int(id_dep),
+                    "nome": nome,
+                    "sigla_partido": fil.get("sigla_partido"),
+                    "sigla_uf": uf,
+                    "id_legislatura": id_leg,
+                    "id_legislatura_fonte": int(
+                        fil.get("id_legislatura", 0) or 0
+                    ),
+                    "situacao_bruta": info_bronze.get("situacao"),
+                    "situacao_normalizada": normalizar_situacao(
+                        "camara", info_bronze.get("situacao")
+                    ),
+                    "url_foto": info_bronze.get("url_foto"),
+                    "partido_uf_aproximado": False,  # ADR-043 item 3
+                    "data": data_snapshot,
+                    "run_id": run_id,
+                    "pipeline_version": pipeline_version,
+                    "execution_timestamp": execution_timestamp,
+                    "source_version": run_meta_source_version,
+                }
+            )
+
+    if not rows_backfill:
+        return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
+
+    df = pd.DataFrame(rows_backfill)
+
+    # Dedup por chave composta: mesmo deputado + mesma data = mantém primeiro
+    df = df.drop_duplicates(
+        subset=["fonte", "id_parlamentar", "data"], keep="first"
+    )
+
+    logger.info(
+        "backfill_scd2_camara_gerado",
+        total_snapshots=len(df),
+        deputados_unicos=df["id_parlamentar"].nunique(),
+    )
+    return df[COLUNAS_SILVER_PARLAMENTAR]
+
+
 def carregar_silver_parlamentar(
     storage: Storage, run_id: str
 ) -> ResultadoCargaSilver | None:
@@ -214,6 +349,9 @@ def carregar_silver_parlamentar(
     a dedup independente do `carregar_tabela_silver` colapsa snapshots de
     meses iguais pela chave `(fonte, id_parlamentar, data)` e o gate
     Pandera isola registros com data inválida ou nome ausente.
+
+    Quando há filiações SOAP em cache (`bronze/camara/filiacoes/`),
+    gera snapshots de backfill com dados reais (ADR-043, `partido_uf_aproximado=False`).
 
     Args:
         storage: Persistência Parquet do Bronze (injetável).
@@ -227,7 +365,24 @@ def carregar_silver_parlamentar(
         logger.warning("silver_parlamento_sem_dados", run_id=run_id)
         return None
 
-    df_silver = construir_silver_parlamentar(df_bronze)
+    df_atual = construir_silver_parlamentar(df_bronze)
+
+    # Backfill SOAP (ADR-043) — filiações partidárias históricas
+    df_filiacoes = _carregar_cache_filiacoes(storage)
+    from datetime import UTC, datetime
+
+    source_version = datetime.now(UTC).date().isoformat()
+    df_backfill = _gerar_backfill_scd2_camara(
+        df_filiacoes, df_bronze, source_version
+    )
+
+    if not df_backfill.empty:
+        df_silver = pd.concat(
+            [df_atual, df_backfill], ignore_index=True
+        )[COLUNAS_SILVER_PARLAMENTAR]
+    else:
+        df_silver = df_atual
+
     return carregar_tabela_silver(
         df_silver,
         "silver_parlamentar",
