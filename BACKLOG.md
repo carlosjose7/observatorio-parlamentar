@@ -1340,7 +1340,8 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
   atual casa corretamente no `desp_parlamento_classificacao.sql` —
   TestClassificacaoComBackfill (dbt build + assert).
 ☑ Teste de integração: `fact_despesa` sem quarentena residual por
-  essa causa específica.
+  essa causa específica (validação manual em produção, não
+  automatizado).
 
 ### Onda 5 — Rebuild e validação em produção
 
@@ -1365,7 +1366,11 @@ causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
 ☑ Zero perda de dado — mesma disciplina de contagem pré/pós
   aplicada em todas as Ondas da Sprint 14.
 
-### Residual documentado (quarentena 585.219 linhas)
+### Residual documentado (quarentena 585.219 linhas — ACEITO)
+
+**Decisão:** 41,2% de quarentena residual é aceitável para fechar
+Sprint 15. Não aplicar fallback sintético (`partido_uf_aproximado=true`)
+por ora.
 
 **Motivo:** Endpoint SOAP `ObterDetalhesDeputado` não retorna filiações
 para 219 deputados (43% do total). Esses deputados têm apenas a versão
@@ -1384,6 +1389,10 @@ deputados não têm filiação registrada nas legislaturas 54-57.
 
 **Impacto:** Despesas de 2015-2022 para deputados sem filiação SOAP
 ficam invisíveis na API. Dados de 2023+ estão completos.
+
+**Pendência Sprint 16 (candidata):** aplicar fallback sintético
+(`partido_uf_aproximado=true`) para os 219 deputados sem filiação
+SOAP, similar ao padrão do Senado.
 
 **Branch:** `sprint/15-backfill-camara-soap` → `main` (via PR, mesmo
 padrão da Sprint 14).
