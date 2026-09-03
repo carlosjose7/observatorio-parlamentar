@@ -54,6 +54,7 @@ def _request_soap(
     """Requisição GET ao endpoint SOAP, retornando bytes do XML.
 
     O endpoint aceita GET com query params (não exige POST SOAP envelope).
+    Retorna bytes vazios se o deputado não estava na legislatura (404).
     """
     url = f"{SOAP_BASE_URL}/ObterDetalhesDeputado"
     params = {"ideCadastro": id_deputado, "numLegislatura": num_legislatura}
@@ -63,6 +64,8 @@ def _request_soap(
         if limiter is not None:
             limiter.aguardar()
         resp = client.get(url, params=params)
+        if resp.status_code == 404:
+            return b""
         resp.raise_for_status()
         return resp.content
 
@@ -92,6 +95,8 @@ def _parse_filiacoes(
       </filiacoesPartidarias>
     </Deputado>
     """
+    if not xml_bytes:
+        return []
     root = etree.fromstring(xml_bytes)  # noqa: S320
     filiacoes: list[CamaraFiliacaoPartidaria] = []
 
@@ -107,8 +112,12 @@ def _parse_filiacoes(
     )
 
     for node in filiacoes_nodes:
-        sigla = node.findtext("siglaPartido") or node.findtext(
-            "s:siglaPartido", namespaces=NAMESPACE
+        # XML real usa siglaPartidoPosterior (partido DESTINO da mudança)
+        sigla = (
+            node.findtext("siglaPartidoPosterior")
+            or node.findtext("s:siglaPartidoPosterior", namespaces=NAMESPACE)
+            or node.findtext("siglaPartido")
+            or node.findtext("s:siglaPartido", namespaces=NAMESPACE)
         )
         data = node.findtext("dataFiliacaoPartidoPosterior") or node.findtext(
             "s:dataFiliacaoPartidoPosterior", namespaces=NAMESPACE
@@ -144,6 +153,8 @@ def _extrair_uf_do_deputado(
     requisição.
     """
     xml = _request_soap(client, id_deputado, LEGISLATURES[0], retry_settings, limiter)
+    if not xml:
+        return None
     root = etree.fromstring(xml)  # noqa: S320
     uf = root.findtext("siglaUf") or root.findtext("s:siglaUf", namespaces=NAMESPACE)
     return uf.strip() if uf else None
