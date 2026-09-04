@@ -1733,6 +1733,67 @@ com os novos dados.
 
 ---
 
+## Sprint 17 — Redesign Mobile do Site Institucional
+
+**Objetivo:** Resolver a ausência de navegação mobile no site
+institucional (nav{display:none} sem substituto abaixo de 800px) e
+aplicar microinterações de refinamento (hover, focus, transition)
+identificadas em revisão de UX. Ver ADR-045.
+
+**Causa raiz:** site-v3/index.html esconde <nav> completamente no
+breakpoint ≤800px, sem hambúrguer ou qualquer outro acesso aos links.
+Primeiro JavaScript introduzido no site, até então 100% estático.
+
+### Onda 17.1 — ADR de arquitetura do menu mobile
+
+**Entregável:** ADR-045 aprovado (JS vanilla + overlay fullscreen)
+antes de iniciar implementação.
+
+- ☐ ADR-045 commitado em ADR.md
+- ☐ Confirmar numeração real via git clone antes do commit
+
+### Onda 17.2 — Implementação do menu mobile + acessibilidade
+
+**Arquivo:** site-v3/index.html (CSS + JS inline ou <script> próprio)
+
+- ☐ Botão hambúrguer visível apenas em @media(max-width:800px)
+- ☐ aria-label e aria-expanded dinâmicos no botão
+- ☐ Painel overlay fullscreen (background: var(--green)), replica
+  os 4 links do <nav> desktop + CTA Dashboard
+- ☐ Fechamento por tecla Esc
+- ☐ Fechamento ao clicar em um link
+- ☐ Foco movido para o primeiro link ao abrir; foco preso enquanto
+  aberto
+- ☐ Teste manual de navegação por teclado (Tab, Esc)
+
+### Onda 17.3 — Microinterações
+
+**Arquivo:** site-v3/index.html (CSS)
+
+- ☐ transition: 0.2s ease em nav a, com :hover escurecendo links
+  inativos
+- ☐ :hover em .dashboard usando --green2 + box-shadow sutil
+- ☐ transform: scale(1.03) em .brand no hover
+
+### Onda 17.4 — Refino .sources e touch targets mobile
+
+**Arquivo:** site-v3/index.html (CSS)
+
+- ☐ Substituir transform:scale(.9) em .sources por reflow real
+  (wrap/stack) no mobile
+- ☐ Auditar touch targets (mínimo 44×44px) em ranking bars, cards e
+  footer
+
+### Onda 17.5 — Revisão técnica e fechamento
+
+- ☐ Revisão técnica (Revisor Técnico)
+- ☐ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
+- ☐ PROJECT_CONTEXT.md atualizado se houver mudança estrutural
+
+**Branch:** sprint/17-mobile-redesign → main (via PR)
+
+---
+
 ## Lições Aprendidas
 
 ### ⚠️ Lição: Schema Bronze exige re-extração manual explícita (04/09/2026)
