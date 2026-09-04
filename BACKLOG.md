@@ -1616,3 +1616,32 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
 - ☑ Syntax check limpo (todos os arquivos parseiam sem erro)
 
 **Branch:** `sprint/12-batalha-contador` → `develop` → `hml` → `main`
+
+---
+
+## Lições Aprendidas
+
+### ⚠️ Lição: Schema Bronze exige re-extração manual explícita (04/09/2026)
+
+**Contexto:** O PR #46 adicionou o campo `url_foto` ao schema Pydantic
+`SenadoBronzeParlamentar` (02/09), mas o Parquet Bronze já existia
+escrito em 30/08 — sem a coluna. O pipeline scheduled não re-extrai
+dados que já existem (só busca incrementos), então o Bronze antigo
+persistiu sem `url_foto` por 5 dias, afetando **todos os 81
+senadores** (avatar quebrado no dashboard).
+
+**Regra:** Quando um PR adiciona campo novo a um extractor Bronze já
+em produção, **a re-extração manual do Bronze é obrigatória** antes
+do merge ou imediatamente após. O DAG scheduled não faz isso
+sozinho.
+
+**Checklist para PRs que mexem em extractor Bronze:**
+1. Verificar se o campo novo já existe no Parquet Bronze atual
+2. Se não existir: re-extrair antes de merge (ou documentar como
+   item de operação pós-merge)
+3. Rodar Silver + Gold para propagar
+4. Validar com query antes/depois
+
+**Caso relacionado:** Sprint 15, fix `url_foto` — re-extração
+manual via MinIO (`parlamento/senado/2026-09-04.parquet`),
+limpeza de rows antigas no Silver, dbt build `dim_parlamentar`.
