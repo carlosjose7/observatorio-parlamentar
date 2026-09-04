@@ -1619,6 +1619,120 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
 
 ---
 
+## Sprint 16 — Cobertura Histórica de Parlamentares (Câmara + Senado)
+
+**Objetivo:** Buscar dados de parlamentares por legislatura (não
+apenas "atual") para eliminar os residuals de quarentena:
+- Câmara: 219 deputados sem cobertura SCD2 histórica (têm despesas,
+  mas partido/UF pré-2023 ausente no `dim_parlamentar`)
+- Senado: 120.034 despesas (48,1%) em quarentena — 162 senadores
+  fora do mandato atual absent from `dim_parlamentar`
+
+**Causa raiz:** Ambos os extractors buscam apenas o endpoint "atual"
+da API REST (`/deputados` e `/senador/lista/atual.json`). Os
+endpoints históricos existem e foram validados:
+- Câmara: `GET /deputados?idLegislatura={N}` (54-57)
+- Senado: `GET /senador/lista/legislatura/{N}.json` (54-57)
+
+**Numeração de legislatura:** Confirmada idêntica entre Câmara e
+Senado (54-57). A API do Senado tem estrutura diferente (`Mandatos`
+plural, UF dentro do mandato, não no top-level).
+
+### Onda 1 — Extrator Câmara: iteração por legislatura
+
+**Arquivo:** `pipeline/camara/extract.py`
+**Função:** `_listar_deputados()` (linha 45)
+
+**Mudança:** Adicionar parâmetro `idLegislatura` ao request
+`GET /deputados`, iterando sobre legislaturas 54-57 (mesmo range
+do `LEGISLATURAS` em `parlamento.py`).
+
+**Especificação:**
+- Parâmetro da API: `idLegislatura={N}` (aceita lista? testar)
+- Se não aceitar lista: iterar 4 vezes, deduplicar por `id`
+- Manter fallback: sem `idLegislatura` = legislatura atual
+- `extract_despesas()` e `extract_deputados()` usam `_listar_deputados()`
+  — mudança propaga automaticamente
+
+**Validação:**
+- Query: `SELECT COUNT(DISTINCT id_parlamentar) FROM silver.silver_parlamentar WHERE fonte='camara'`
+- Esperado: >513 (atual) → ~1500+ (com históricos)
+
+### Onda 2 — Extrator Senado: busca por legislatura
+
+**Arquivo:** `pipeline/senado/extract.py`
+**Função:** `extract_senadores()` (linha 185) + nova `_listar_senadores_por_legislatura()`
+
+**Mudança:** Criar nova função que chama
+`GET /senador/lista/legislatura/{N}.json` para legislaturas 54-57.
+
+**Especificação:**
+- Endpoint: `/senador/lista/legislatura/{N}.json`
+- Key de resposta: `ListaParlamentarLegislatura` (não `ListaParlamentarEmExercicio`)
+- `Mandatos` é lista (plural), UF dentro de `Mandato.UfParlamentar`
+- `IdentificacaoParlamentar` NÃO tem `UfParlamentar` no top-level
+- Adaptar `_construir_senador()` para ler UF de `Mandato`
+- Deduplicar por `CodigoParlamentar` (senador pode aparecer em
+  múltiplas legislaturas)
+
+**Validação:**
+- Query: `SELECT COUNT(DISTINCT id_parlamentar) FROM silver.silver_parlamentar WHERE fonte='senado'`
+- Esperado: >81 (atual) → ~300+ (com históricos)
+
+### Onda 3 — Reprocessar Bronze completo ⚠️ OBRIGATÓRIO
+
+**Motivo:** Lição da Sprint 15 (ver "Lições Aprendidas"). As
+mudanças nas Ondas 1 e 2 alteram o comportamento dos extractors
+(são novas chamadas à API), então o Bronze precisa ser re-escrito
+com os novos dados.
+
+**Procedimento:**
+1. Backup DuckDB
+2. Limpar Parquet Bronze antigo (Câmara e Senado) do MinIO
+3. Rodar extract para Câmara (agora com legislaturas 54-57)
+4. Rodar extract para Senado (agora com legislaturas 54-57)
+5. Rodar Silver para ambas as fontes
+6. Rodar `dbt build --target prod` para Gold
+7. Validar: query antes/depois para contagem de parlamentares
+
+**Checklist (da lição):**
+- [ ] Verificar se Bronze novo tem colunas/linhas esperadas
+- [ ] Limpar Bronze antigo para evitar duplicatas
+- [ ] Rodar Silver + Gold
+- [ ] Validar com query
+
+### Onda 4 — Validação e teste
+
+**Cenários de teste:**
+1. Deputado histórico (ex:陈某 que serviu na 55a mas não na 57a)
+   deve aparecer em `dim_parlamentar` com `is_current=false`
+2. Senador aposentado (ex: ceux com despesas pré-2023) deve ter
+   `url_foto`, partido e UF preenchidos
+3. Senador atual não deve ter duplicatas (mesmo ID, múltiplas
+   legislaturas = uma única versão SCD2 com janela correta)
+4. Quarentena de `parlamentar_nao_resolvido` deve diminuir
+   significativamente (Câmara: 219 → ~0; Senado: 119.008 → ~0)
+5. Testes existentes continuam passando (22/24, exceto
+   `fk_orfas_threshold_pct` pré-existente)
+
+**Métricas de sucesso:**
+- Câmara: 0 deputados em quarentena `parlamentar_nao_resolvido`
+- Senado: quarentena `parlamentar_nao_resolvido` <5% (restante
+  são nomes sem match na API histórica)
+- Cobertura total: >90% (antes: 57,8%)
+
+**Branch:** `sprint/16-cobertura-historica` → `main` (via PR)
+
+**Notas:**
+- Legislaturas 54-57 (2011-2027) cobrem todo o período CEAPS
+  (2015+). Não precisa ir além de 54.
+- A API da Câmara aceita `idLegislatura` como filtro direto. A do
+  Senado usa path parameter (`/legislatura/{N}.json`).
+- Não mexe em despesas (já funciona por `id_legislatura` no
+  endpoint de despesas da Câmara, e por CSV no Senado).
+
+---
+
 ## Lições Aprendidas
 
 ### ⚠️ Lição: Schema Bronze exige re-extração manual explícita (04/09/2026)
