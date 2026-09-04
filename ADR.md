@@ -2619,3 +2619,108 @@ Consequências:
   estruturalmente ao invés de por lista fixa.
 
 ---
+
+ADR-044
+Título: Cobertura histórica de parlamentares via endpoints de legislatura (Câmara + Senado)
+
+Status:
+Proposto — Sprint 16
+
+Contexto:
+Ambos os extractors (Câmara e Senado) buscam apenas o endpoint "atual"
+da API REST, resultando em parlamentares sem cobertura SCD2 histórica:
+- Câmara: 219 deputados sem partido/UF pré-2023 (têm despesas, mas
+  ausentes do `dim_parlamentar` para legislaturas anteriores)
+- Senado: 120.034 despesas (48,1%) em quarentena — 162 senadores fora
+  do mandato atual absent from `dim_parlamentar`
+
+Os endpoints históricos existem e foram validados:
+- Câmara: `GET /deputados?idLegislatura={N}` (legislaturas 54-57)
+- Senado: `GET /senador/lista/legislatura/{N}.json` (legislaturas 54-57)
+
+Numeração de legislatura é idêntica entre Câmara e Senado (54-57).
+A API do Senado tem estrutura diferente (`Mandatos` plural, UF dentro
+do mandato, não no top-level).
+
+Decisão:
+1. Câmara: adicionar parâmetro `idLegislatura` ao `_listar_deputados()`,
+   iterando sobre legislaturas 54-57, deduplicando por `id`.
+2. Senado: nova função `_listar_senadores_por_legislatura()` que chama
+   `/lista/legislatura/{N}.json`, com parsing adaptado para `Mandatos`
+   plural e UF dentro do mandato.
+3. Reprocessar Bronze completo após mudanças (lição da Sprint 15 —
+   schema Bronze exige re-extração manual explícita).
+4. Legislaturas 54-57 (2011-2027) cobrem todo o período CEAPS (2015+).
+   Não precisa ir além de 54.
+
+Consequências:
+- Elimina quarentena `parlamentar_nao_resolvido` para Câmara (~0) e
+  reduz significativamente para Senado (<5%).
+- Aumenta volume de chamadas à API (4 requests por legislatura por
+  fonte), mas APIs públicas sem SLA formal.
+- Reprocessamento do Bronze é obrigatório (lição documentada em
+  BACKLOG.md §Lições Aprendidas).
+
+---
+
+ADR-045
+Título: Menu de navegação mobile do site institucional — overlay fullscreen com JS mínimo
+
+Status:
+Proposto — aguardando aprovação para abrir Sprint 17
+
+Contexto:
+Em site-v3/index.html, o breakpoint @media(max-width:800px) aplica
+nav{display:none}, removendo completamente o acesso aos links de
+navegação (Panorama, Parlamentar, Partido, Estado) em telas mobile,
+sem nenhum substituto. Apenas o botão "Dashboard" permanece visível.
+Demais elementos responsivos (métricas, cards, hero) já estão
+tratados nos breakpoints existentes (1100px, 800px, 520px) e não
+fazem parte deste ADR.
+
+Três abordagens técnicas foram avaliadas para o menu mobile:
+- CSS-only (checkbox hack): descartada por dificultar o controle de
+  foco e tecla Esc.
+- <details>/<summary>: descartada por estilização inconsistente do
+  marcador entre navegadores e falta de controle sobre
+  transição/overlay.
+- JS mínimo com toggle de classe: escolhida por dar controle total
+  sobre acessibilidade (foco, Esc, aria-expanded) sem introduzir
+  dependência de framework.
+
+Um mockup interativo (overlay fullscreen sobre --green, com os 4
+links + CTA Dashboard) foi validado com o responsável pelo produto
+antes da formalização deste ADR.
+
+Decisão:
+1. Adicionar um botão de menu (ícone hambúrguer) visível apenas no
+   breakpoint ≤800px, com aria-label e aria-expanded dinâmicos.
+2. Ao ativar, um painel overlay fullscreen (background: var(--green))
+   cobre a viewport, exibindo os mesmos itens de <nav><ul> em fonte
+   ampliada (19px) mais o CTA Dashboard, replicando a paleta já usada
+   em .questions.
+3. Comportamento via JS vanilla (sem dependência externa): toggle de
+   classe, fechamento por tecla Esc, fechamento ao clicar em um link,
+   e foco movido para o primeiro link ao abrir (foco preso enquanto o
+   overlay estiver aberto).
+4. O conjunto de links do menu mobile replica exatamente o <nav>
+   desktop existente (Panorama, Parlamentar, Partido, Estado) — não
+   inclui os endpoints adicionais de PROJECT_CONTEXT.md §11
+   (Fornecedor, Anomalias), pois esses ainda não têm página
+   correspondente no site institucional. Fica registrado como item
+   de backlog separado, não bloqueante.
+5. Acima de 800px, nada muda — o botão hambúrguer permanece oculto e
+   a <nav> desktop funciona como hoje.
+
+Consequências:
+- Introduz o primeiro trecho de JavaScript no site institucional (até
+  então 100% estático); escopo do script deve ficar restrito ao
+  toggle do menu, sem novas dependências.
+- Exige teste manual de navegação por teclado (Tab, Esc) antes do
+  fechamento da Sprint 17.
+- BACKLOG.md e CHANGELOG.md devem ser atualizados ao final da sprint,
+  registrando a Onda 17.1 (este ADR) como concluída.
+- Não altera os breakpoints de métricas/cards/hero já existentes —
+  reduz risco de regressão.
+
+---
