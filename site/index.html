@@ -154,7 +154,7 @@ footer{background:#092d20;color:#fff;padding:45px 0}
   .hero{min-height:720px}.hero-photo{left:0;top:0;height:430px;bottom:auto;opacity:.9}.hero-photo:after{background:linear-gradient(180deg,rgba(247,246,241,.05),rgba(247,246,241,.95) 82%)}.hero-content{min-height:720px;align-items:flex-end;padding-bottom:100px}.hero-copy{width:100%;padding:0}h1{font-size:47px}.metric-grid{grid-template-columns:1fr 1fr}.metric{border-bottom:1px solid var(--line)}.cards,.method{grid-template-columns:1fr}.ranking-grid{grid-template-columns:1fr}.qgrid{grid-template-columns:1fr}.q:nth-child(even){padding-left:0;border-left:0}
 }
 @media(max-width:520px){
-  .wrap{width:calc(100% - 30px)}.brand-name{display:none}.dashboard span{display:none}.dashboard{padding:11px}.hero{min-height:680px}.hero-content{min-height:680px;padding-bottom:95px}.hero-photo{height:390px}h1{font-size:41px}.lede{font-size:17px;margin:22px 0}.sources{gap:7px;transform:scale(.9);transform-origin:left center}.metric-grid{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}section.content{padding:75px 0}.section-title{font-size:38px}
+  .wrap{width:calc(100% - 30px)}.brand .brand-name{display:none}.dashboard span{display:none}.dashboard{padding:11px}.hero{min-height:680px}.hero-content{min-height:680px;padding-bottom:95px}.hero-photo{height:390px}h1{font-size:41px}.lede{font-size:17px;margin:22px 0}.sources{gap:7px;transform:scale(.9);transform-origin:left center}.metric-grid{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}section.content{padding:75px 0}.section-title{font-size:38px}
   .footer{flex-direction:column;align-items:start}
 }
 </style>
@@ -192,21 +192,21 @@ footer{background:#092d20;color:#fff;padding:45px 0}
       <span aria-hidden="true"></span>
     </button>
   </div>
-
-  <div class="menu-mobile" id="menu-mobile" role="dialog" aria-modal="true" aria-label="Menu de navegação" hidden>
-    <a class="menu-link" href="/">Panorama</a>
-    <a class="menu-link" href="/app/parlamentar">Parlamentar</a>
-    <a class="menu-link" href="/app/partido">Partido</a>
-    <a class="menu-link" href="/app/estado">Estado</a>
-    <a class="menu-link" href="/app/fornecedor">Fornecedor</a>
-    <a class="menu-link" href="/app/rede">Rede</a>
-    <a class="menu-link" href="/app/anomalias">Anomalias</a>
-    <a class="menu-link" href="/app/ml">ML</a>
-    <a class="menu-link" href="/app/qualidade">Qualidade</a>
-    <a class="menu-link" href="/app/metadados">Metadados</a>
-    <a class="menu-cta" href="/app/">Abrir o Dashboard</a>
-  </div>
 </header>
+
+<div class="menu-mobile" id="menu-mobile" role="dialog" aria-modal="true" aria-label="Menu de navegação" hidden>
+  <a class="menu-link" href="/">Panorama</a>
+  <a class="menu-link" href="/app/parlamentar">Parlamentar</a>
+  <a class="menu-link" href="/app/partido">Partido</a>
+  <a class="menu-link" href="/app/estado">Estado</a>
+  <a class="menu-link" href="/app/fornecedor">Fornecedor</a>
+  <a class="menu-link" href="/app/rede">Rede</a>
+  <a class="menu-link" href="/app/anomalias">Anomalias</a>
+  <a class="menu-link" href="/app/ml">ML</a>
+  <a class="menu-link" href="/app/qualidade">Qualidade</a>
+  <a class="menu-link" href="/app/metadados">Metadados</a>
+  <a class="menu-cta" href="/app/">Abrir o Dashboard</a>
+</div>
 
 <main>
   <section class="hero">
@@ -256,7 +256,7 @@ footer{background:#092d20;color:#fff;padding:45px 0}
     </div>
   </div>
 
-  <section class="content">
+  <section class="content" id="dados">
     <div class="wrap">
       <div class="kicker">PANORAMA · RETRATO DO GOLD</div>
       <h2 class="section-title">Para onde foi o dinheiro.</h2>
@@ -287,7 +287,7 @@ footer{background:#092d20;color:#fff;padding:45px 0}
     </div>
   </section>
 
-  <section class="content">
+  <section class="content" id="metodologia">
     <div class="wrap">
       <div class="kicker">METODOLOGIA</div>
       <h2 class="section-title">Do dado bruto à evidência.</h2>
@@ -300,7 +300,7 @@ footer{background:#092d20;color:#fff;padding:45px 0}
     </div>
   </section>
 
-  <section class="content questions">
+  <section class="content questions" id="perguntas">
     <div class="wrap">
       <div class="kicker">INVESTIGAÇÃO</div>
       <h2 class="section-title">Perguntas simples.<br>Dados complexos.</h2>
@@ -427,14 +427,25 @@ if (location.protocol === "file:") {
     el.innerHTML = html;
   }
 
-  /* Métricas globais + última atualização */
+  /* Métricas globais + última atualização (com fallback no relatório de qualidade) */
   fetchWithTimeout(API_BASE + '/agent/context').then(function(d) {
     var g = d.metricas_globais || {};
     setText('m-despesas', formatInt(g.num_transacoes));
     setText('m-valor', formatCurrency(g.total_gasto));
     var ts = (d.pipeline || {}).execution_timestamp;
-    setText('m-atualizacao', ts ? relTime(ts) : '—');
-    setText('m-data', ts ? absTime(ts) : '—');
+    if (ts) {
+      setText('m-atualizacao', relTime(ts));
+      setText('m-data', absTime(ts));
+    } else {
+      /* pipeline_runs vazio no Gold — usa o relatório de qualidade mais recente */
+      fetchWithTimeout(API_BASE + '/qualidade/relatorio?limite=1').then(function(q) {
+        var tsq = ((q.itens || [])[0] || {}).execution_timestamp;
+        setText('m-atualizacao', tsq ? relTime(tsq) : '—');
+        setText('m-data', tsq ? absTime(tsq) : '—');
+      }).catch(function() {
+        setText('m-atualizacao', '—'); setText('m-data', '—');
+      });
+    }
   }).catch(function() {
     ['m-despesas', 'm-valor', 'm-atualizacao', 'm-data'].forEach(function(id) { setText(id, '—'); });
   });
@@ -445,10 +456,12 @@ if (location.protocol === "file:") {
     setText('m-criterios', n > 0 ? String(n) : '—');
   }).catch(function() { setText('m-criterios', '—'); });
 
-  /* Nº de dimensões de risco (chaves *_score do perfil vivo) */
-  fetchWithTimeout(API_BASE + '/parlamentares?limite=1').then(function(d) {
-    if (!d.itens || !d.itens.length) throw new Error('sem parlamentares');
-    return fetchWithTimeout(API_BASE + '/agent/parlamentar/' + d.itens[0].id_parlamentar);
+  /* Nº de dimensões de risco (chaves *_score do perfil vivo).
+     Via top anomalia -> parlamentar recente tem risk_scores; os
+     primeiros de /parlamentares são ex-mandatos sem risco. */
+  fetchWithTimeout(API_BASE + '/agent/anomalias').then(function(d) {
+    if (!d.top_por_zscore || !d.top_por_zscore.length) throw new Error('sem anomalias');
+    return fetchWithTimeout(API_BASE + '/agent/parlamentar/' + d.top_por_zscore[0].id_parlamentar);
   }).then(function(a) {
     var risco = a.risco || {};
     var n = Object.keys(risco).filter(function(k) {
