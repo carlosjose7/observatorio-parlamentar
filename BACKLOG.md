@@ -1907,9 +1907,9 @@ Partido, buscas e seletores afetados.
 
 ### Onda 19.4 — Filtro de período nos agregados (rodada 2 do QA)
 
-- ☐ `ano` opcional em por-uf/por-partido/top-parlamentares
-  (filtro por `substr(data_sk,1,4)`); série filtra no cliente
-- ☐ Multiselect de anos na Análises
+- ☑ `ano` opcional em por-uf/por-partido/top-parlamentares
+  (join `dim_data`, `d.ano = ?`); série filtra no cliente
+- ☑ Seletor de ano na Análises (Todos + anos da série)
 
 ### Onda 19.5 — Batalha e ML (rodada 2 do QA)
 
