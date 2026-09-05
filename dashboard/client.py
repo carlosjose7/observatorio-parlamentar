@@ -176,6 +176,42 @@ class ApiClient:
             f"/parlamentares/{_codificar_path(id_parlamentar)}/gastos", params
         )
 
+    def gastos_parlamentar_tudo(
+        self, id_parlamentar: int, *, max_paginas: int = 5, limite: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Todas as despesas (páginas até esgotar/total, teto max_paginas).
+
+        Sprint 19: com limite=100 só vinham as ~100 mais recentes (só 2026)
+        e o filtro de ano não oferecia os demais anos.
+        """
+        itens: list[dict[str, Any]] = []
+        pagina = 1
+        while pagina <= max_paginas:
+            payload = self.gastos_parlamentar(id_parlamentar, pagina=pagina, limite=limite)
+            lote = (payload or {}).get("itens", [])
+            itens.extend(lote)
+            total = (payload or {}).get("total", len(itens))
+            if len(itens) >= total or len(lote) < limite:
+                break
+            pagina += 1
+        return itens
+
+    def gastos_fornecedor_tudo(
+        self, cnpj_cpf_valor: str, *, max_paginas: int = 5, limite: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Idem, para `GET /fornecedores/{doc}/gastos`."""
+        itens: list[dict[str, Any]] = []
+        pagina = 1
+        while pagina <= max_paginas:
+            payload = self.gastos_fornecedor(cnpj_cpf_valor, pagina=pagina, limite=limite)
+            lote = (payload or {}).get("itens", [])
+            itens.extend(lote)
+            total = (payload or {}).get("total", len(itens))
+            if len(itens) >= total or len(lote) < limite:
+                break
+            pagina += 1
+        return itens
+
     def rede_parlamentar(self, id_parlamentar: int) -> dict[str, Any]:
         """GET /parlamentares/{id}/rede (nós e arestas da rede do parlamentar)."""
         return self._get(f"/parlamentares/{_codificar_path(id_parlamentar)}/rede")

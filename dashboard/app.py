@@ -15,7 +15,7 @@ from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
     carregar_com_feedback,
-    formatar_moeda,
+    formatar_moeda_compacto,
     metricas_seguras,
 )
 
@@ -26,6 +26,18 @@ st.set_page_config(
 )
 aplicar_identidade()
 
+st.markdown(
+    '<div style="margin-bottom: 0.5rem;">'
+    '<a href="/" style="'
+    "font-family: 'IBM Plex Mono', monospace; "
+    "font-size: 12px; "
+    "text-transform: uppercase; "
+    "letter-spacing: 0.06em; "
+    "color: #5C6B7A; "
+    "text-decoration: none; "
+    '">← Site institucional</a></div>',
+    unsafe_allow_html=True,
+)
 st.title("🏛️ Observatório Parlamentar")
 st.caption("Plataforma de Inteligência Parlamentar Brasileira")
 
@@ -52,7 +64,7 @@ def _render_kpis(contexto: dict) -> None:
     st.markdown("### Panorama")
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        metricas_seguras("Total Gasto", formatar_moeda(metricas.get("total_gasto")))
+        metricas_seguras("Total Gasto", formatar_moeda_compacto(metricas.get("total_gasto")))
     with c2:
         metricas_seguras("Transações", metricas.get("num_transacoes"))
     with c3:

@@ -33,11 +33,16 @@ class _ContratoResposta(BaseModel):
 
 
 class ParlamentarResumo(_ContratoResposta):
-    """Item da listagem de parlamentares (versão vigente do SCD2 — ADR-020)."""
+    """Item da listagem de parlamentares (versão vigente do SCD2 — ADR-020).
+
+    `sigla_partido` é nullable: linhas sem partido (ex-senadores,
+    suplentes) existem no Gold e uma só não pode derrubar a página
+    inteira com 500 (Sprint 19).
+    """
 
     id_parlamentar: int
     nome: str
-    sigla_partido: str
+    sigla_partido: str | None = None
     sigla_uf: str
     situacao_normalizada: str
     fonte: str

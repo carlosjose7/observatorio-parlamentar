@@ -167,6 +167,24 @@ def incrementar_visitas() -> ContadorVisitas:
     )
 
 
+@_tratar_erro_gold
+def ler_visitas() -> ContadorVisitas:
+    """Lê o contador sem incrementar (deduplicação por browser, Sprint 19)."""
+    from datetime import date
+
+    hoje = date.today()
+    with _conexao_visitas() as con:
+        linha_hoje = con.execute(
+            "SELECT total FROM visitas WHERE data = ?", [hoje]
+        ).fetchone()
+        total_geral = con.execute("SELECT COALESCE(SUM(total), 0) FROM visitas").fetchone()[0]
+
+    return ContadorVisitas(
+        total_hoje=linha_hoje[0] if linha_hoje else 0,
+        total_geral=total_geral,
+    )
+
+
 def caminho_do_gold() -> Path:
     """Resolve o caminho absoluto do DuckDB Gold (env → config, ADR-008).
 
@@ -1311,8 +1329,31 @@ def agregar_gastos_por_partido(*, limite: int) -> ListaAgregacao:
 def agregar_top_parlamentares(*, limite: int) -> ListaAgregacao:
     """Top parlamentares por gasto acumulado na versão vigente."""
     with _conexao() as con:
-        itens = _agregar_por_dimensao(con, "nome", limite)
-    return ListaAgregacao(limite=limite, itens=itens)
+        linhas = con.execute(
+            f"""
+            select p.nome as rotulo,
+                   sum(f.valor_liquido) as total,
+                   count(*) as num_despesas,
+                   max(p.sigla_partido) as sigla_partido,
+                   max(p.sigla_uf) as sigla_uf
+            from fact_despesa f {_JOIN_VIGENTE}
+            where p.nome is not null
+            group by 1
+            order by total desc
+            limit ?
+            """,
+            [limite],
+        ).fetchall()
+    return ListaAgregacao(
+        limite=limite,
+        itens=[
+            AgregacaoItem(
+                rotulo=r[0], total=r[1], num_despesas=r[2],
+                sigla_partido=r[3], sigla_uf=r[4],
+            )
+            for r in linhas
+        ],
+    )
 
 
 @_tratar_erro_gold

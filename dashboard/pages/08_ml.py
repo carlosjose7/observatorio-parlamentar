@@ -8,6 +8,8 @@ Consome `GET /parlamentares` (busca por nome/UF/partido) e
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
@@ -19,6 +21,7 @@ from dashboard.ui import (
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
+    rotulo_parlamentar,
     tabela_exportavel,
 )
 
@@ -63,14 +66,19 @@ def _selecionar_parlamentar() -> dict | None:
         st.warning("Nenhum parlamentar encontrado com os filtros informados.")
         return None
 
-    opcoes = {
-        f"{i['nome']} ({i['sigla_partido']}-{i['sigla_uf']})": i["id_parlamentar"]
-        for i in itens
-    }
+    opcoes = {rotulo_parlamentar(i): i["id_parlamentar"] for i in itens}
     sel = st.selectbox("Parlamentar", list(opcoes.keys()), key="ml_sel")
     if sel is None:
         return None
     return next(i for i in itens if i["id_parlamentar"] == opcoes[sel])
+
+
+def _num(valor: Any) -> float:
+    """Número ou 0.0 — scores/métricas vêm None p/ quem não tem linha no Gold."""
+    try:
+        return float(valor) if valor is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _radar(risco: dict) -> None:
@@ -82,7 +90,7 @@ def _radar(risco: dict) -> None:
         "expense_anomaly_score",
         "network_influence_score",
     ]
-    scores = {d: risco.get(d, 0) for d in dimensoes}
+    scores = {d: _num(risco.get(d)) for d in dimensoes}
     radar_risco(scores)
 
 
@@ -110,7 +118,8 @@ def _render(id_parlamentar: int) -> None:
     c1.metric("Total gasto", formatar_moeda(metricas.get("total_gasto")))
     c2.metric("Transações", metricas.get("num_transacoes"))
     c3.metric("Fornecedores", metricas.get("num_fornecedores"))
-    c4.metric("HHI recente", f"{metricas.get('hhi_recente', 0):.3f}")
+    hhi = metricas.get("hhi_recente")
+    c4.metric("HHI recente", f"{hhi:.3f}" if hhi is not None else "—")
 
     risco = payload.get("risco")
     if risco:
@@ -119,7 +128,8 @@ def _render(id_parlamentar: int) -> None:
         with c1:
             _radar(risco)
         with c2:
-            st.metric("Risk Index", f"{risco.get('risk_index', 0):.3f}")
+            ri = risco.get("risk_index")
+            st.metric("Risk Index", f"{ri:.3f}" if ri is not None else "—")
             for d, nome in [
                 ("supplier_concentration_score", "Concentração de fornecedores"),
                 ("political_exposure_score", "Exposição política"),
@@ -127,12 +137,15 @@ def _render(id_parlamentar: int) -> None:
                 ("expense_anomaly_score", "Anomalia de despesa"),
                 ("network_influence_score", "Influência na rede"),
             ]:
-                st.progress(min(1.0, risco.get(d, 0)), text=f"{nome}: {risco.get(d, 0):.2f}")
+                v = _num(risco.get(d))
+                st.progress(min(1.0, v), text=f"{nome}: {v:.2f}")
 
     anomalias = payload.get("anomalias", {})
+    prop = anomalias.get("proporcao")
+    prop_txt = f"{prop:.1%}" if prop is not None else "—"
     st.markdown(
-        f"**Anomalias:** {anomalias.get('num_despesas_anomalas', 0)} despesas "
-        f"({anomalias.get('proporcao', 0):.1%})"
+        f"**Anomalias:** {anomalias.get('num_despesas_anomalas', 0)} "
+        f"despesas ({prop_txt})"
     )
 
     top = payload.get("top_fornecedores", [])

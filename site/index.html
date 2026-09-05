@@ -332,6 +332,7 @@ footer{background:#092d20;color:#fff;padding:45px 0}
     <div class="footer-links">
       <a href="/app/metadados">Metadados</a>
       <a href="/app/qualidade">Qualidade</a>
+      <a href="https://github.com/carlosjose7/observatorio-parlamentar" target="_blank" rel="noopener">Código aberto ↗</a>
       <a href="/app/">Dashboard →</a>
     </div>
   </div>
@@ -354,12 +355,13 @@ if (location.protocol === "file:") {
   function paint(d) {
     el.textContent = ((d.total_geral || 0).toLocaleString('pt-BR')) + ' visitas';
   }
-  function onlyTotal() {
-    fetch(API).then(function(r) { return r.json(); }).then(paint).catch(function() { el.textContent = ''; });
+  function onlyTotal(increment) {
+    var url = API + (increment ? '' : '?increment=false');
+    fetch(url).then(function(r) { return r.json(); }).then(paint).catch(function() { el.textContent = ''; });
   }
-  if (location.protocol === "file:" || localStorage.getItem(VISIT_KEY)) { onlyTotal(); return; }
+  if (location.protocol === "file:" || localStorage.getItem(VISIT_KEY)) { onlyTotal(false); return; }
   localStorage.setItem(VISIT_KEY, '1');
-  onlyTotal();
+  onlyTotal(true);
 })();
 
 /* Dados vivos da homepage (Sprint 18, ADR-046) — nenhum número estático */
@@ -383,6 +385,7 @@ if (location.protocol === "file:") {
 
   function formatCurrency(value) {
     if (value == null || isNaN(value)) return '—';
+    if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(2).replace('.', ',') + ' tri';
     if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(2).replace('.', ',') + ' mi';
     return 'R$ ' + (value / 1000).toFixed(1).replace('.', ',') + ' mil';
   }

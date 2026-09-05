@@ -77,23 +77,22 @@ def _render_perfil(cnpj_cpf_valor: str) -> None:
     )
     if perfil is None:
         return
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Nome", perfil.get("nome_fornecedor"))
-    c2.metric("Documento", perfil.get("cnpj_cpf_valor"))
-    c3.metric("Despesas", perfil.get("num_despesas"))
-    c4.metric("Total recebido", formatar_moeda(perfil.get("valor_liquido_total")))
+    st.subheader(perfil.get("nome_fornecedor", "?"))
+    st.code(perfil.get("cnpj_cpf_valor") or "sem documento", language=None)
+    c1, c2 = st.columns(2)
+    c1.metric("Despesas", perfil.get("num_despesas"))
+    c2.metric("Total recebido", formatar_moeda(perfil.get("valor_liquido_total")))
 
 
 def _render_gastos(cnpj_cpf_valor: str) -> None:
     """Parlamentares do fornecedor derivados das despesas, com filtro ano/mês."""
     st.subheader("Parlamentares que gastaram neste fornecedor")
-    payload = carregar_com_feedback(
-        lambda: client.gastos_fornecedor(cnpj_cpf_valor, limite=100),
+    itens = carregar_com_feedback(
+        lambda: client.gastos_fornecedor_tudo(cnpj_cpf_valor),
         spinner="Carregando despesas...",
     )
-    if payload is None:
+    if itens is None:
         return
-    itens = payload.get("itens", [])
     if not itens:
         st.info("Nenhuma despesa registrada para este fornecedor.")
         return

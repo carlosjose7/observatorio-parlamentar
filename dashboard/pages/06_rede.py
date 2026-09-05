@@ -19,6 +19,7 @@ from dashboard.ui import (
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
+    rotulo_parlamentar,
     tabela_exportavel,
 )
 
@@ -68,10 +69,7 @@ def _selecionar_parlamentar() -> dict | None:
         st.warning("Nenhum parlamentar encontrado com os filtros informados.")
         return None
 
-    opcoes = {
-        f"{i['nome']} ({i['sigla_partido']}-{i['sigla_uf']})": i["id_parlamentar"]
-        for i in itens
-    }
+    opcoes = {rotulo_parlamentar(i): i["id_parlamentar"] for i in itens}
     sel = st.selectbox("Parlamentar", list(opcoes.keys()), key="rede_sel")
     if sel is None:
         return None

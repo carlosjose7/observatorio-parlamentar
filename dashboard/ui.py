@@ -25,6 +25,25 @@ def formatar_moeda(valor: float | None) -> str:
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def formatar_moeda_compacto(valor: float | None) -> str:
+    """Moeda compacta p/ KPIs (R$ 1,03 tri · R$ 45,2 mi · R$ 900 mil)."""
+    if valor is None or not isinstance(valor, (int, float)):
+        return "—"
+    if valor >= 1_000_000_000:
+        return f"R$ {(valor / 1_000_000_000):.2f}".replace(".", ",") + " tri"
+    if valor >= 1_000_000:
+        return f"R$ {(valor / 1_000_000):.2f}".replace(".", ",") + " mi"
+    if valor >= 1_000:
+        return f"R$ {(valor / 1_000):.1f}".replace(".", ",") + " mil"
+    return formatar_moeda(valor)
+
+
+def rotulo_parlamentar(item: dict) -> str:
+    """'Nome (PARTIDO-UF)' tolerante a partido None (Sprint 19)."""
+    partido = item.get("sigla_partido") or "—"
+    return f"{item.get('nome', '?')} ({partido}-{item.get('sigla_uf', '?')})"
+
+
 def metricas_seguras(rotulo: str, valor: Any, **kwargs: Any) -> None:
     """`st.metric` com valor formatado quando não nulo, senão placeholder."""
     if valor is None:
