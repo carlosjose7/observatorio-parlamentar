@@ -14,6 +14,7 @@ import streamlit as st
 from dashboard.client import ApiClient
 from dashboard.ui import (
     aplicar_identidade,
+    avatar_parlamentar,
     botao_voltar,
     carregar_com_feedback,
     filtro_periodo,
@@ -85,6 +86,7 @@ def _render_perfil(id_parlamentar: int) -> None:
     )
     if perfil is None:
         return
+    avatar_parlamentar(perfil.get("url_foto"), nome=perfil.get("nome", ""))
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Nome", perfil.get("nome"))
     c2.metric("Partido", perfil.get("sigla_partido"))

@@ -68,21 +68,22 @@ def _seed_silver(db: Path) -> None:
     """
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, partido_uf_aproximado boolean, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
             ],
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -90,7 +91,7 @@ def _seed_silver(db: Path) -> None:
             " execution_timestamp timestamp, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "HOSPEDAGEM",
                  "12345678000190", "CNPJ", "COMERCIO X", 120, 0, "r", "p", "2026-01-01 00:00:00", "s"),
@@ -107,7 +108,7 @@ def _seed_silver(db: Path) -> None:
             ],
         )
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -115,7 +116,7 @@ def _seed_silver(db: Path) -> None:
             " source_version varchar)"
         )
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -182,6 +183,9 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
 
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
+
     result = dbtRunner().invoke(
         [
             "build",
@@ -198,6 +202,12 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
     assert result.success, result.exception
 
 
+def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
+
+
 # FASE 1 — materializar a malha dimensional + fatos + analytics com o
 # `ml_staging` VAZIO (mesmo seed/molde de test_gold_analytics): resolve ids
 # reais de fact_despesa e valida os models. `expense_outliers` Gold nasce
@@ -212,12 +222,12 @@ _SELECAO_FATO = (
 
 def _fact_despesa(db: Path) -> pd.DataFrame:
     """Lê o `fact_despesa` materializado (ids de verdade para o ml_staging)."""
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         return con.execute(
             "select id_despesa, id_parlamentar, id_fornecedor, data_sk,"
             " valor_liquido, run_id, pipeline_version, source_version"
-            " from main.fact_despesa"
+            " from fact_despesa"
         ).fetchdf()
     finally:
         con.close()
@@ -276,11 +286,11 @@ def test_expense_outliers_gold(tmp_path, monkeypatch):
     # FASE 2 — com o staging populado, rebuild da Gold expense_outliers.
     _build_selecao(tmp_path, monkeypatch, "expense_outliers")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         linhas = con.execute(
             "select id_despesa, num_criterios, run_id"
-            " from main.expense_outliers"
+            " from expense_outliers"
         ).fetchall()
         # Só anomalias (num_criterios >= 2) materializadas, com run_id do lote.
         assert linhas
@@ -288,7 +298,7 @@ def test_expense_outliers_gold(tmp_path, monkeypatch):
         assert all(r[2] == _FATO_RUN_ID for r in linhas)
         # Toda anomalia Gold é uma despesa REAL do fato (inner join ADR-018).
         ids_fato = {int(r[0]) for r in con.execute(
-            "select id_despesa from main.fact_despesa"
+            "select id_despesa from fact_despesa"
         ).fetchall()}
         for r in linhas:
             assert int(r[0]) in ids_fato
@@ -318,10 +328,10 @@ def test_expense_outliers_ignora_nao_anomalia(tmp_path, monkeypatch):
     _escrever_ml_staging(db, fatos)
     _build_selecao(tmp_path, monkeypatch, "expense_outliers")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         n_materializadas = con.execute(
-            "select count(*) from main.expense_outliers"
+            "select count(*) from expense_outliers"
         ).fetchone()[0]
         n_staging_sem_anomalia = con.execute(
             "select count(*) from ml_staging.expense_outliers where not is_anomalia"

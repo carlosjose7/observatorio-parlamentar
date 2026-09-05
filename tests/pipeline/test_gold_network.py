@@ -74,21 +74,22 @@ def _seed_silver(db: Path) -> None:
     """
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, partido_uf_aproximado boolean, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
             ],
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -96,7 +97,7 @@ def _seed_silver(db: Path) -> None:
             " execution_timestamp timestamp, source_version varchar)"
         )
         con.executemany(
-            "insert into silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "HOSPEDAGEM",
                  "12345678000190", "CNPJ", "COMERCIO X", 120, 0, "r", "p", "2026-01-01 00:00:00", "s"),
@@ -117,7 +118,7 @@ def _seed_silver(db: Path) -> None:
             ],
         )
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -125,7 +126,7 @@ def _seed_silver(db: Path) -> None:
             " source_version varchar)"
         )
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -192,6 +193,9 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
 
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
+
     result = dbtRunner().invoke(
         [
             "build",
@@ -208,6 +212,12 @@ def _build_selecao(tmp_path, monkeypatch, selecao: str) -> None:
     assert result.success, result.exception
 
 
+def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
+
+
 # FASE 1 — materializar a malha dimensional + fatos + analytics com o
 # `ml_staging` VAZIO (mesmo seed/molde de test_gold_analytics): resolve ids
 # reais de fact_despesa e valida os models. As Gold network nascem vazias
@@ -222,12 +232,12 @@ _SELECAO_FATO = (
 
 def _fact_despesa(db: Path) -> pd.DataFrame:
     """Lê o `fact_despesa` materializado (ids de verdade para o ml_staging)."""
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         return con.execute(
             "select id_despesa, id_parlamentar, id_fornecedor, data_sk,"
             " valor_liquido, run_id, pipeline_version, source_version"
-            " from main.fact_despesa"
+            " from fact_despesa"
         ).fetchdf()
     finally:
         con.close()
@@ -261,11 +271,11 @@ def test_network_gold_fluxo_duas_fases(tmp_path, monkeypatch):
     _build_selecao(tmp_path, monkeypatch, _SELECAO_FATO)
 
     # FASE 1 — staging vazio → Gold network vazias (contrato ADR-026).
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         for tabela in ["network_edges", "network_nodes", "politician_similarity"]:
             assert con.execute(
-                f"select count(*) from main.{tabela}"
+                f"select count(*) from {tabela}"
             ).fetchone()[0] == 0
     finally:
         con.close()
@@ -277,20 +287,20 @@ def test_network_gold_fluxo_duas_fases(tmp_path, monkeypatch):
     # FASE 2 — com o staging populado, rebuild das drei Gold de rede.
     _build_selecao(tmp_path, monkeypatch, "+network_edges +network_nodes +politician_similarity")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         arestas = con.execute(
             "select id_parlamentar, id_fornecedor, periodo, run_id"
-            " from main.network_edges"
+            " from network_edges"
         ).fetchall()
         nos = con.execute(
             "select id_no, tipo_no, periodo, pagerank, degree_centrality, comunidade_id"
-            " from main.network_nodes"
+            " from network_nodes"
         ).fetchall()
         sim = con.execute(
             "select id_parlamentar_a, id_parlamentar_b, periodo,"
             " num_fornecedores_compartilhados"
-            " from main.politician_similarity order by id_parlamentar_a, id_parlamentar_b"
+            " from politician_similarity order by id_parlamentar_a, id_parlamentar_b"
         ).fetchall()
 
         assert arestas
@@ -305,7 +315,7 @@ def test_network_gold_fluxo_duas_fases(tmp_path, monkeypatch):
         pares_fato = {
             (r[0], r[1], int(str(r[2])[:4]))
             for r in con.execute(
-                "select id_parlamentar, id_fornecedor, data_sk from main.fact_despesa"
+                "select id_parlamentar, id_fornecedor, data_sk from fact_despesa"
             ).fetchall()
         }
         for a, f, periodo, _ in arestas:
@@ -328,24 +338,24 @@ def test_network_gold_edges_lado_duplo_dimensionado(tmp_path, monkeypatch):
     _escrever_ml_staging(db, _fact_despesa(db))
     _build_selecao(tmp_path, monkeypatch, "+network_edges")
 
-    con = duckdb.connect(str(db))
+    con = _conectar(db)
     try:
         arestas = con.execute(
             "select id_parlamentar, id_fornecedor, periodo, valor_total"
-            " from main.network_edges"
+            " from network_edges"
         ).fetchall()
         dim_parlam = {r[0] for r in con.execute(
-            "select id_parlamentar from main.dim_parlamentar"
+            "select id_parlamentar from dim_parlamentar"
         ).fetchall()}
         dim_fornecedor = {r[0] for r in con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
         ).fetchall()}
         assert arestas
         for a, f, periodo, valor in arestas:
             assert a in dim_parlam and f in dim_fornecedor
             # `data_sk` é YYYYMMDD: soma do fato valida pelo ano = periodo.
             soma_fato = con.execute(
-                "select sum(valor_liquido) from main.fact_despesa"
+                "select sum(valor_liquido) from fact_despesa"
                 " where id_parlamentar = ? and id_fornecedor = ?"
                 " and cast(substr(cast(data_sk as varchar), 1, 4) as integer) = ?",
                 [a, f, periodo],

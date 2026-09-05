@@ -62,15 +62,17 @@ def _seed(db: Path) -> None:
     """Silver mínima p/ a linhagem de despesa — espelha `test_gold_despesa`."""
     con = duckdb.connect(str(db))
     try:
+        con.execute("create schema if not exists silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
-            " situacao_normalizada varchar, url_foto varchar, data date, run_id varchar,"
+            " situacao_normalizada varchar, url_foto varchar, partido_uf_aproximado boolean,"
+            " data date, run_id varchar,"
             " pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -79,7 +81,7 @@ def _seed(db: Path) -> None:
         )
         # silver_emenda e silver_cartao VAZIAS (mesma razão do test_gold_despesa)
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -102,7 +104,7 @@ def _seed(db: Path) -> None:
             ],
         )
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -111,17 +113,17 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # JOSE SILVA: troca de partido em 2023 → versão SCD2 fechada + vigente
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", None, "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", None, "2023-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", None, False, "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", None, False, "2023-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
                 # MARIA SANTOS: senado, resolvida por nome (id 6)
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", None, "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", None, False, "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
             ],
         )
         con.executemany(
-            "insert into silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_despesa values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # D1: câmara por id, CNPJ — 2023 (dentro da versão vigente de JOSE)
                 ("camara", 1, None, 2023, 5, "D1", "2023-05-10", "PASSAGEM AEREA", "12345678000190", "CNPJ", "LATAM", 100, 0, "r", "p", "2026-01-01 00:00:00", "s"),
@@ -215,10 +217,25 @@ def _rodar_build_subprocess(db: Path, selecao: str, dir_controle: Path | None = 
     `dbt_project.yml` é relativo ao cwd do subprocesso). Sem isso, um DuckDB
     dev com runs do E2E real contaminaria o build de teste (pipeline_runs
     não vazio).
+
+    Corretivo Sprint 14: cria um profiles.yml temporário sem httpfs/secrets
+    S3 para evitar falha no CI onde MinIO não existe (endpoint vazio faz
+    dbt-duckdb rejeitar o secret S3).
     """
     if dir_controle is None:
         dir_controle = Path(tempfile.mkdtemp()) / "controle_vazio"
         dir_controle.mkdir(parents=True, exist_ok=True)
+    profile_dir = Path(tempfile.mkdtemp())
+    profile_yaml = profile_dir / "profiles.yml"
+    profile_yaml.write_text(
+        "observatorio_gold:\n"
+        "  target: dev\n"
+        "  outputs:\n"
+        "    dev:\n"
+        "      type: duckdb\n"
+        '      path: "{{ env_var(\'DUCKDB_DATABASE_PATH\', \'data/silver/observatorio.duckdb\') }}"\n'
+        "      threads: 4\n"
+    )
     codigo = (
         "import json, sys\n"
         f"sys.path.insert(0, {str(_RAIZ)!r})\n"
@@ -227,14 +244,23 @@ def _rodar_build_subprocess(db: Path, selecao: str, dir_controle: Path | None = 
         "from pipeline.config import get_dbt_vars\n"
         "vars_dbt = get_dbt_vars()\n"
         f"vars_dbt['bronze_pipeline_runs_dir'] = {str(dir_controle)!r} + '/*.parquet'\n"
-        f"r = dbtRunner().invoke([\n"
-        f"    'build',\n"
-        f"    '--project-dir', {str(_GOLD)!r},\n"
-        f"    '--profiles-dir', {str(_GOLD)!r},\n"
-        f"    '--select', {selecao!r},\n"
-        f"    '--vars', json.dumps(vars_dbt),\n"
-        "]\n"
-        ")\n"
+        "try:\n"
+        f"    r = dbtRunner().invoke([\n"
+        f"        'build',\n"
+        f"        '--project-dir', {str(_GOLD)!r},\n"
+        f"        '--profiles-dir', {str(profile_dir)!r},\n"
+        f"        '--select', {selecao!r},\n"
+        f"        '--vars', json.dumps(vars_dbt),\n"
+        "    ]\n"
+        "    )\n"
+        "    if not r.success:\n"
+        "        print('=== DBT BUILD FAILED ===', file=sys.stderr)\n"
+        "        if hasattr(r, 'exception') and r.exception:\n"
+        "            import traceback\n"
+        "            traceback.print_exception(type(r.exception), r.exception, r.exception.__traceback__, file=sys.stderr)\n"
+        "except Exception as e:\n"
+        "    import traceback\n"
+        "    traceback.print_exc(file=sys.stderr)\n"
         "raise SystemExit(0 if r.success else 1)\n"
     )
     env = {
@@ -245,7 +271,17 @@ def _rodar_build_subprocess(db: Path, selecao: str, dir_controle: Path | None = 
         "DUCKDB_DATABASE_PATH": str(db),
         "CPF_HMAC_SECRET_KEY": _CHAVE_TESTE,
     }
-    subprocess.run([sys.executable, "-c", codigo], env=env, check=True)
+    result = subprocess.run(
+        [sys.executable, "-c", codigo], env=env,
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        output = (result.stdout + "\n" + result.stderr).strip()
+        if output:
+            print(output, file=sys.stderr)
+        raise subprocess.CalledProcessError(
+            result.returncode, result.args, result.stdout, result.stderr
+        )
 
 
 def _build_gold(tmp_path, monkeypatch) -> Path:

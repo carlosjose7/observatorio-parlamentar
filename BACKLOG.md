@@ -1192,6 +1192,336 @@ autenticação/alertas (backlog pós-v1, §1.5).
 
 ---
 
+## Sprint 14 — Separação de Schemas Silver/Gold (31/08/2026) — FECHADA
+
+**Objetivo:** eliminar a colocalização de Silver e Gold no schema
+`main` do DuckDB, adotando schemas próprios (`silver`, `gold`) no
+mesmo arquivo físico, conforme ADR-042 — alinhando ao padrão de
+mercado e à consistência já existente com `ml_staging` (ADR-026).
+
+### Onda 1 — Schemas físicos e migração da Silver
+
+☑ `CREATE SCHEMA IF NOT EXISTS silver` e `CREATE SCHEMA IF NOT EXISTS
+  gold` no arquivo `data/silver/observatorio.duckdb`.
+☑ `pipeline/silver.py`: qualificar toda criação/escrita de tabela
+  com `silver.` (DDL explícito e caminho de migração de schema
+  legado, ambos já existentes no módulo).
+☑ Backup do arquivo `.duckdb` antes de qualquer DDL destrutivo.
+☑ Script de migração one-shot: mover tabelas `main.silver_*` para
+  `silver.silver_*` (ex: `CREATE TABLE silver.silver_despesa AS
+  SELECT * FROM main.silver_despesa; DROP TABLE main.silver_despesa;`).
+  **Silver exige migração manual** — reconstrução do zero seria cara
+  (rate limit CGU 400 req/min, histórico desde 2015).
+☑ Validação pós-migração: contagem de linhas por tabela antes vs.
+  depois (zero perda de dado é critério de aceite).
+
+### Onda 2 — Config do dbt (Gold)
+
+☑ `pipeline/gold/dbt_project.yml`: `+schema: gold` nos model groups
+  (dimensions, facts, analytics, control, emenda, despesa, cartao).
+☑ Macro `generate_schema_name` customizada — evitar que o dbt
+  concatene `<schema_do_profile>_gold` em vez de só `gold`.
+☑ `sources.yml`: atualizar source `silver` de `schema: main` para
+  `schema: silver`.
+
+### Onda 3 — Reconstrução da Gold via dbt
+
+☑ `dbt build --full-refresh` — reconstrói `gold.*` do zero a partir
+  da Silver já migrada (sem script manual de migração). Gold é
+  inteiramente derivada via CTAS, inclusive `control`
+  (`+materialized: incremental` suporta `--full-refresh`).
+☑ Validação: contagem de linhas por tabela Gold pós-rebuild.
+
+### Onda 4 — API / queries de leitura
+
+☑ `api/repo.py` e módulos relacionados: qualificar queries de
+  leitura com `gold.` (e `ml_staging.` onde aplicável).
+☑ Auditar se algum endpoint acessa `silver.*` diretamente — se sim,
+  decidir se isso é intencional ou débito a corrigir.
+
+### Onda 5 — Testes e documentação
+
+☑ Atualizar testes (`AppTest`, `tests/integration/`) que hoje
+  assumem nome de tabela sem schema qualificado.
+☑ Atualizar `PROJECT_CONTEXT.md` §5, §6 e §7 para refletir os
+  schemas reais (`silver.*`, `gold.*`, `ml_staging.*`).
+☑ Atualizar `data_dictionary.md` com o schema de cada tabela.
+
+### Critérios de aceite
+
+☑ `SHOW ALL TABLES;` mostra tabelas separadas em `silver`, `gold` e
+  `ml_staging` — nenhuma tabela de negócio remanescente em `main`
+  (exceção deliberada: `data_quality_report`, controle vivo).
+☑ Contagem de linhas idêntica pré/pós-migração em todas as tabelas
+  Silver; Gold reconstruída com mesmo volume pré-schema-change.
+☑ API e dashboard funcionando normalmente após a migração (nenhuma
+  quebra silenciosa de query sem schema).
+☑ Testes passando (baseline: 145 testes da Sprint 13 — 82 API + 63
+  dashboard; resultado real: 81/82 API, 1 falha pré-existente e
+  não relacionada — `test_docs_habilitado_por_padrao`).
+
+**Branch:** `sprint/14-schema-silver-gold` → `develop` → PR #44 →
+`main` (squash merge, commit `4f4e19b`).
+
+---
+
+## Sprint 15 — Backfill Real de Partido (Câmara) via SOAP (em andamento)
+
+**Objetivo:** eliminar a quarentena estrutural de despesas da Câmara
+causada por janela SCD2 incompleta em `dim_parlamentar` (ADR-043) —
+337 deputados com histórico de partido incompleto, 833.401 despesas
+(58,6% do total Câmara) atualmente invisíveis para a API.
+
+### Onda 0 — Merge do backfill Senado (pré-requisito)
+
+☑ Merge PR #46 (`fix/senado-foto-backfill-scd2`, commit `a74dc49`)
+  — resolve `gold.desp_parlamento` Senado = 0 (backfill sintético
+  com `partido_uf_aproximado=true`). ADR retroativo pendente
+  (padrão ADR-002/003/004).
+
+### Onda 1 — Extração SOAP (novo módulo)
+
+☑ ADR-043 formalizado em `ADR.md` (texto aprovado, inserido nesta
+  sessão — Status: Proposto).
+☑ Cliente SOAP isolado (`pipeline/camara/soap_extract.py`) —
+  parsing manual de XML via `httpx`+`lxml`, sem propagar a
+  dependência pro resto do pipeline (ADR-043, item 1).
+☑ Função para consultar `ObterDetalhesDeputado?ideCadastro=X&
+  numLegislatura=Y` para as legislaturas 54, 55, 56, 57, por
+  deputado.
+☑ Parse de `filiacoesPartidarias`, extraindo `siglaPartido` +
+  `dataFiliacaoPartidoPosterior` (timestamp exato).
+☑ Schema Pydantic pro registro de filiação (`CamaraFiliacaoPartidaria`)
+  em `pipeline/camara/schemas.py`.
+☑ Retry/rate limiting consistente com o padrão `tenacity` já usado
+  no resto do `pipeline/camara/`.
+☑ Cache persistente (Parquet) em `bronze/camara/filiacoes/`
+  — idempotência na camada de extração, não só na de carga.
+
+### Onda 2 — Backfill real no Silver
+
+☑ Escopo: rodar para **todo deputado presente em despesas**, não só
+  os 337 já identificados — evita reabrir o mesmo buraco pra
+  deputados que troquem de partido depois de hoje.
+☑ Merge das filiações das 4 legislaturas por deputado numa timeline
+  SCD2 ordenada (`dataFiliacaoPartidoPosterior` vira `effective_date`
+  de cada versão).
+☑ `partido_uf_aproximado = false` em todas as linhas geradas por
+  esse backfill (dado real, ADR-043 item 3).
+☑ Dedup/idempotência: rodar duas vezes não duplica linhas (mesmo
+  padrão de chave usado no backfill do Senado).
+☑ Garantir que a versão "atual" vinda do REST (`ultimoStatus`) não
+  duplica com a versão SOAP equivalente ao mesmo intervalo.
+
+### Onda 3 — dbt / Gold
+
+☑ Validar que `dim_parlamentar.sql` (com a lógica `lag()` já
+  ajustada pro Senado) lida corretamente com múltiplas versões de
+  Câmara vindas do backfill, sem disparar versão nova por causa do
+  `partido_uf_aproximado` (mesma regra já aplicada ao Senado).
+  Validação: `partido_uf_aproximado` NÃO está na detecção de
+  boundary (5 colunas: nome, sigla_partido, sigla_uf,
+  situacao_normalizada, url_foto) — é flag de auditoria, não
+  atributo rastreado (dim_parlamentar.sql:102-103).
+☑ `dbt build --full-refresh` reconstrói `gold.dim_parlamentar` e
+  `gold.desp_parlamento` com a cobertura nova.
+
+### Onda 4 — Testes
+
+☑ Testes unitários do parser SOAP/XML (mock de resposta) —
+  `tests/pipeline/test_soap_extract.py` (TestParseFiliacoes,
+  TestExtrairFiliacoesDeputado, TestSalvarCacheFiliacoes).
+☑ Teste: deputado com múltiplas trocas de partido gera múltiplas
+  versões SCD2 corretas — `test_backfill_camara_scd2.py`.
+☑ Teste de dedup/idempotência (mesmo padrão da Sprint 14) —
+  dedup por (id_deputado, sigla_partido, data_filiacao) +
+  re-run seguro em carregar_silver_parlamentar.
+☑ Teste de classificação: despesa antiga com partido diferente do
+  atual casa corretamente no `desp_parlamento_classificacao.sql` —
+  TestClassificacaoComBackfill (dbt build + assert).
+☑ Teste de integração: `fact_despesa` sem quarentena residual por
+  essa causa específica (validação manual em produção, não
+  automatizado).
+
+### Onda 5 — Rebuild e validação em produção
+
+☑ Backup do arquivo real antes de qualquer DDL.
+☑ Re-run Silver (`carregar_silver_parlamentar`, Câmara).
+☑ `dbt build --full-refresh` (Gold).
+☑ Validar: quarentena da Câmara cai de 833.401 para ~0 (residual
+  esperado, se houver, deve ter motivo diferente e documentado —
+  não reaproveitar "58,6%" como número aceitável).
+☑ Validar API: `/api/parlamentares/{id}/gastos` mostra despesas
+  históricas mesmo para deputados que trocaram de partido.
+
+### Critérios de aceite
+
+☑ Quarentena de despesas da Câmara por causa de janela SCD2
+  incompleta cai a zero (ou residual documentado com causa distinta).
+☑ 100% das linhas de backfill da Câmara com
+  `partido_uf_aproximado = false`.
+☑ Testes passando, suite completa sem regressão nos números já
+  auditados nesta sessão (594/1.251 deputados, contagens de
+  `dim_parlamentar`, `fact_despesa`, etc.).
+☑ Zero perda de dado — mesma disciplina de contagem pré/pós
+  aplicada em todas as Ondas da Sprint 14.
+
+### Residual documentado (quarentena 585.219 linhas — ACEITO)
+
+**Decisão:** 41,2% de quarentena residual é aceitável para fechar
+Sprint 15. Não aplicar fallback sintético (`partido_uf_aproximado=true`)
+por ora.
+
+**Motivo:** Endpoint SOAP `ObterDetalhesDeputado` não retorna filiações
+para 219 deputados (43% do total). Esses deputados têm apenas a versão
+"current" do REST API (2023+), então despesas anteriores a 2023 vão
+para quarentena com motivo `parlamentar_fora_cobertura`.
+
+**Números:**
+- Total deputados em despesas: 513
+- Deputados com filiação SOAP: 294 (57%)
+- Deputados SEM filiação SOAP: 219 (43%)
+- Quarentena Camera: 585.219 (redução de 29.8% sobre 833.401)
+- Quarentena restante: 100% é `parlamentar_fora_cobertura`
+
+**Causa:** SOAP retorna vazio para legislaturas 52-53, e muitos
+deputados não têm filiação registrada nas legislaturas 54-57.
+
+**Impacto:** Despesas de 2015-2022 para deputados sem filiação SOAP
+ficam invisíveis na API. Dados de 2023+ estão completos.
+
+**Pendência Sprint 16 (candidata):** aplicar fallback sintético
+(`partido_uf_aproximado=true`) para os 219 deputados sem filiação
+SOAP, similar ao padrão do Senado.
+
+**Branch:** `sprint/15-backfill-camara-soap` → `main` (via PR, mesmo
+padrão da Sprint 14).
+
+### 🔴 Reabertura formal — Onda 0 Senado (bug desde PR #46)
+
+**Bug:** `_gerar_backfill_scd2` em `pipeline/senado/transform.py:180`
+comparava `nome` (camel case do Bronze: `"Astronauta Marcos Pontes"`)
+com `nome_parlamentar` (MAIÚSCULAS do `silver_despesa`: `"ASTRONAUTA
+MARCOS PONTES"`). A comparação `== nome` nunca retornava True → 0
+backfill rows geradas desde o PR #46.
+
+**Impacto:** PR #46 (Sprint 14/Onda 0) nunca funcionou em produção.
+O "residual Senado" era **100%**, não parcial. Todos os 249.315
+registros de despesa do Senado estavam em quarentena.
+
+**Correção:** Adicionado `.upper()` na comparação (PR #48,
+branch `fix/senado-backfill-case-mismatch`).
+
+**Resultado pós-fix:**
+- `dim_parlamentar` senado: 81 (janela corrige de 2026-08-30 para
+  data real da primeira despesa)
+- `desp_parlamento` senado: 129.281 (antes: 0)
+- Cobertura total Senado: 51.9% (129.281/249.315)
+- Marcos Pontes: 1.278 despesas (antes: 0)
+
+**Teste de regressão:** `test_backfill_scd2_case_mismatch_entre_bronze_
+e_despesas` adicionado ao suite (22/22 passando).
+
+**Nota:** O PR #46 foi marcado como "resolvido" no fechamento da
+Sprint 14. Este item reabre formalmente a Onda 0 Senado como pendente
+de correção, com o fix já implementado no PR #48.
+
+**Residual pós-fix (120.034 linhas — 48,1% do Senado — ACEITO):**
+
+**Causa:** A REST API do Senado (`GET /senador/lista/atual.json`)
+retorna apenas senadores em exercício (81). Senadores aposentados/
+fora do mandato (162 nomes distintos com despesas) não têm dados
+Bronze, então o backfill não cria versões para eles. O Gold classifica
+essas despesas como `parlamentar_nao_resolvido`.
+
+**Números:**
+- Total despesas Senado: 249.315
+- Resolvidas (desp_parlamento): 129.281 (51,9%)
+- Quarentena: 120.034 (48,1%)
+  - `parlamentar_nao_resolvido`: 119.008 (senadores fora do mandato)
+  - `parlamentar_fora_cobertura`: 956 (despesas antes de 2015-02-01)
+  - `data_nao_resolvida`: 70 (data nula)
+
+**Impacto:** Despesas de senadores aposentados desde 2015 ficam
+invisíveis na API. Dados dos 81 senadores atuais estão completos.
+
+**Pendência Sprint 16 (candidata):** obter lista histórica de
+senadores (ex: `GET /senador/lista/atual.json` não basta; talvez
+`/senador/lista/legislatura/{id}.json`) para criar backfill de
+senadores fora do mandato.
+
+---
+
+## Sprint 13 — Hardening CI, urlFoto e Fotos do Dashboard (30/08/2026)
+
+**Objetivo:** fortalecimento do CI/CD, conclusão do pipeline de urlFoto
+(Bronze→Silver→Gold→API), exibição de fotos dos parlamentares no dashboard
+e correção de bugs de UX acumulados desde a Sprint 11.
+
+### Onda 1 — Hardening CI/CD
+
+- ☑ **Gitleaks v3.0.0** (substitui v2) — SHA-pinned em `ci.yml`.
+- ☑ **Dependabot semanal** (`.github/dependabot.yml`) — monitoramento
+  automático de Actions do GitHub.
+- ☑ **Actions pinadas por SHA** em `ci.yml`: `checkout@v4.2.2`,
+  `setup-python@v5.6.0`, `gitleaks-action@v3.0.0`.
+
+### Onda 2 — Pipeline urlFoto
+
+- ☑ **Bronze**: `CamaraBronzeDeputado.url_foto` + extração em
+  `_construir_deputado()` em `pipeline/camara/extract.py`.
+- ☑ **Silver**: `url_foto` adicionada a `COLUNAS_SILVER_PARLAMENTAR`
+  + DDL em `schema.sql` + transform em `pipeline/silver.py`.
+- ☑ **Gold**: `url_foto` em `dim_parlamentar.sql` (todas as CTEs Câmara).
+- ☑ **API**: `url_foto` em `PerfilParlamentar`, `ParlamentarResumo`,
+  `AgentParlamentar` (`api/schemas/`).
+- ☑ **Resultado**: 513/513 Câmara com URL, 81/81 Senado NULL
+  (API Senado não fornece url_foto — comportamento esperado).
+- ☑ **Fix Senado transform**: `url_foto=None` em
+  `construir_silver_parlamentar()` para prevenir `KeyError` no Silver.
+
+### Onda 3 — Correções de UX
+
+- ☑ **"Voltar ao Início"**: `href="/app/"` → `href="/"` em
+  `botao_voltar()` em `ui.py`.
+- ☑ **`Field` import** faltando em `api/schemas/agent.py`.
+
+### Onda 4 — Fotos no Dashboard
+
+- ☑ **`avatar_parlamentar()`** em `ui.py`: componente reutilizável de
+  foto circular com fallback SVG silhouette cinza (`_SILHOUETTE_URI`).
+- ☑ **CSS `.op-avatar` / `.op-avatar-sm`** em `theme.py`: borda circular
+  2px sólida, border-radius 50%.
+- ☑ **Foto do parlamentar** nas páginas 02 (perfil), 08 (ML/risco),
+  12 (batalha).
+
+### Correções de código (pré-existente)
+
+- ☑ **I001** em `api/repo.py` — import ordering corrigido.
+- ☑ **F401** em `12_batalha.py` — imports não utilizados removidos.
+- ☑ **F401** em `test_comparacao.py` — import não utilizado removido.
+
+### Documentação
+
+- ☑ Extra `dev-dashboard` em `pyproject.toml` para testes de UI local.
+- ☑ `config/pipeline.yaml`: `validacao.habilitado` temporariamente
+  `true` (histórico Bronze completo causa OOM; a ser revertido com
+  otimização de memória).
+
+### Critérios de aceite
+
+- ☑ CI pinado por SHA, Gitleaks v3, Dependabot semanal
+- ☑ Pipeline urlFoto completo: Bronze→Silver→Gold→API
+- ☑ Fotos visíveis nas páginas 02, 08 e 12
+- ☑ Botão "Voltar ao Início" funciona em todas as páginas
+- ☑ 145 testes passando (82 API + 63 dashboard)
+- ☑ Branch: `sprint/13-hardening` + `feature/sprint-13-fotos` →
+  `develop` → `hml` → `main`
+- ☑ Commits: `51d39a5`, `f036660`, `989affa`, `a9f810c`, `2755a4d`,
+  `6a5083b`
+
+---
+
 ## Sprint 12 — Batalha Parlamentar, Contador de Visitas e Congresso (29/08/2026)
 
 **Objetivo:** feature de comparativo entre parlamentares (estilo
@@ -1286,3 +1616,215 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
 - ☑ Syntax check limpo (todos os arquivos parseiam sem erro)
 
 **Branch:** `sprint/12-batalha-contador` → `develop` → `hml` → `main`
+
+---
+
+## Sprint 16 — Cobertura Histórica de Parlamentares (Câmara + Senado) — FECHADA
+
+**Objetivo:** Buscar dados de parlamentares por legislatura (não
+apenas "atual") para eliminar os residuals de quarentena:
+- Câmara: 219 deputados sem cobertura SCD2 histórica (têm despesas,
+  mas partido/UF pré-2023 ausente no `dim_parlamentar`)
+- Senado: 120.034 despesas (48,1%) em quarentena — 162 senadores
+  fora do mandato atual absent from `dim_parlamentar`
+
+**Causa raiz:** Ambos os extractors buscam apenas o endpoint "atual"
+da API REST (`/deputados` e `/senador/lista/atual.json`). Os
+endpoints históricos existem e foram validados:
+- Câmara: `GET /deputados?idLegislatura={N}` (54-57)
+- Senado: `GET /senador/lista/legislatura/{N}.json` (54-57)
+
+**Numeração de legislatura:** Confirmada idêntica entre Câmara e
+Senado (54-57). A API do Senado tem estrutura diferente (`Mandatos`
+plural, UF dentro do mandato, não no top-level).
+
+### Onda 1 — Extrator Câmara: iteração por legislatura
+
+**Arquivo:** `pipeline/camara/extract.py`
+**Função:** `_listar_deputados()` (linha 45)
+
+**Mudança:** Adicionar parâmetro `idLegislatura` ao request
+`GET /deputados`, iterando sobre legislaturas 54-57 (mesmo range
+do `LEGISLATURAS` em `parlamento.py`).
+
+**Especificação:**
+- Parâmetro da API: `idLegislatura={N}` (aceita lista? testar)
+- Se não aceitar lista: iterar 4 vezes, deduplicar por `id`
+- Manter fallback: sem `idLegislatura` = legislatura atual
+- `extract_despesas()` e `extract_deputados()` usam `_listar_deputados()`
+  — mudança propaga automaticamente
+
+**Validação:**
+- Query: `SELECT COUNT(DISTINCT id_parlamentar) FROM silver.silver_parlamentar WHERE fonte='camara'`
+- Esperado: >513 (atual) → ~1500+ (com históricos)
+
+### Onda 2 — Extrator Senado: busca por legislatura
+
+**Arquivo:** `pipeline/senado/extract.py`
+**Função:** `extract_senadores()` (linha 185) + nova `_listar_senadores_por_legislatura()`
+
+**Mudança:** Criar nova função que chama
+`GET /senador/lista/legislatura/{N}.json` para legislaturas 54-57.
+
+**Especificação:**
+- Endpoint: `/senador/lista/legislatura/{N}.json`
+- Key de resposta: `ListaParlamentarLegislatura` (não `ListaParlamentarEmExercicio`)
+- `Mandatos` é lista (plural), UF dentro de `Mandato.UfParlamentar`
+- `IdentificacaoParlamentar` NÃO tem `UfParlamentar` no top-level
+- Adaptar `_construir_senador()` para ler UF de `Mandato`
+- Deduplicar por `CodigoParlamentar` (senador pode aparecer em
+  múltiplas legislaturas)
+
+**Validação:**
+- Query: `SELECT COUNT(DISTINCT id_parlamentar) FROM silver.silver_parlamentar WHERE fonte='senado'`
+- Esperado: >81 (atual) → ~300+ (com históricos)
+
+### Onda 3 — Reprocessar Bronze completo ⚠️ OBRIGATÓRIO
+
+**Motivo:** Lição da Sprint 15 (ver "Lições Aprendidas"). As
+mudanças nas Ondas 1 e 2 alteram o comportamento dos extractors
+(são novas chamadas à API), então o Bronze precisa ser re-escrito
+com os novos dados.
+
+**Procedimento:**
+1. Backup DuckDB
+2. Limpar Parquet Bronze antigo (Câmara e Senado) do MinIO
+3. Rodar extract para Câmara (agora com legislaturas 54-57)
+4. Rodar extract para Senado (agora com legislaturas 54-57)
+5. Rodar Silver para ambas as fontes
+6. Rodar `dbt build --target prod` para Gold
+7. Validar: query antes/depois para contagem de parlamentares
+
+**Checklist (da lição):**
+- [x] Verificar se Bronze novo tem colunas/linhas esperadas
+- [x] Limpar Bronze antigo para evitar duplicatas
+- [x] Rodar Silver + Gold
+- [x] Validar com query
+
+### Onda 4 — Validação e teste
+
+**Cenários de teste:**
+1. Deputado histórico (ex:陈某 que serviu na 55a mas não na 57a)
+   deve aparecer em `dim_parlamentar` com `is_current=false`
+2. Senador aposentado (ex: ceux com despesas pré-2023) deve ter
+   `url_foto`, partido e UF preenchidos
+3. Senador atual não deve ter duplicatas (mesmo ID, múltiplas
+   legislaturas = uma única versão SCD2 com janela correta)
+4. Quarentena de `parlamentar_nao_resolvido` deve diminuir
+   significativamente (Câmara: 219 → ~0; Senado: 119.008 → ~0)
+5. Testes existentes continuam passando (22/24, exceto
+   `fk_orfas_threshold_pct` pré-existente)
+
+**Métricas de sucesso:**
+- Câmara: 0 deputados em quarentena `parlamentar_nao_resolvido`
+- Senado: quarentena `parlamentar_nao_resolvido` <5% (restante
+  são nomes sem match na API histórica)
+- Cobertura total: >90% (antes: 57,8%)
+
+**Branch:** `sprint/16-cobertura-historica` → `main` (via PR #51)
+
+**Notas:**
+- Legislaturas 54-57 (2011-2027) cobrem todo o período CEAPS
+  (2015+). Não precisa ir além de 54.
+- A API da Câmara aceita `idLegislatura` como filtro direto. A do
+  Senado usa path parameter (`/legislatura/{N}.json`).
+- Não mexe em despesas (já funciona por `id_legislatura` no
+  endpoint de despesas da Câmara, e por CSV no Senado).
+
+**Resultado:**
+- Câmara: 513 → 1.461 deputados (+184%)
+- Senado: 81 → 549 senadores (+578%)
+- Cobertura: 57,8% → 60,4% (+111.016 despesas resolvidas)
+- Residual `parlamentar_nao_resolvido`: 119.008 (senadores pré-2011,
+  legislatura <54, fora do escopo)
+- ADR-044 aceito e implementado
+
+---
+
+## Sprint 17 — Redesign Mobile do Site Institucional
+
+**Objetivo:** Resolver a ausência de navegação mobile no site
+institucional (nav{display:none} sem substituto abaixo de 800px) e
+aplicar microinterações de refinamento (hover, focus, transition)
+identificadas em revisão de UX. Ver ADR-045.
+
+**Causa raiz:** site-v3/index.html esconde <nav> completamente no
+breakpoint ≤800px, sem hambúrguer ou qualquer outro acesso aos links.
+Primeiro JavaScript introduzido no site, até então 100% estático.
+
+### Onda 17.1 — ADR de arquitetura do menu mobile
+
+**Entregável:** ADR-045 aprovado (JS vanilla + overlay fullscreen)
+antes de iniciar implementação.
+
+- ☐ ADR-045 commitado em ADR.md
+- ☐ Confirmar numeração real via git clone antes do commit
+
+### Onda 17.2 — Implementação do menu mobile + acessibilidade
+
+**Arquivo:** site-v3/index.html (CSS + JS inline ou <script> próprio)
+
+- ☐ Botão hambúrguer visível apenas em @media(max-width:800px)
+- ☐ aria-label e aria-expanded dinâmicos no botão
+- ☐ Painel overlay fullscreen (background: var(--green)), replica
+  os 4 links do <nav> desktop + CTA Dashboard
+- ☐ Fechamento por tecla Esc
+- ☐ Fechamento ao clicar em um link
+- ☐ Foco movido para o primeiro link ao abrir; foco preso enquanto
+  aberto
+- ☐ Teste manual de navegação por teclado (Tab, Esc)
+
+### Onda 17.3 — Microinterações
+
+**Arquivo:** site-v3/index.html (CSS)
+
+- ☐ transition: 0.2s ease em nav a, com :hover escurecendo links
+  inativos
+- ☐ :hover em .dashboard usando --green2 + box-shadow sutil
+- ☐ transform: scale(1.03) em .brand no hover
+
+### Onda 17.4 — Refino .sources e touch targets mobile
+
+**Arquivo:** site-v3/index.html (CSS)
+
+- ☐ Substituir transform:scale(.9) em .sources por reflow real
+  (wrap/stack) no mobile
+- ☐ Auditar touch targets (mínimo 44×44px) em ranking bars, cards e
+  footer
+
+### Onda 17.5 — Revisão técnica e fechamento
+
+- ☐ Revisão técnica (Revisor Técnico)
+- ☐ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
+- ☐ PROJECT_CONTEXT.md atualizado se houver mudança estrutural
+
+**Branch:** sprint/17-mobile-redesign → main (via PR)
+
+---
+
+## Lições Aprendidas
+
+### ⚠️ Lição: Schema Bronze exige re-extração manual explícita (04/09/2026)
+
+**Contexto:** O PR #46 adicionou o campo `url_foto` ao schema Pydantic
+`SenadoBronzeParlamentar` (02/09), mas o Parquet Bronze já existia
+escrito em 30/08 — sem a coluna. O pipeline scheduled não re-extrai
+dados que já existem (só busca incrementos), então o Bronze antigo
+persistiu sem `url_foto` por 5 dias, afetando **todos os 81
+senadores** (avatar quebrado no dashboard).
+
+**Regra:** Quando um PR adiciona campo novo a um extractor Bronze já
+em produção, **a re-extração manual do Bronze é obrigatória** antes
+do merge ou imediatamente após. O DAG scheduled não faz isso
+sozinho.
+
+**Checklist para PRs que mexem em extractor Bronze:**
+1. Verificar se o campo novo já existe no Parquet Bronze atual
+2. Se não existir: re-extrair antes de merge (ou documentar como
+   item de operação pós-merge)
+3. Rodar Silver + Gold para propagar
+4. Validar com query antes/depois
+
+**Caso relacionado:** Sprint 15, fix `url_foto` — re-extração
+manual via MinIO (`parlamento/senado/2026-09-04.parquet`),
+limpeza de rows antigas no Silver, dbt build `dim_parlamentar`.

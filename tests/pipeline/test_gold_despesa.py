@@ -69,14 +69,15 @@ def _seed(db: Path) -> None:
     """Popula as Silver exigidas pelos modelos Gold alvo do despesa."""
     con = duckdb.connect(str(db))
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         con.execute(
-            "create table silver_parlamentar (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_parlamentar (fonte varchar, id_parlamentar bigint,"
             " nome varchar, sigla_partido varchar, sigla_uf varchar, id_legislatura bigint,"
             " situacao_normalizada varchar, data date, run_id varchar, pipeline_version varchar,"
-            " execution_timestamp timestamp, source_version varchar)"
+            " execution_timestamp timestamp, url_foto varchar, partido_uf_aproximado boolean, source_version varchar)"
         )
         con.execute(
-            "create table silver_despesa (fonte varchar, id_parlamentar bigint,"
+            "create table silver.silver_despesa (fonte varchar, id_parlamentar bigint,"
             " nome_parlamentar varchar, ano bigint, mes bigint, cod_documento varchar,"
             " data_documento date, tipo_despesa varchar, cnpj_cpf_valor varchar,"
             " tipo_documento varchar, nome_fornecedor varchar, valor_liquido double,"
@@ -87,7 +88,7 @@ def _seed(db: Path) -> None:
         # (que compartilham as mesmas dimensões — o build do dbt roda os testes
         # que referenciam as dimensões selecionadas). Sem fatos, os testes passam.
         con.execute(
-            "create table silver_emenda (ano bigint, codigo_emenda varchar,"
+            "create table silver.silver_emenda (ano bigint, codigo_emenda varchar,"
             " tipo_emenda varchar, nome_autor varchar, funcao varchar,"
             " subfuncao varchar, localidade_do_gasto varchar, valor_empenhado bigint,"
             " valor_liquidado bigint, valor_pago bigint, run_id varchar,"
@@ -98,7 +99,7 @@ def _seed(db: Path) -> None:
         # que agora é modelo Gold e tem testes de FK agendados junto com
         # dim_orgao/dim_data nos builds selecionados aqui; sem linhas, passam.
         con.execute(
-            "create table silver_cartao (id bigint, data_transacao date,"
+            "create table silver.silver_cartao (id bigint, data_transacao date,"
             " valor_transacao double, estabelecimento_cnpj_valor varchar,"
             " estabelecimento_tipo_documento varchar, estabelecimento_nome varchar,"
             " portador_nome varchar, portador_cpf_mascarado varchar,"
@@ -107,23 +108,23 @@ def _seed(db: Path) -> None:
             " source_version varchar)"
         )
         con.executemany(
-            "insert into silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # JOSE SILVA troca de partido em 2019 (nova versão) e em 2023
-                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 56, "Ativo", "2019-07-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO A", "SP", 55, "Ativo", "2019-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 56, "Ativo", "2019-07-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("camara", 1, "JOSE SILVA", "PARTIDO B", "SP", 57, "Ativo", "2023-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
                 # PEDRO só vigente a partir de 2020
-                ("camara", 2, "PEDRO ALVES", "PARTIDO C", "RJ", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("camara", 2, "PEDRO ALVES", "PARTIDO C", "RJ", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
                 # homônimos no SENADO (ids 4 e 5) — despesa por nome → ambígua
-                ("senado", 4, "JOAO DO NORTE", "PARTIDO D", "SP", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
-                ("senado", 5, "JOAO DO NORTE", "PARTIDO F", "SP", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("senado", 4, "JOAO DO NORTE", "PARTIDO D", "SP", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
+                ("senado", 5, "JOAO DO NORTE", "PARTIDO F", "SP", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
                 # MARIA SANTOS conhecida, vigente só a partir de 2020
-                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", "s"),
+                ("senado", 6, "MARIA SANTOS", "PARTIDO G", "PR", 56, "Ativo", "2020-02-01", "r", "p", "2026-01-01 00:00:00", None, False, "s"),
             ],
         )
         con.executemany(
-            "INSERT INTO silver_despesa VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO silver.silver_despesa VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 # D1: câmara por id (versão 1 vigente em 2019-05-10), fornecedor CNPJ
                 ("camara", 1, None, 2019, 5, "D1", "2019-05-10", "PASSAGEM AEREA", "12345678000190", "CNPJ", "LATAM", 100, 0, "r", "p", "2026-01-01 00:00:00", "s"),
@@ -193,7 +194,9 @@ def _seed(db: Path) -> None:
 
 
 def _conectar(db: Path) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(db))
+    con = duckdb.connect(str(db))
+    con.execute("SET search_path = 'gold'")
+    return con
 
 
 def _build(tmp_path, monkeypatch, selecao: str) -> None:
@@ -209,6 +212,9 @@ def _build(tmp_path, monkeypatch, selecao: str) -> None:
 
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "gold.duckdb"))
     monkeypatch.setenv("PYTHONPATH", str(_GOLD))
+
+    from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    DuckDBConnectionManager._ENV = None
 
     result = dbtRunner().invoke(
         [
@@ -251,42 +257,42 @@ def test_despesa_promove_so_resolvido(tmp_path, monkeypatch):
     try:
         fato = con.execute(
             "select cod_documento, id_parlamentar, surrogate_key, id_orgao, id_fornecedor,"
-            " data_sk, cod_tipo from main.fact_despesa order by id_despesa"
+            " data_sk, cod_tipo from fact_despesa order by id_despesa"
         ).fetchall()
         parlam_quar = {
             (cod, motivo)
             for cod, motivo in con.execute(
-                "select cod_documento, motivo from main.desp_parlamento_quarantine"
+                "select cod_documento, motivo from desp_parlamento_quarantine"
             ).fetchall()
         }
         fato_quar = {
             (cod, motivo)
             for cod, motivo in con.execute(
                 "select cod_documento, motivo_quarentena"
-                " from main.fact_despesa_quarantine"
+                " from fact_despesa_quarantine"
             ).fetchall()
         }
         surrogates = dict(
             con.execute(
-                "select cod_documento, surrogate_key from main.desp_parlamento"
+                "select cod_documento, surrogate_key from desp_parlamento"
             ).fetchall()
         )
         dim_sk = {k for (k,) in con.execute(
-            "select surrogate_key from main.dim_parlamentar"
+            "select surrogate_key from dim_parlamentar"
         ).fetchall()}
         fornecedor_cnpj = con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
             " where cnpj_cpf_valor = '12345678000190' and tipo_documento = 'CNPJ'"
         ).fetchone()[0]
         fornecedor_cpf_id = con.execute(
-            "select id_fornecedor from main.dim_fornecedor where tipo_documento = 'CPF'"
+            "select id_fornecedor from dim_fornecedor where tipo_documento = 'CPF'"
         ).fetchone()[0]
         fornecedor_d3 = con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
             " where cnpj_cpf_valor = '11111111000100' and tipo_documento = 'CNPJ'"
         ).fetchone()[0]
         cpf_dim = con.execute(
-            "select cnpj_cpf_valor from main.dim_fornecedor where tipo_documento = 'CPF'"
+            "select cnpj_cpf_valor from dim_fornecedor where tipo_documento = 'CPF'"
         ).fetchone()[0]
     finally:
         con.close()
@@ -336,9 +342,9 @@ def test_despesa_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         assert con.execute(
-            "select sigla, id_orgao from main.dim_orgao order by id_orgao"
+            "select sigla, id_orgao from dim_orgao order by id_orgao"
         ).fetchall() == [("CD", 1), ("SF", 2), ("EX", 3)]
-        con.execute("delete from main.dim_orgao where sigla = 'CD'")
+        con.execute("delete from dim_orgao where sigla = 'CD'")
     finally:
         con.close()
 
@@ -346,12 +352,12 @@ def test_despesa_orgao_nao_resolvido_na_quarentena(tmp_path, monkeypatch):
 
     con = _conectar(tmp_path / "gold.duckdb")
     try:
-        fato = {cod for (cod,) in con.execute("select cod_documento from main.fact_despesa").fetchall()}
+        fato = {cod for (cod,) in con.execute("select cod_documento from fact_despesa").fetchall()}
         quar = {
             (cod, motivo)
             for cod, motivo in con.execute(
                 "select cod_documento, motivo_quarentena"
-                " from main.fact_despesa_quarantine"
+                " from fact_despesa_quarantine"
             ).fetchall()
         }
     finally:
@@ -377,7 +383,7 @@ def _injetar_orfos(con, id_fornecedor_valido: int, n_orfos: int, n_totais: int) 
     from hashlib import md5
 
     cod_tipo = md5(b"PASSAGEM AEREA").hexdigest()[:12]
-    con.execute("delete from main.fact_despesa")
+    con.execute("delete from fact_despesa")
     linhas_validas = [
         (
             i + 1, 1, 100000001001, id_fornecedor_valido, 1, None, cod_tipo, 20190101,
@@ -393,7 +399,7 @@ def _injetar_orfos(con, id_fornecedor_valido: int, n_orfos: int, n_totais: int) 
         for i in range(n_orfos)
     ]
     con.executemany(
-        "INSERT INTO main.fact_despesa (id_despesa, id_parlamentar, surrogate_key,"
+        "INSERT INTO fact_despesa (id_despesa, id_parlamentar, surrogate_key,"
         " id_fornecedor, id_orgao, id_unidade_gestora, cod_tipo, data_sk, cod_documento,"
         " valor_liquido, valor_glosa, run_id, pipeline_version,"
         " execution_timestamp, source_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -436,7 +442,7 @@ def test_adr022_fk_orphan_pct_abaixo_do_limiar(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         id_f = con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
             " where cnpj_cpf_valor = '12345678000190'"
         ).fetchone()[0]
         _injetar_orfos(con, id_f, n_orfos=9, n_totais=200)
@@ -460,7 +466,7 @@ def test_adr022_fk_orphan_pct_acima_do_limiar(tmp_path, monkeypatch):
     con = _conectar(tmp_path / "gold.duckdb")
     try:
         id_f = con.execute(
-            "select id_fornecedor from main.dim_fornecedor"
+            "select id_fornecedor from dim_fornecedor"
             " where cnpj_cpf_valor = '12345678000190'"
         ).fetchone()[0]
         _injetar_orfos(con, id_f, n_orfos=15, n_totais=200)

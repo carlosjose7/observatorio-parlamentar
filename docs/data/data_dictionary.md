@@ -34,6 +34,11 @@ referência versionada em Git.
 > dimensional completo de PROJECT_CONTEXT.md §7, incluindo as
 > dimensões institucionais introduzidas em ADR-010 e o schema
 > revisado de `dim_fornecedor` (ADR-011).
+>
+> **Schema físico por camada (ADR-042):** `Bronze` = Parquet/MinIO
+> (sem DuckDB) · `Silver` = schema `silver` · `Gold` = schema `gold`
+> · `Gold (controle)` = exceção, permanece em `main`
+> (`data_quality_report` — única tabela; ADR-015).
 
 | Tabela | Camada | Origem | Frequência | Chave Primária | Owner |
 |---|---|---|---|---|---|

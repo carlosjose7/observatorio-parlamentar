@@ -218,10 +218,19 @@ def _fontes_com_janelas(ano: int = 2026, mes: str = "07/2026"):
 
 @pytest.fixture(autouse=True)
 def _janelas_recentes(monkeypatch):
-    """Mantém os testes existentes no período corrente (1 período por fonte)."""
+    """Mantém os testes existentes no período corrente (1 período por fonte).
+
+    Desliga validação por padrão — o config real (`pipeline.yaml`) tem
+    ``habilitado: true`` mas a maioria dos testes não testa modo validação.
+    Sem este patch, ``run_pipeline`` envolve o store num namespace ``validacao:``
+    e trunca a janela histórica, quebrando watermarks e seleção de meses.
+    """
     import pipeline.bronze as bronze
 
     monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas())
+    cfg = get_pipeline().model_copy(deep=True)
+    cfg.validacao.habilitado = False
+    monkeypatch.setattr(bronze, "get_pipeline", lambda: cfg)
 
 
 @pytest.fixture(autouse=True)
@@ -342,8 +351,9 @@ def test_fonte_isolada_com_falha(ambiente):
 
 def test_watermark_persiste_entre_runs(ambiente):
     client = _cliente_mock()
-    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
-    run2 = run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+    ts = datetime(2026, 8, 15, tzinfo=UTC)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS, execution_timestamp=ts)
+    run2 = run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS, execution_timestamp=ts)
 
     estado_camara = ambiente["store"].get("watermark_camara_despesas")
     assert estado_camara.last_watermark == "08/2026"  # maior mês de competência processado
@@ -415,7 +425,8 @@ def test_camara_usa_idlegislatura_e_ano_mes_em_vez_de_datainicio(ambiente):
     despesas nunca envie `dataInicio` e sempre envie os três filtros."""
     requisicoes: list = []
     client = _cliente_mock(camara_requisicoes=requisicoes)
-    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS)
+    ts = datetime(2026, 8, 15, tzinfo=UTC)
+    run_pipeline(storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS, execution_timestamp=ts)
 
     despesas = [r for r in requisicoes if "idLegislatura" in r]
     assert despesas
@@ -540,9 +551,11 @@ def test_backfill_cartoes_multi_mes(ambiente, monkeypatch):
 
     monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(mes="07/2026"))
     client = _cliente_mock(cartao_dinamico=True)
+    ts = datetime(2026, 8, 15, tzinfo=UTC)
 
     run = run_pipeline(
-        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS,
+        execution_timestamp=ts,
     )
 
     assert run.status == "success"
@@ -561,9 +574,11 @@ def test_backfill_cartoes_cruza_anos_watermark_cronologico(ambiente, monkeypatch
 
     monkeypatch.setattr(bronze, "get_sources", lambda: _fontes_com_janelas(mes="11/2025"))
     client = _cliente_mock(cartao_dinamico=True)
+    ts = datetime(2026, 8, 15, tzinfo=UTC)
 
     run = run_pipeline(
-        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS
+        storage=ambiente["storage"], store=ambiente["store"], client=client, retry_settings=RETRY_TESTS,
+        execution_timestamp=ts,
     )
 
     assert run.status == "success"
@@ -606,6 +621,7 @@ def test_camara_primeira_carga_trunca_janela_no_modo_validacao(monkeypatch):
     from uuid import uuid4
 
     import pipeline.bronze as bronze
+    import pipeline.config as config
     from pipeline.contracts import LoadMetadata
 
     run_meta = LoadMetadata(
@@ -618,15 +634,24 @@ def test_camara_primeira_carga_trunca_janela_no_modo_validacao(monkeypatch):
     monkeypatch.setattr(
         bronze, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=2)
     )
+    monkeypatch.setattr(
+        config, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=2)
+    )
     assert bronze._camara_filtro_inicial("01/2015", run_meta) == ["07/2026", "08/2026"]
 
     monkeypatch.setattr(
         bronze, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=1)
     )
+    monkeypatch.setattr(
+        config, "get_pipeline", lambda: _pipeline_com_validacao(limite_periodos=1)
+    )
     assert bronze._camara_filtro_inicial("01/2015", run_meta) == ["08/2026"]
 
     # Sem o modo validação, o backfill permanece integral (2015 → 2026)
-    monkeypatch.setattr(bronze, "get_pipeline", get_pipeline)
+    cfg_off = get_pipeline().model_copy(deep=True)
+    cfg_off.validacao.habilitado = False
+    monkeypatch.setattr(bronze, "get_pipeline", lambda: cfg_off)
+    monkeypatch.setattr(config, "get_pipeline", lambda: cfg_off)
     meses = bronze._camara_filtro_inicial("01/2015", run_meta)
     assert meses[0] == "01/2015"
     assert meses[-1] == "08/2026"

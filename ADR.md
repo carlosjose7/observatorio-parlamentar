@@ -2496,3 +2496,231 @@ Consequências:
 - Sem nova dependência de API ou dados — usa campos existentes.
 
 ---
+
+ADR-042
+Título: Separação de schemas por camada (Silver/Gold) no arquivo DuckDB único
+
+Status:
+Aceito
+
+Contexto:
+Silver e Gold coexistem hoje no schema `main` do arquivo
+`data/silver/observatorio.duckdb`, distinguidos apenas por convenção
+de nome (`silver_*` vs. `dim_*`/`fact_*`/tabelas analíticas). O
+`ml_staging` (ADR-026) já tem schema próprio — o projeto já sabe
+fazer isolamento por schema, só não aplicou o mesmo padrão a
+Silver/Gold. Padrão de mercado (Databricks Unity Catalog, convenção
+usual de projetos dbt via `generate_schema_name`) isola camadas por
+schema/catálogo, não por prefixo de nome. Sem isolamento formal: risco
+de colisão de nomes conforme o projeto cresce, e nenhuma forma de
+aplicar controle de acesso por camada no futuro (ex: permissão
+read-only só na Gold).
+
+Decisão:
+1. Criar schemas explícitos `silver` e `gold` dentro do mesmo arquivo
+   `.duckdb` (sem separar arquivos — mantém a simplicidade
+   operacional já validada pelo projeto, incluindo o precedente do
+   ADR-040 de usar arquivo dedicado só quando há conflito real de
+   escrita).
+2. `pipeline/silver.py`: qualificar toda criação/escrita de tabela
+   com `silver.` (ou `CREATE SCHEMA IF NOT EXISTS silver` + conexão
+   com schema padrão setado).
+3. `pipeline/gold/`: configurar `+schema: gold` nos model groups do
+   `dbt_project.yml` (dimensions, facts, analytics, control, emenda,
+   despesa, cartao), com macro `generate_schema_name` customizada
+   para não duplicar prefixo.
+4. `sources.yml`: atualizar o source `silver` para `schema: silver`
+   (hoje mapeado para `main`).
+5. `api/`: qualificar queries de leitura com `gold.` (e
+   `ml_staging.` onde aplicável), revisando se a API acessa Silver
+   diretamente em algum ponto.
+6. Script de migração one-shot: mover as tabelas existentes de
+   `main` para os schemas corretos, com backup do arquivo `.duckdb`
+   antes de qualquer DDL.
+7. Atualizar testes (`AppTest`, integração) que hoje assumem nome de
+   tabela sem schema.
+8. Atualizar `PROJECT_CONTEXT.md` §5/§6/§7 e `data_dictionary.md`
+   para refletir os schemas reais.
+
+Consequências:
+- Isolamento lógico correto por camada, alinhado ao padrão de mercado
+  e ao próprio `ml_staging`.
+- Migração de dados existentes exige backup e execução cuidadosa — é
+  o maior risco técnico da sprint.
+- Todo ponto que hoje assume tabela sem schema (API, dashboard, dbt
+  sources) precisa de revisão — risco de quebra silenciosa se algo
+  passar despercebido.
+- Não resolve a nomenclatura do arquivo físico
+  (`data/silver/observatorio.duckdb` continua guardando Gold e
+  `ml_staging` também) — fica registrado como item separado, fora do
+  escopo deste ADR.
+
+---
+
+ADR-043
+Título: Backfill real de partido/UF histórico da Câmara via SOAP legado
+
+Status:
+Proposto
+
+Contexto:
+Auditoria em produção (DuckDB, container observatorio-parlamentar-api-1)
+identificou quarentena estrutural em gold.desp_parlamento_quarantine para
+fonte='camara': 833.401 despesas (58,6% do total silver_despesa Câmara,
+1.421.214 linhas), atingindo 337 deputados distintos. Causa raiz: a
+extração da Câmara consome apenas `ultimoStatus` (situação vigente) via
+API REST, sem histórico de filiações partidárias anteriores — logo
+`dim_parlamentar` (SCD2, ADR-020) não cobre janelas de tempo em que o
+deputado esteve em partido diferente do atual, e despesas históricas
+nessas janelas não encontram versão correspondente na dimensão
+(desp_parlamento_classificacao.sql), caindo em quarentena.
+
+A branch fix/senado-foto-backfill-scd2 (não mergeada) resolveu problema
+análogo para o Senado via aproximação: snapshots sintéticos que aplicam
+o partido/UF *atual* retroativamente para legislaturas sem observação
+direta, marcados com partido_uf_aproximado=true. Essa aproximação é
+necessária para o Senado porque a fonte não oferece endpoint de histórico
+de filiação partidária.
+
+A Câmara, diferentemente, expõe o webservice SOAP legado
+Deputados.asmx (ObterDetalhesDeputado?ideCadastro=X&numLegislatura=Y),
+que retorna filiacoesPartidarias com data exata de cada filiação. Logo,
+para a Câmara não é necessário aproximar — é possível obter o dado real.
+
+Decisão:
+1. Implementar cliente SOAP isolado (módulo dedicado em
+   pipeline/camara/), consumindo Deputados.asmx para as legislaturas
+   54–57, sem propagar dependência de parsing SOAP/XML para o resto do
+   pipeline.
+2. Backfill cobre todo deputado presente em despesas (não apenas os 337
+   já identificados na quarentena atual) — janela incompleta reabre para
+   qualquer deputado que troque de partido no futuro se o escopo for
+   restrito aos 337 atuais.
+3. Toda linha gerada por este backfill recebe partido_uf_aproximado=false
+   — dado real, não aproximado. Isso distingue explicitamente a garantia
+   de qualidade da Câmara (dado real via SOAP) da aproximação aceita para
+   o Senado (ADR equivalente do Senado, a formalizar).
+4. dim_parlamentar.sql deve tratar partido_uf_aproximado=false do
+   backfill da Câmara com a mesma regra de não geração de versão
+   espúria já aplicada à aproximação do Senado.
+
+Consequências:
+- Elimina a causa estrutural da quarentena da Câmara (meta: 833.401 → 0,
+  ou residual documentado com causa distinta).
+- Introduz uma dependência de webservice SOAP legado (menos documentado,
+  sem SLA formal) — mitigada por isolamento do módulo (consequência
+  aceitável, não deve vazar para o restante do pipeline).
+- partido_uf_aproximado passa a ser campo de qualidade que distingue
+  fontes: false=dado real (Câmara, pós-backfill), true=aproximação
+  (Senado). Qualquer consumidor (dashboard, API) que exiba esse campo
+  deve refletir essa distinção ao usuário.
+- Backfill cobrindo "todo deputado em despesas" (não só os 337 atuais)
+  aumenta o volume de chamadas SOAP, mas resolve o problema
+  estruturalmente ao invés de por lista fixa.
+
+---
+
+ADR-044
+Título: Cobertura histórica de parlamentares via endpoints de legislatura (Câmara + Senado)
+
+Status:
+Aceito — implementado na Sprint 16 (PR #51)
+
+Contexto:
+Ambos os extractors (Câmara e Senado) buscam apenas o endpoint "atual"
+da API REST, resultando em parlamentares sem cobertura SCD2 histórica:
+- Câmara: 219 deputados sem partido/UF pré-2023 (têm despesas, mas
+  ausentes do `dim_parlamentar` para legislaturas anteriores)
+- Senado: 120.034 despesas (48,1%) em quarentena — 162 senadores fora
+  do mandato atual absent from `dim_parlamentar`
+
+Os endpoints históricos existem e foram validados:
+- Câmara: `GET /deputados?idLegislatura={N}` (legislaturas 54-57)
+- Senado: `GET /senador/lista/legislatura/{N}.json` (legislaturas 54-57)
+
+Numeração de legislatura é idêntica entre Câmara e Senado (54-57).
+A API do Senado tem estrutura diferente (`Mandatos` plural, UF dentro
+do mandato, não no top-level).
+
+Decisão:
+1. Câmara: adicionar parâmetro `idLegislatura` ao `_listar_deputados()`,
+   iterando sobre legislaturas 54-57, deduplicando por `id`.
+2. Senado: nova função `_listar_senadores_por_legislatura()` que chama
+   `/lista/legislatura/{N}.json`, com parsing adaptado para `Mandatos`
+   plural e UF dentro do mandato.
+3. Reprocessar Bronze completo após mudanças (lição da Sprint 15 —
+   schema Bronze exige re-extração manual explícita).
+4. Legislaturas 54-57 (2011-2027) cobrem todo o período CEAPS (2015+).
+   Não precisa ir além de 54.
+
+Consequências:
+- Elimina quarentena `parlamentar_nao_resolvido` para Câmara (~0) e
+  reduz significativamente para Senado (<5%).
+- Aumenta volume de chamadas à API (4 requests por legislatura por
+  fonte), mas APIs públicas sem SLA formal.
+- Reprocessamento do Bronze é obrigatório (lição documentada em
+  BACKLOG.md §Lições Aprendidas).
+
+---
+
+ADR-045
+Título: Menu de navegação mobile do site institucional — overlay fullscreen com JS mínimo
+
+Status:
+Proposto — aguardando aprovação para abrir Sprint 17
+
+Contexto:
+Em site-v3/index.html, o breakpoint @media(max-width:800px) aplica
+nav{display:none}, removendo completamente o acesso aos links de
+navegação (Panorama, Parlamentar, Partido, Estado) em telas mobile,
+sem nenhum substituto. Apenas o botão "Dashboard" permanece visível.
+Demais elementos responsivos (métricas, cards, hero) já estão
+tratados nos breakpoints existentes (1100px, 800px, 520px) e não
+fazem parte deste ADR.
+
+Três abordagens técnicas foram avaliadas para o menu mobile:
+- CSS-only (checkbox hack): descartada por dificultar o controle de
+  foco e tecla Esc.
+- <details>/<summary>: descartada por estilização inconsistente do
+  marcador entre navegadores e falta de controle sobre
+  transição/overlay.
+- JS mínimo com toggle de classe: escolhida por dar controle total
+  sobre acessibilidade (foco, Esc, aria-expanded) sem introduzir
+  dependência de framework.
+
+Um mockup interativo (overlay fullscreen sobre --green, com os 4
+links + CTA Dashboard) foi validado com o responsável pelo produto
+antes da formalização deste ADR.
+
+Decisão:
+1. Adicionar um botão de menu (ícone hambúrguer) visível apenas no
+   breakpoint ≤800px, com aria-label e aria-expanded dinâmicos.
+2. Ao ativar, um painel overlay fullscreen (background: var(--green))
+   cobre a viewport, exibindo os mesmos itens de <nav><ul> em fonte
+   ampliada (19px) mais o CTA Dashboard, replicando a paleta já usada
+   em .questions.
+3. Comportamento via JS vanilla (sem dependência externa): toggle de
+   classe, fechamento por tecla Esc, fechamento ao clicar em um link,
+   e foco movido para o primeiro link ao abrir (foco preso enquanto o
+   overlay estiver aberto).
+4. O conjunto de links do menu mobile replica exatamente o <nav>
+   desktop existente (Panorama, Parlamentar, Partido, Estado) — não
+   inclui os endpoints adicionais de PROJECT_CONTEXT.md §11
+   (Fornecedor, Anomalias), pois esses ainda não têm página
+   correspondente no site institucional. Fica registrado como item
+   de backlog separado, não bloqueante.
+5. Acima de 800px, nada muda — o botão hambúrguer permanece oculto e
+   a <nav> desktop funciona como hoje.
+
+Consequências:
+- Introduz o primeiro trecho de JavaScript no site institucional (até
+  então 100% estático); escopo do script deve ficar restrito ao
+  toggle do menu, sem novas dependências.
+- Exige teste manual de navegação por teclado (Tab, Esc) antes do
+  fechamento da Sprint 17.
+- BACKLOG.md e CHANGELOG.md devem ser atualizados ao final da sprint,
+  registrando a Onda 17.1 (este ADR) como concluída.
+- Não altera os breakpoints de métricas/cards/hero já existentes —
+  reduz risco de regressão.
+
+---

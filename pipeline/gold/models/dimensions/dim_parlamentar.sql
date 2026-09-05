@@ -37,6 +37,7 @@ with observacoes as (
         situacao_normalizada,
         id_legislatura,
         url_foto,
+        coalesce(partido_uf_aproximado, false) as partido_uf_aproximado,
         cast(data as date) as data,
         run_id,
         execution_timestamp
@@ -98,6 +99,8 @@ versoes as (
 atributos_versao as (
     -- Rebaixa os atributos rastreados (constantes dentro da versão) para o
     -- grão versão, garantindo que o registro só carregue o que é estável.
+    -- `partido_uf_aproximado` é preservado como metadata de qualidade (não
+    -- dispara nova versão — é um flag de auditoria, não um atributo rastreado).
     select distinct
         vb.fonte,
         vb.id_parlamentar,
@@ -109,12 +112,18 @@ atributos_versao as (
         vb.sigla_partido,
         vb.sigla_uf,
         vb.situacao_normalizada,
-        vb.url_foto
+        vb.url_foto,
+        max(vb.partido_uf_aproximado) as partido_uf_aproximado
     from versoes_brutas vb
     join versoes v
         on v.fonte = vb.fonte
         and v.id_parlamentar = vb.id_parlamentar
         and v.id_versao = vb.id_versao
+    group by
+        vb.fonte, vb.id_parlamentar, vb.id_versao,
+        v.effective_date, v.id_legislatura, v.execution_timestamp,
+        vb.nome, vb.sigla_partido, vb.sigla_uf,
+        vb.situacao_normalizada, vb.url_foto
 ),
 
 preenchida as (
@@ -143,6 +152,7 @@ select
     id_legislatura,
     effective_date,
     end_date,
-    case when end_date is null then true else false end as is_current
+    case when end_date is null then true else false end as is_current,
+    partido_uf_aproximado
 from preenchida
 order by fonte, id_parlamentar, effective_date

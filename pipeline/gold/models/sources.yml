@@ -5,10 +5,8 @@ sources:
     description: >
       Camada Silver (DuckDB), populada por pipeline/silver.py via os transform.py
       (ADR-023). Vive no MESMO arquivo DuckDB da Gold (DUCKDB_DATABASE_PATH,
-      ADR-001/ADR-008). As tabelas são criadas pelo transform do Silver no
-      schema `main` do arquivo — o `schema:` da source é mapeado para cá (sem
-      isso o dbt buscaria em `silver.silver_*`).
-    schema: main
+      ADR-001/ADR-008). Tabelas no schema `silver` (ADR-042).
+    schema: silver
     tables:
       - name: silver_despesa
         description: Despesas normalizadas Câmara + Senado (coluna `fonte`; ADR-016/ADR-023).
@@ -21,6 +19,13 @@ sources:
           `dim_parlamentar` (ADR-020).
       - name: silver_cartao
         description: Transações CPGF CGU normalizados (chave `id`, transform.py).
+
+  - name: control
+    description: >
+      Tabelas de controle no schema `main` (ADR-042) — lidas pela API e
+      escritas pelo pipeline Silver. Não são Gold nem Silver de negócio.
+    schema: main
+    tables:
       - name: data_quality_report
         description: Data Quality Report da Silver (ADR-015), por run_id/tabela.
 

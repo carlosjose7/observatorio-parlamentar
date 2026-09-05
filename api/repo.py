@@ -48,6 +48,7 @@ from api.schemas.agregacoes import (
     TopFornecedorItem,
 )
 from api.schemas.anomalias import AnomaliaItem, ListaAnomalias
+from api.schemas.contador import ContadorVisitas
 from api.schemas.fornecedores import (
     FornecedorContexto,
     FornecedorResumo,
@@ -77,7 +78,6 @@ from api.schemas.rede import (
     ListaComunidades,
     RedeFornecedor,
 )
-from api.schemas.contador import ContadorVisitas
 from pipeline.config import REPO_ROOT, get_api, get_env
 from pipeline.normalize import normalizar_nome_proprio
 
@@ -174,14 +174,57 @@ def caminho_do_gold() -> Path:
     return caminho
 
 
+_TABELAS_GOLD_ESPERADAS = frozenset({
+    "dim_parlamentar", "fact_despesa", "dim_fornecedor", "dim_data",
+    "dim_categoria_despesa", "network_nodes", "network_edges",
+    "expense_outliers", "supplier_concentration", "risk_scores",
+    "data_quality_report", "pipeline_runs",
+})
+
+
+_gold_verificado = False
+
+
+def _verificar_tabelas_gold(con: duckdb.DuckDBPyConnection) -> None:
+    """Smoke check one-shot: confirma que as 12 tabelas Gold existem em ``gold``.
+
+    Roda na primeira conexão e seta flag global. Evita fallback silencioso
+    para ``main`` (ADR-042). Não repete em conexões subsequentes (testes).
+    """
+    global _gold_verificado
+    if _gold_verificado:
+        return
+    rows = con.execute(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'gold'"
+    ).fetchall()
+    presentes = {r[0] for r in rows}
+    faltando = sorted(_TABELAS_GOLD_ESPERADAS - presentes)
+    if faltando:
+        raise RuntimeError(
+            f"Tabelas ausentes em gold: {faltando}. "
+            "Verifique se o dbt build foi executado (Onda 3)."
+        )
+    _gold_verificado = True
+
+
 def _conexao() -> duckdb.DuckDBPyConnection:
-    """Abre o DuckDB Gold em modo read-only (nunca cria/modifica)."""
+    """Abre o DuckDB Gold em modo read-only (nunca cria/modifica).
+
+    Configura ``search_path = 'gold'`` para que queries sem prefixo de
+    schema resolvam para ``gold.*`` (ADR-042). ``data_quality_report`` e
+    ``pipeline_runs`` existem em ambos os schemas (idênticos); a API lê
+    de ``gold`` por default.
+    """
     caminho = caminho_do_gold()
     if not caminho.exists():
         logger.error("gold_indisponivel", caminho=str(caminho), motivo="arquivo_ausente")
         raise GoldIndisponivel(f"DuckDB Gold ausente: {caminho}")
     try:
-        return duckdb.connect(str(caminho), read_only=True)
+        con = duckdb.connect(str(caminho), read_only=True)
+        con.execute("SET search_path = 'gold'")
+        _verificar_tabelas_gold(con)
+        return con
     except duckdb.Error as exc:  # pragma: no cover — driver é confiável p/ arquivo existente
         logger.error("gold_indisponivel", caminho=str(caminho), erro=str(exc))
         raise GoldIndisponivel(f"Falha ao abrir DuckDB Gold: {caminho}") from exc

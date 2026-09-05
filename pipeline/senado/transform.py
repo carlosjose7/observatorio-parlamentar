@@ -142,7 +142,96 @@ def carregar_silver_despesa(
     )
 
 
-def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
+def _gerar_backfill_scd2(
+    df_bronze: pd.DataFrame,
+    df_despesas: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Gera snapshots sintéticos de legislaturas passadas para senadores.
+
+    A API do Senado só expõe ``lista/atual`` (senadores em exercício),
+    resultando em um único snapshot por senador. Este backfill cria rows
+    adicionais para legislaturas históricas em que o senador teve despesas,
+    permitindo que o SCD2 de ``dim_parlamentar`` gere janelas de vigência
+    que cobrem o período das despesas CEAPS (2015–hoje).
+
+    Partido e UF são aproximados (valor atual da API) — a coluna
+    ``partido_uf_aproximado`` sinaliza isso para auditoria.
+
+    Args:
+        df_bronze: Snapshot Bronze dos senadores (saída de ``extract_senadores``).
+        df_despesas: DataFrame de ``silver_despesa`` (fonte='senado') com colunas
+            ``nome_parlamentar``, ``data_documento``. Se None ou vazio, sem backfill.
+
+    Returns:
+        DataFrame com rows sintéticas (mesmo schema de ``construir_silver_parlamentar``)
+        ou vazio quando não há dados de despesa.
+    """
+    if df_bronze.empty or df_despesas is None or df_despesas.empty:
+        return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
+
+    from pipeline.parlamento import LEGISLATURAS
+
+    rows_backfill: list[dict] = []
+    for _, senador in df_bronze.iterrows():
+        nome = senador.get("nome_parlamentar") or senador.get("nome_completo") or ""
+        if not nome:
+            continue
+
+        despesas_senador = df_despesas[
+            df_despesas["nome_parlamentar"] == nome.upper()
+        ]
+        if despesas_senador.empty:
+            continue
+
+        min_date = despesas_senador["data_documento"].min()
+        max_date = despesas_senador["data_documento"].max()
+
+        # Converte para date para comparar com LEGISLATURAS (datetime.date)
+        if hasattr(min_date, "date"):
+            min_date = min_date.date()
+        if hasattr(max_date, "date"):
+            max_date = max_date.date()
+
+        for num_leg, inicio, fim in LEGISLATURAS:
+            if inicio > max_date or fim <= min_date:
+                continue
+
+            data_snapshot = pd.Timestamp(inicio)
+            id_leg = (legislatura_para_data(inicio) or 0)
+
+            rows_backfill.append(
+                {
+                    "fonte": "senado",
+                    "id_parlamentar": int(senador["id_senador"]),
+                    "nome": senador["nome_parlamentar"] or senador.get("nome_completo", ""),
+                    "sigla_partido": senador.get("sigla_partido"),
+                    "sigla_uf": senador.get("sigla_uf"),
+                    "id_legislatura": id_leg,
+                    "id_legislatura_fonte": int(senador.get("id_legislatura", 0) or 0),
+                    "situacao_bruta": senador.get("situacao"),
+                    "situacao_normalizada": normalizar_situacao(
+                        "senado", senador.get("situacao")
+                    ),
+                    "url_foto": senador.get("url_foto"),
+                    "partido_uf_aproximado": True,
+                    "data": data_snapshot,
+                    "run_id": senador.get("run_id", ""),
+                    "pipeline_version": senador.get("pipeline_version", ""),
+                    "execution_timestamp": senador.get("execution_timestamp", ""),
+                    "source_version": senador.get("source_version", ""),
+                }
+            )
+
+    if not rows_backfill:
+        return pd.DataFrame(columns=COLUNAS_SILVER_PARLAMENTAR)
+
+    return pd.DataFrame(rows_backfill)[COLUNAS_SILVER_PARLAMENTAR]
+
+
+def construir_silver_parlamentar(
+    df_bronze: pd.DataFrame,
+    df_despesas: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Mapeia o snapshot Bronze de `parlamento/senado/` para o grão canônico.
 
     Mesmo contrato de `silver_parlamentar` da Câmara (ADR-020), com
@@ -153,8 +242,14 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
     `situacao_bruta` (ex: Titular) e `situacao_normalizada` (de-para
     versionado). `data` = `data_status` (as-of do SCD2).
 
+    Quando ``df_despesas`` é fornecido, gera snapshots de backfill para
+    legislaturas históricas em que o senador teve despesas (partido/UF
+    aproximados, sinalizados por ``partido_uf_aproximado=True``).
+
     Args:
         df_bronze: DataFrame achatado dos snapshots (`records_to_dataframe`).
+        df_despesas: DataFrame de `silver_despesa` (fonte='senado') para
+            inferir legislaturas servidas. None = sem backfill.
 
     Returns:
         DataFrame canônico de `silver_parlamentar` (fonte='senado') ou vazio
@@ -173,7 +268,7 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
         dtype="int64",
     )
 
-    df = pd.DataFrame(
+    df_atual = pd.DataFrame(
         {
             "fonte": ["senado"] * n,
             "id_parlamentar": df_bronze["id_senador"].astype("int64"),
@@ -186,7 +281,8 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
             "situacao_normalizada": df_bronze["situacao"].map(
                 lambda v: normalizar_situacao("senado", v)
             ),
-            "url_foto": None,
+            "url_foto": df_bronze.get("url_foto"),
+            "partido_uf_aproximado": False,
             "data": data,
             "run_id": df_bronze["run_id"],
             "pipeline_version": df_bronze["pipeline_version"],
@@ -194,7 +290,15 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
             "source_version": df_bronze["source_version"],
         }
     )
-    return df[COLUNAS_SILVER_PARLAMENTAR]
+
+    df_backfill = _gerar_backfill_scd2(df_bronze, df_despesas)
+
+    if df_backfill.empty:
+        return df_atual[COLUNAS_SILVER_PARLAMENTAR]
+
+    return pd.concat([df_atual, df_backfill], ignore_index=True)[
+        COLUNAS_SILVER_PARLAMENTAR
+    ]
 
 
 def carregar_silver_parlamentar(
@@ -206,6 +310,9 @@ def carregar_silver_parlamentar(
     ingeridos): a dedup independente colapsa snapshots idênticos pela chave
     `(fonte, id_parlamentar, data)` e o gate Pandera das cargas, junto com o
     da Câmara, mantém a dimensão parlamentar completa (ADR-020).
+
+    Quando há dados de despesa CEAPS disponíveis, gera snapshots de backfill
+    para legislaturas históricas (partido/UF aproximados).
 
     Args:
         storage: Persistência Parquet do Bronze (injetável).
@@ -219,7 +326,25 @@ def carregar_silver_parlamentar(
         logger.warning("silver_parlamento_senado_sem_dados", run_id=run_id)
         return None
 
-    df_silver = construir_silver_parlamentar(df_bronze)
+    df_despesas = None
+    try:
+        from pipeline.config import load_env_settings
+
+        settings = load_env_settings()
+        import duckdb
+
+        con = duckdb.connect(settings.duckdb_database_path, read_only=True)
+        try:
+            df_despesas = con.execute(
+                "SELECT nome_parlamentar, data_documento "
+                "FROM silver.silver_despesa WHERE fonte = 'senado'"
+            ).fetchdf()
+        finally:
+            con.close()
+    except Exception:
+        logger.debug("backfill_scd2_sem_despesas", run_id=run_id)
+
+    df_silver = construir_silver_parlamentar(df_bronze, df_despesas)
     return carregar_tabela_silver(
         df_silver,
         "silver_parlamentar",

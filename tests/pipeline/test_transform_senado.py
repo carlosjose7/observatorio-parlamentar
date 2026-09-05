@@ -180,6 +180,132 @@ class TestConstruirParlamentarSenado:
         assert df.empty
         assert list(df.columns) == COLUNAS_SILVER_PARLAMENTAR
 
+    def test_backfill_scd2_gera_snapshots_historicos(self):
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar(
+            data_status=["2026-08-30T00:00:00"],
+            sigla_partido=["PT"],
+            sigla_uf=["PA"],
+        )
+        df_despesas = pd.DataFrame(
+            {
+                "nome_parlamentar": ["ALAN RICK"] * 3,
+                "data_documento": pd.to_datetime(
+                    ["2016-03-01", "2020-06-15", "2024-01-10"]
+                ),
+            }
+        )
+
+        df = construir_silver_parlamentar(df_bronze, df_despesas)
+
+        # Deve ter 1 snapshot atual + backfill para legislaturas 55, 56, 57
+        assert len(df) >= 4
+        backfill = df[df["partido_uf_aproximado"]]
+        assert len(backfill) >= 3
+        assert set(backfill["id_legislatura"].tolist()) == {55, 56, 57}
+
+        # Snapshot atual não é aproximado
+        atual = df[~df["partido_uf_aproximado"]]
+        assert len(atual) == 1
+        assert atual.iloc[0]["sigla_partido"] == "PT"
+
+    def test_backfill_scd2_datas_corretas(self):
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar(
+            data_status=["2026-08-30T00:00:00"],
+        )
+        df_despesas = pd.DataFrame(
+            {
+                "nome_parlamentar": ["ALAN RICK"] * 2,
+                "data_documento": pd.to_datetime(["2017-01-01", "2025-01-01"]),
+            }
+        )
+
+        df = construir_silver_parlamentar(df_bronze, df_despesas)
+        backfill = df[df["partido_uf_aproximado"]]
+
+        datas_esperadas = {
+            pd.Timestamp("2015-02-01"),  # legislatura 55
+            pd.Timestamp("2019-02-01"),  # legislatura 56
+            pd.Timestamp("2023-02-01"),  # legislatura 57
+        }
+        datas_reais = set(backfill["data"].tolist())
+        assert datas_reais == datas_esperadas
+
+    def test_backfill_scd2_dedup_idempotente(self):
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar(
+            data_status=["2026-08-30T00:00:00"],
+        )
+        df_despesas = pd.DataFrame(
+            {
+                "nome_parlamentar": ["ALAN RICK"],
+                "data_documento": pd.to_datetime(["2020-01-01"]),
+            }
+        )
+
+        df1 = construir_silver_parlamentar(df_bronze, df_despesas)
+        df2 = construir_silver_parlamentar(df_bronze, df_despesas)
+        assert len(df1) == len(df2)
+
+    def test_backfill_sem_despesas_naulla(self):
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar()
+        df = construir_silver_parlamentar(df_bronze, df_despesas=None)
+        assert len(df) == 1
+        assert not df.iloc[0]["partido_uf_aproximado"]
+
+    def test_backfill_scd2_case_mismatch_entre_bronze_e_despesas(self):
+        """Regressão: Bronze tem nomes em camel case, silver_despesa em MAIÚSCULAS.
+
+        O bug original (PR #46) comparava ``nome`` (camel) direto com
+        ``nome_parlamentar`` (UPPER) — a comparação nunca retornava True,
+        gerando 0 backfill rows. Este teste garante que o .upper() corrige
+        o match independentemente do case.
+        """
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar(
+            nome_parlamentar=["Alan Rick"],  # camel case (como a API real)
+            data_status=["2026-08-30T00:00:00"],
+        )
+        df_despesas = pd.DataFrame(
+            {
+                "nome_parlamentar": ["ALAN RICK"] * 2,  # UPPER (como silver_despesa real)
+                "data_documento": pd.to_datetime(["2020-01-01", "2024-06-15"]),
+            }
+        )
+
+        df = construir_silver_parlamentar(df_bronze, df_despesas)
+
+        # Deve gerar backfill apesar do case mismatch
+        backfill = df[df["partido_uf_aproximado"]]
+        assert len(backfill) >= 1, (
+            "Backfill vazio — case mismatch não resolvido. "
+            "Bronze='Alan Rick', silver_despesa='ALAN RICK'"
+        )
+
+    def test_flag_aproximado_propaga_corretamente(self):
+        from pipeline.senado.transform import construir_silver_parlamentar
+
+        df_bronze = _df_bronze_parlamentar(
+            data_status=["2026-08-30T00:00:00"],
+        )
+        df_despesas = pd.DataFrame(
+            {
+                "nome_parlamentar": ["ALAN RICK"],
+                "data_documento": pd.to_datetime(["2020-01-01"]),
+            }
+        )
+
+        df = construir_silver_parlamentar(df_bronze, df_despesas)
+        assert "partido_uf_aproximado" in df.columns
+        assert df["partido_uf_aproximado"].dtype == bool
+
 
 class TestCarregarParlamentarSenado:
     def _carregar(self, tmp_path, df_bronze):
@@ -192,7 +318,7 @@ class TestCarregarParlamentarSenado:
         storage = LocalParquetStorage(root)
         storage.write_file(Path("parlamento/senado"), df_bronze, "run-1.parquet")
 
-        db_path = tmp_path / "silver.duckdb"
+        db_path = tmp_path / "observatorio.duckdb"
         config.load_env_settings.cache_clear()
         old = os.environ.get("DUCKDB_DATABASE_PATH")
         os.environ["DUCKDB_DATABASE_PATH"] = str(db_path)
@@ -216,10 +342,10 @@ class TestCarregarParlamentarSenado:
 
         import duckdb
 
-        con = duckdb.connect(str(tmp_path / "silver.duckdb"))
+        con = duckdb.connect(str(tmp_path / "observatorio.duckdb"))
         try:
             linhas = con.execute(
-                "select id_parlamentar, nome from silver_parlamentar"
+                "select id_parlamentar, nome from silver.silver_parlamentar"
             ).fetchall()
         finally:
             con.close()
