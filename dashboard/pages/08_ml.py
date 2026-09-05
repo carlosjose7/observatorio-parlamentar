@@ -8,8 +8,6 @@ Consome `GET /parlamentares` (busca por nome/UF/partido) e
 
 from __future__ import annotations
 
-from typing import Any
-
 import pandas as pd
 import streamlit as st
 
@@ -20,7 +18,8 @@ from dashboard.ui import (
     avatar_parlamentar,
     botao_voltar,
     carregar_com_feedback,
-    formatar_moeda,
+    formatar_moeda_compacto,
+    num_seguro,
     rotulo_parlamentar,
     tabela_exportavel,
 )
@@ -73,14 +72,6 @@ def _selecionar_parlamentar() -> dict | None:
     return next(i for i in itens if i["id_parlamentar"] == opcoes[sel])
 
 
-def _num(valor: Any) -> float:
-    """Número ou 0.0 — scores/métricas vêm None p/ quem não tem linha no Gold."""
-    try:
-        return float(valor) if valor is not None else 0.0
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _radar(risco: dict) -> None:
     """Gráfico de radar com os 5 scores de risco (ADR-029/038)."""
     dimensoes = [
@@ -90,7 +81,7 @@ def _radar(risco: dict) -> None:
         "expense_anomaly_score",
         "network_influence_score",
     ]
-    scores = {d: _num(risco.get(d)) for d in dimensoes}
+    scores = {d: num_seguro(risco.get(d)) for d in dimensoes}
     radar_risco(scores)
 
 
@@ -115,7 +106,7 @@ def _render(id_parlamentar: int) -> None:
 
     metricas = payload.get("metricas", {})
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total gasto", formatar_moeda(metricas.get("total_gasto")))
+    c1.metric("Total gasto", formatar_moeda_compacto(metricas.get("total_gasto")))
     c2.metric("Transações", metricas.get("num_transacoes"))
     c3.metric("Fornecedores", metricas.get("num_fornecedores"))
     hhi = metricas.get("hhi_recente")
@@ -137,7 +128,7 @@ def _render(id_parlamentar: int) -> None:
                 ("expense_anomaly_score", "Anomalia de despesa"),
                 ("network_influence_score", "Influência na rede"),
             ]:
-                v = _num(risco.get(d))
+                v = num_seguro(risco.get(d))
                 st.progress(min(1.0, v), text=f"{nome}: {v:.2f}")
 
     anomalias = payload.get("anomalias", {})
@@ -160,7 +151,7 @@ def _render(id_parlamentar: int) -> None:
                 "num_transacoes": "Transações",
             }
         )
-        df["Total"] = df["Total"].map(formatar_moeda)
+        df["Total"] = df["Total"].map(formatar_moeda_compacto)
         tabela_exportavel(df, nome_arquivo=f"risco_{id_parlamentar}")
 
 
