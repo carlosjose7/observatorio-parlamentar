@@ -2624,7 +2624,7 @@ ADR-044
 Título: Cobertura histórica de parlamentares via endpoints de legislatura (Câmara + Senado)
 
 Status:
-Proposto — Sprint 16
+Aceito — implementado na Sprint 16 (PR #51)
 
 Contexto:
 Ambos os extractors (Câmara e Senado) buscam apenas o endpoint "atual"

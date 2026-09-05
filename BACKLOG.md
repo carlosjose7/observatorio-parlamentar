@@ -1696,10 +1696,10 @@ com os novos dados.
 7. Validar: query antes/depois para contagem de parlamentares
 
 **Checklist (da lição):**
-- [ ] Verificar se Bronze novo tem colunas/linhas esperadas
-- [ ] Limpar Bronze antigo para evitar duplicatas
-- [ ] Rodar Silver + Gold
-- [ ] Validar com query
+- [x] Verificar se Bronze novo tem colunas/linhas esperadas
+- [x] Limpar Bronze antigo para evitar duplicatas
+- [x] Rodar Silver + Gold
+- [x] Validar com query
 
 ### Onda 4 — Validação e teste
 
