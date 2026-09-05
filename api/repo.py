@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 from pathlib import Path
 
 import duckdb
@@ -117,8 +118,14 @@ def _tratar_erro_gold(funcao):
 # ---------------------------------------------------------------------------
 # Contador de visitas — DuckDB dedicado (separado do Gold read-only, ADR-026)
 # ---------------------------------------------------------------------------
+# Caminho sobreescrevível via env: em prod o mount ./data:/app/data é :ro e
+# um volume aninhado sob ele quebra o create do container (mountpoint teria
+# de ser criado dentro do mount ro). Por isso prod monta o volume em
+# /app/var/visitas e define VISITAS_DB_PATH (ver docker-compose.yml).
 
-_CAMINHO_VISITAS = REPO_ROOT / "data" / "analytics" / "visitas.duckdb"
+_CAMINHO_VISITAS = Path(
+    os.environ.get("VISITAS_DB_PATH", REPO_ROOT / "data" / "analytics" / "visitas.duckdb")
+)
 
 
 def _conexao_visitas() -> duckdb.DuckDBPyConnection:

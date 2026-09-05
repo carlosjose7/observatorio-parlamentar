@@ -64,11 +64,14 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-observatorio_admin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - VISITAS_DB_PATH=/app/var/visitas/visitas.duckdb
      # :ro — fronteira de leitura (ADR-026) também no mount: a API nunca
      # escreve no Gold, nem sob comprometimento do container.
     volumes:
       - ./data:/app/data:ro
-      - visitas-data:/app/data/analytics
+      # DuckDB do contador de visitas (Sprint 12): volume dedicado FORA do
+      # mount :ro acima — aninhar volume sob mount ro quebra o create.
+      - visitas-data:/app/var/visitas
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
