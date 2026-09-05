@@ -44,7 +44,7 @@ pipeline = [
     "pyarrow>=15.0",
 ]
 dashboard = [
-    "streamlit>=1.35.0",
+    "streamlit==1.62.0",
     "openpyxl>=3.1.0",
     "matplotlib>=3.8.0",
     "networkx>=3.2.0",
@@ -58,7 +58,7 @@ dev-dashboard = [
     # dashboard + dev para testes de UI no container api-test.
     # O CI (ci.yml) já usa .[dashboard,dev] diretamente; este extra
     # existe para o stage dev do api/Dockerfile.
-    "streamlit>=1.35.0",
+    "streamlit==1.62.0",
     "openpyxl>=3.1.0",
     "matplotlib>=3.8.0",
     "networkx>=3.2.0",

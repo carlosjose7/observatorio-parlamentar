@@ -181,6 +181,18 @@ Consequências:
 - Qualquer nova dependência deve ser adicionada ao grupo opcional
   correspondente, não diretamente no Dockerfile.
 
+Addendum (2026-09-05) — exceção pontual à regra de versão mínima:
+- `streamlit` passa de `>=1.35.0` para pin exato `==1.62.0` (grupos
+  `dashboard` e `dev-dashboard` em `pyproject.toml`).
+- Motivo: o deploy reconstrói a imagem do dashboard a cada merge no
+  `main`; sem teto de versão, qualquer rebuild pode puxar um
+  Streamlit novo, cujos chunks JS têm hashes diferentes. Clientes
+  com a página antiga aberta (típico no mobile) recebem então
+  `Failed to fetch dynamically imported module` até hard refresh.
+  O pin mantém os hashes estáveis entre rebuilds.
+- Escopo restrito ao Streamlit; os demais pacotes seguem a regra de
+  versão mínima. Reavaliar o pin ao planejar upgrade do Streamlit.
+
 ---
 
 ADR-007
