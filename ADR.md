@@ -2667,12 +2667,12 @@ ADR-045
 Título: Menu de navegação mobile do site institucional — overlay fullscreen com JS mínimo
 
 Status:
-Proposto — aguardando aprovação para abrir Sprint 17
+Aceito — Sprint 17 aberta em 2026-09-05
 
 Contexto:
-Em site-v3/index.html, o breakpoint @media(max-width:800px) aplica
-nav{display:none}, removendo completamente o acesso aos links de
-navegação (Panorama, Parlamentar, Partido, Estado) em telas mobile,
+Em site/index.html, o breakpoint @media(max-width:850px) aplica
+nav ul{display:none}, removendo completamente o acesso aos links de
+navegação (Dados, Metodologia, O que investigamos) em telas mobile,
 sem nenhum substituto. Apenas o botão "Dashboard" permanece visível.
 Demais elementos responsivos (métricas, cards, hero) já estão
 tratados nos breakpoints existentes (1100px, 800px, 520px) e não
@@ -2688,13 +2688,13 @@ Três abordagens técnicas foram avaliadas para o menu mobile:
   sobre acessibilidade (foco, Esc, aria-expanded) sem introduzir
   dependência de framework.
 
-Um mockup interativo (overlay fullscreen sobre --green, com os 4
-links + CTA Dashboard) foi validado com o responsável pelo produto
+Um mockup interativo (overlay fullscreen sobre --green, com os links
+do <nav> + CTA Dashboard) foi validado com o responsável pelo produto
 antes da formalização deste ADR.
 
 Decisão:
 1. Adicionar um botão de menu (ícone hambúrguer) visível apenas no
-   breakpoint ≤800px, com aria-label e aria-expanded dinâmicos.
+   breakpoint ≤850px, com aria-label e aria-expanded dinâmicos.
 2. Ao ativar, um painel overlay fullscreen (background: var(--green))
    cobre a viewport, exibindo os mesmos itens de <nav><ul> em fonte
    ampliada (19px) mais o CTA Dashboard, replicando a paleta já usada
@@ -2704,12 +2704,12 @@ Decisão:
    e foco movido para o primeiro link ao abrir (foco preso enquanto o
    overlay estiver aberto).
 4. O conjunto de links do menu mobile replica exatamente o <nav>
-   desktop existente (Panorama, Parlamentar, Partido, Estado) — não
+   desktop existente (Dados, Metodologia, O que investigamos) — não
    inclui os endpoints adicionais de PROJECT_CONTEXT.md §11
    (Fornecedor, Anomalias), pois esses ainda não têm página
    correspondente no site institucional. Fica registrado como item
    de backlog separado, não bloqueante.
-5. Acima de 800px, nada muda — o botão hambúrguer permanece oculto e
+5. Acima de 850px, nada muda — o botão hambúrguer permanece oculto e
    a <nav> desktop funciona como hoje.
 
 Consequências:
