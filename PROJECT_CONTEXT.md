@@ -2,7 +2,7 @@
 # Plataforma de Inteligência Parlamentar Brasileira
  
 > **Fonte da verdade do projeto. Nunca contradizer decisões registradas aqui sem criar um novo ADR.**
-> Última atualização: **Sprint 6 fechada** — Onda 4 (agent-ready RF-05) completa: ADR-032 (JSON semântico para LLMs — agent-ready ≠ espelho dos endpoints de negócio; `/agent/parlamentar/{id}`, `/agent/fornecedor/{cnpj_cpf_valor}`, `/agent/anomalias` resumo agregado, `/agent/context` retrato sistêmico CU-07). Ondas 1–3 completas (parlamentares/fornecedores/rede; anomalias/comunidades/qualidade/pipeline, ADR-031). ADRs 001-033. Sprint 6 fechada (288). Sprint 5 fechada (212). Sprint 4 fechada (129).
+> Última atualização: **Sprint 18 fechada** — Onda 18.3 (homepage v3 com dados 100% vivos, ADR-046; correções mobile pós-mock). Sprints 14–18 completas: S14 separação de schemas Silver/Gold (ADR-042); S15 backfill Câmara via SOAP + fotos Senado (ADR-043); S16 cobertura histórica Câmara/Senado (ADR-044); S17 menu mobile (ADR-045); S18 homepage v3 (ADR-046). Infra: checkout 7.0.1, pin streamlit 1.62.0 (addendum ADR-006), volume contador, burst nginx /app/static. ADRs 001-046.
  
 ---
  
@@ -838,11 +838,7 @@ GET  /agent/context
 ---
  
 *Este documento é atualizado ao final de cada sprint pelo papel de Documentador.*
-*Versão atual: 3.2 — **Sprint 13 FECHADA.** urlFoto pipeline completo
-(Bronze→Silver→Gold→API), hardening CI (Gitleaks v3, Dependabot, SHA
-pins), fotos no dashboard, correções de UX. ADRs 001-041. Commits
-principais: `6a5083b` (main), `51d39a5`/`f036660` (sprint-13-hardening),
-`989affa`/`a9f810c` (fotos). 145 testes passando (82 API + 63 dashboard).*
+*Versão atual: 3.3 — **Sprint 18 FECHADA.** Homepage v3 com dados vivos (métricas/rankings via API, hero.jpg), menu mobile acessível, cobertura histórica Câmara/Senado, schemas Silver/Gold. ADRs 001-046. Commits principais: `d5ea4a0` (S18 rebuild), `33989fc` (S17 menu), `f1efbfb` (S16 FECHADA).*
 
 *Atualização 30/08/2026 (Revisor Técnico): Auditoria formal de
 fechamento das Sprints 12 e 13 (PR #43 — `docs/audit_sprint12_13.md`).
