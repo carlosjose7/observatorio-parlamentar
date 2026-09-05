@@ -140,7 +140,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | Transformações | dbt Core | 1.7+ | Versionamento SQL, lineage, testes nativos (RF-07) |
 | Qualidade | Pandera | 0.18+ | Data contracts, validação de schema em runtime |
 | API | FastAPI | 0.110+ | Alta performance, OpenAPI automático, agent-ready |
-| Dashboard | Streamlit | 1.35+ | Camada de apresentação exclusivamente |
+| Dashboard | Streamlit | 1.62.0 (pin exato, ver addendum ADR-006) | Camada de apresentação exclusivamente |
 | **Visualização** | **Altair + Plotly** | 5.22+ (Plotly) | Altair: gráficos estatísticos padrão. Plotly: grafo de rede e radar (ADR-038) |
 | ML | scikit-learn | 1.4+ | Isolation Forest, DBSCAN, KMeans, PCA |
 | Grafos | NetworkX | 3.2+ | Análise de redes; exportação para Gephi |
