@@ -2724,3 +2724,61 @@ Consequências:
   reduz risco de regressão.
 
 ---
+
+ADR-046
+Título: Homepage v3 do site institucional — layout do modelo + 100% dados vivos via API
+
+Status:
+Aceito — Sprint 18 aberta em 2026-09-05
+
+Contexto:
+O responsável pelo produto forneceu um modelo de referência
+(index-observatorio-parlamentar-v3.html): identidade própria (DM Sans,
+--green #0d5338, --gold #c69a50, --paper #f7f6f1, --max 1440px), hero
+com foto do parlamento e página completa (hero, métricas, panorama,
+rankings UF/partido, metodologia Bronze/Silver/Gold, perguntas,
+footer). O modelo é 100% estático — todos os números são fixos
+(8.983 despesas, R$ 4,57 mi, 6 critérios, 5 dimensões, "14 min") — e
+o produto exige o oposto: nenhum número estático na inicial.
+O site atual (site/index.html) já busca /agregacoes/por-uf e
+/agregacoes/por-partido da API, mas mantém textos e números
+hardcoded no hero e nas seções.
+
+Decisão:
+1. Rebuild completo de site/index.html seguindo a estrutura do
+   modelo (hero + métricas + panorama + rankings + metodologia +
+   perguntas + footer), preservando o menu mobile acessível da
+   Onda 17.2 adaptado ao novo header.
+2. Zero números estáticos: cada métrica é preenchida via API, com
+   fallback "—" quando a API falhar:
+   - Despesas analisadas + valor movimentado: soma de
+     GET /agregacoes/por-uf?limite=27 (num_despesas, total).
+   - Rankings UF/partido: GET /agregacoes/por-uf e /por-partido
+     (top 5 por valor).
+   - Última atualização: GET /pipeline/status?limite=1
+     (execution_timestamp, relativo + absoluto).
+   - Nº de critérios de anomalia: contagem das chaves criterio_* do
+     primeiro item de GET /anomalias?limite=1.
+   - Nº de dimensões de risco: contagem das chaves *_score (exceto
+     risk_index) do perfil de GET /agent/parlamentar/{id} para um
+     parlamentar de GET /parlamentares?limite=1.
+3. A foto do hero (JPEG 1036×710, ~122KB, embutida em base64 no
+   modelo) é extraída para site/hero.jpg referenciado por URL —
+   HTML enxuto e imagem cacheável pelo nginx (COPY site/).
+4. O nav do modelo lista 10 seções do dashboard (Panorama …
+   Metadados, PROJECT_CONTEXT.md §11); o menu mobile passa a
+   replicar esses links. Revisa o item 4 do ADR-045: a restrição
+   ("só links institucionais") valia para o nav antigo de 3 links;
+   com o nav v3 os destinos do dashboard existem e o menu os inclui.
+5. Paleta, tipografia (DM Sans) e breakpoints do modelo passam a
+   valer; a Sprint 17 é fechada com as Ondas 17.3/17.4 marcadas como
+   superseded por este rebuild (registrado no BACKLOG).
+
+Consequências:
+- A inicial passa a depender da API em runtime; sem API, métricas e
+  rankings exibem "—" em vez de números (estados de loading vazios
+  são piores que fallback explícito).
+- site/hero.jpg entra no deploy estático (nginx COPY site/).
+- Exige teste manual (desktop + mobile ≤800px, teclado) antes do
+  fechamento da Sprint 18.
+- BACKLOG.md e CHANGELOG.md atualizados ao final da sprint.

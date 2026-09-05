@@ -1777,29 +1777,66 @@ antes de iniciar implementação.
 
 ### Onda 17.3 — Microinterações
 
-**Arquivo:** site/index.html (CSS)
-
-- ☐ transition: 0.2s ease em nav a, com :hover escurecendo links
-  inativos
-- ☐ :hover em .dashboard usando --green2 + box-shadow sutil
-- ☐ transform: scale(1.03) em .brand no hover
+**Status:** SUPERSEDED pelo rebuild da Sprint 18 (ADR-046) — o CSS
+novo já incorpora os estados de hover/focus/transition do modelo.
 
 ### Onda 17.4 — Refino .sources e touch targets mobile
 
-**Arquivo:** site/index.html (CSS)
-
-- ☐ Substituir transform:scale(.9) em .sources por reflow real
-  (wrap/stack) no mobile
-- ☐ Auditar touch targets (mínimo 44×44px) em ranking bars, cards e
-  footer
+**Status:** SUPERSEDED pelo rebuild da Sprint 18 (ADR-046) — layout
+mobile redefinido pelo modelo; touch targets do menu (44×44px)
+entregues na Onda 17.2.
 
 ### Onda 17.5 — Revisão técnica e fechamento
 
-- ☐ Revisão técnica (Revisor Técnico)
-- ☐ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
-- ☐ PROJECT_CONTEXT.md atualizado se houver mudança estrutural
+- ☑ Revisão técnica (Revisor Técnico)
+- ☑ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
+- ☑ PROJECT_CONTEXT.md atualizado se houver mudança estrutural
 
-**Branch:** sprint/17-mobile-redesign → main (via PR)
+**Branch:** sprint/17-mobile-redesign → main (via PR #57)
+
+**Resultado Sprint 17:** ADR-045 aceito e menu mobile acessível
+entregue (Ondas 17.1–17.2). Ondas 17.3–17.4 superseded pelo rebuild
+v3 da Sprint 18. Sprint FECHADA em 2026-09-05.
+
+---
+
+## Sprint 18 — Homepage v3 com Dados Vivos
+
+**Objetivo:** Rebuild da inicial seguindo o modelo de referência,
+com zero números estáticos — tudo via API. Ver ADR-046.
+
+**Causa raiz:** modelo 100% estático (números fixos); produto exige
+inicial sem informação estática.
+
+### Onda 18.1 — ADR + assets
+
+**Entregável:** ADR-046 aprovado; hero.jpg extraído para site/
+
+- ☑ ADR-046 commitado em ADR.md
+- ☑ Foto do hero extraída para site/hero.jpg (122KB, 1036×710)
+
+### Onda 18.2 — Rebuild da página com dados vivos
+
+**Arquivo:** site/index.html (+ site/hero.jpg)
+
+- ☑ Estrutura do modelo (hero, métricas, panorama, rankings,
+  metodologia, perguntas, footer) com paleta/tipografia v3
+- ☑ Métricas via API (despesas, valor, critérios, dimensões,
+  última atualização) com fallback "—"
+- ☑ Rankings UF/partido via API (top 5)
+- ☑ Menu mobile da 17.2 adaptado ao nav v3 (links do dashboard)
+
+**Nota:** o CSS v3 usa breakpoint mobile em 800px (herdado do
+modelo), não os 850px do CSS antigo referenciados no ADR-045 —
+o toggle/overlay seguem os 800px do layout vigente.
+
+### Onda 18.3 — Revisão técnica e fechamento
+
+- ☐ Revisão técnica (Revisor Técnico)
+- ☐ Teste manual desktop + mobile ≤850px + teclado
+- ☐ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
+
+**Branch:** sprint/18-homepage-v3 → main (via PR)
 
 ---
 
