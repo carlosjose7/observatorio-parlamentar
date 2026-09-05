@@ -52,14 +52,14 @@ def main() -> None:
         st.info(f"Nenhum parlamentar da UF {uf}.")
         return
 
-    # Despesas (até 100 por parlamentar) enriquecidas com ano/mês para os filtros.
+    # Despesas (paginadas: histórico completo p/ o filtro de ano) por parlamentar.
     linhas = []
     for _, row in df.iterrows():
-        g = carregar_com_feedback(
-            lambda rid=row["id_parlamentar"]: client.gastos_parlamentar(rid, limite=100),
+        itens = carregar_com_feedback(
+            lambda rid=row["id_parlamentar"]: client.gastos_parlamentar_tudo(rid),
             spinner="",
         )
-        for x in (g or {}).get("itens", []):
+        for x in itens or []:
             linhas.append(
                 {
                     "nome": row["nome"],

@@ -286,7 +286,10 @@ def grafo_rede(
     # --- Nós ---
     node_x = [pos[n][0] for n in G.nodes()]
     node_y = [pos[n][1] for n in G.nodes()]
-    node_text = [G.nodes[n].get("label", str(n)) for n in G.nodes()]
+    node_full = [str(G.nodes[n].get("label", n)) for n in G.nodes()]
+    # Rótulo curto no grafo (nomes longos estouravam o layout); hover
+    # mostra o nome completo (Sprint 19).
+    node_text = [t if len(t) <= 26 else t[:25] + "…" for t in node_full]
     node_tipo = [G.nodes[n].get("tipo", "no") for n in G.nodes()]
     node_color = [node_colors.get(t, MUTED) for t in node_tipo]
 
@@ -296,8 +299,8 @@ def grafo_rede(
         text=node_text,
         textposition="top center",
         textfont=dict(size=9, family="IBM Plex Mono, monospace"),
-        hovertemplate="%{text}<extra>%{customdata}</extra>",
-        customdata=node_tipo,
+        hovertemplate="%{customdata[0]} (%{customdata[1]})<extra></extra>",
+        customdata=list(zip(node_full, node_tipo)),
         marker=dict(size=10, color=node_color, line=dict(width=1, color=WHITE)),
     )
 

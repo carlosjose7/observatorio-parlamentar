@@ -20,6 +20,7 @@ from dashboard.ui import (
     filtro_periodo,
     formatar_moeda,
     grafico_mensal,
+    rotulo_parlamentar,
     tabela_exportavel,
 )
 
@@ -64,10 +65,7 @@ def _selecionar_parlamentar() -> dict | None:
         st.warning("Nenhum parlamentar encontrado com os filtros informados.")
         return None
 
-    opcoes = {
-        f"{i['nome']} ({i['sigla_partido']}-{i['sigla_uf']})": i["id_parlamentar"]
-        for i in itens
-    }
+    opcoes = {rotulo_parlamentar(i): i["id_parlamentar"] for i in itens}
     sel = st.selectbox(
         "Parlamentar",
         list(opcoes.keys()),
@@ -87,11 +85,11 @@ def _render_perfil(id_parlamentar: int) -> None:
     if perfil is None:
         return
     avatar_parlamentar(perfil.get("url_foto"), nome=perfil.get("nome", ""))
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Nome", perfil.get("nome"))
-    c2.metric("Partido", perfil.get("sigla_partido"))
-    c3.metric("UF", perfil.get("sigla_uf"))
-    c4.metric("Situação", perfil.get("situacao_normalizada"))
+    st.subheader(f"{perfil.get('nome', '?')} ({perfil.get('sigla_partido') or '—'}-{perfil.get('sigla_uf', '?')})")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Partido", perfil.get("sigla_partido") or "—")
+    c2.metric("UF", perfil.get("sigla_uf"))
+    c3.metric("Situação", perfil.get("situacao_normalizada"))
     st.caption(
         f"Fonte: {perfil.get('fonte')} · Legislatura {perfil.get('id_legislatura')} · "
         f"Desde {perfil.get('effective_date')}"
@@ -101,14 +99,12 @@ def _render_perfil(id_parlamentar: int) -> None:
 def _render_gastos(id_parlamentar: int) -> None:
     """Despesas do parlamentar com filtro de ano/mês, gráfico mensal e exportação."""
     st.subheader("Despesas")
-    payload = carregar_com_feedback(
-        lambda: client.gastos_parlamentar(id_parlamentar, limite=100),
+    itens = carregar_com_feedback(
+        lambda: client.gastos_parlamentar_tudo(id_parlamentar),
         spinner="Carregando despesas...",
     )
-    if payload is None:
+    if itens is None:
         return
-
-    itens = payload.get("itens", [])
     if not itens:
         st.info("Nenhuma despesa registrada para este parlamentar.")
         return

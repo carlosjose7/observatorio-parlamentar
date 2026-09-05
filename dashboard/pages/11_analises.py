@@ -108,6 +108,10 @@ def main() -> None:
         lambda: client.top_parlamentares(limite=10),
         spinner="Calculando top parlamentares...",
     )
+    if top and top.get("itens"):
+        for item in top["itens"]:
+            partido = item.get("sigla_partido") or "—"
+            item["rotulo"] = f"{item['rotulo']} ({partido})"
     _render_secao("Top parlamentares por gasto acumulado", top, "ranking")
 
     st.caption(

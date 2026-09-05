@@ -8,9 +8,9 @@ visitas.duckdb`), separado do Gold read-only (ADR-026).
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
-from api.repo import GoldIndisponivel, incrementar_visitas
+from api.repo import GoldIndisponivel, incrementar_visitas, ler_visitas
 from api.schemas.contador import ContadorVisitas
 
 logger = structlog.get_logger()
@@ -19,15 +19,17 @@ router = APIRouter(prefix="/contador", tags=["contador"])
 
 
 @router.get("/visitas", response_model=ContadorVisitas)
-def get_contador_visitas() -> ContadorVisitas:
-    """Incrementa e retorna o contador de visitas.
+def get_contador_visitas(
+    increment: bool = Query(default=True, description="false só lê (deduplicação por browser)"),
+) -> ContadorVisitas:
+    """Retorna o contador de visitas (e incrementa, salvo ?increment=false).
 
-    Cada chamada incrementa o contador do dia corrente. O frontend deve
-    deduplicar por sessão (localStorage) para não inflar o contador a cada
-    reload.
+    Cada chamada com increment=true conta o dia corrente. O frontend deve
+    chamar com increment=false quando já contabilizou hoje (localStorage),
+    para navegação entre páginas não inflar o contador.
     """
     try:
-        return incrementar_visitas()
+        return incrementar_visitas() if increment else ler_visitas()
     except GoldIndisponivel as exc:
         logger.error("erro_contador_visitas", erro=str(exc))
         raise HTTPException(

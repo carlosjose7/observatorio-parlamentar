@@ -20,11 +20,18 @@ class _ContratoResposta(BaseModel):
 
 
 class AgregacaoItem(_ContratoResposta):
-    """Uma linha de agregação (UF, partido ou parlamentar)."""
+    """Uma linha de agregação (UF, partido ou parlamentar).
+
+    `sigla_partido`/`sigla_uf` só vêm preenchidos no top-parlamentares
+    (Sprint 19, p/ exibir partido na Análises); demais recortes emitem
+    null.
+    """
 
     rotulo: str = Field(..., description="Sigla da UF/partido ou nome do parlamentar")
     total: Moeda = Field(..., description="Soma de valor_liquido no recorte")
     num_despesas: int = Field(..., description="Quantidade de despesas no recorte")
+    sigla_partido: str | None = Field(default=None, description="Partido (só top-parlamentares)")
+    sigla_uf: str | None = Field(default=None, description="UF (só top-parlamentares)")
 
 
 class ListaAgregacao(_ContratoResposta):

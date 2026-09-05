@@ -8,6 +8,22 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 19 — QA Dashboard + Site (05/09/2026)
+
+### Corrigido
+- **API:** `sigla_partido` nullable (uma linha NULL dava 500 na página
+  inteira — Partido/Estado/buscas); contador com `?increment=false`;
+  top-parlamentares com partido/UF.
+- **Dashboard:** ML à prova de None (TypeError no HHI de senadores);
+  nomes/documentos em texto cheio; Panorama compacto (Tri/Bi) + link
+  site; grafo com labels curtos; gastos paginados (anos completos).
+- **Site:** moeda Tri/Bi/Mil; link GitHub no footer; contador sem
+  inflar; grupo NESTA PÁGINA no menu mobile.
+- **Infra:** pin `streamlit==1.62.0` (addendum ADR-006); volume
+  `visitas-data` p/ o contador; burst alto em `/app/static/`.
+
+---
+
 ## Sprint 18 — Homepage v3 com Dados Vivos (05/09/2026) — FECHADA
 
 ### Adicionado

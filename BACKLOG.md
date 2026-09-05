@@ -1870,3 +1870,47 @@ sozinho.
 **Caso relacionado:** Sprint 15, fix `url_foto` — re-extração
 manual via MinIO (`parlamento/senado/2026-09-04.parquet`),
 limpeza de rows antigas no Silver, dbt build `dim_parlamentar`.
+
+---
+
+## Sprint 19 — QA Dashboard + Site (lista do usuário, 05/09/2026)
+
+**Objetivo:** Corrigir os 13 itens reportados em QA manual (Partido/
+Estado 500, ML TypeError, truncamentos, anos, navegação, site).
+
+**Causa raiz principal:** `dim_parlamentar.sigla_partido` NULL derruba
+a página inteira (`ParlamentarResumo` exigia str) — Estado/SP,
+Partido, buscas e seletores afetados.
+
+### Onda 19.1 — API resiliente
+
+- ☑ `ParlamentarResumo.sigla_partido` nullable (uma linha NULL não
+  pode dar 500 na página)
+- ☑ `GET /contador/visitas?increment=false` (semântica real de
+  visita/dia por browser)
+- ☑ `AgregacaoItem` com `sigla_partido`/`sigla_uf` no
+  top-parlamentares (Análises exibe partido)
+
+### Onda 19.2 — Dashboard UI
+
+- ☑ ML à prova de None (hhi, risk_index, scores, proporção) + labels
+- ☑ Nome/documento em texto cheio (02 Parlamentar, 05 Fornecedor);
+  partido no top da Análises
+- ☑ Panorama: moeda compacta (Tri/Bi) + link site no app.py
+- ☑ Grafo: labels curtos + hover cheio
+- ☑ Gastos com paginação (anos completos, não só 2026)
+
+### Onda 19.3 — Site
+
+- ☑ Moeda compacta Tri/Bi; link GitHub no footer; contador com
+  `increment=false`
+
+### Onda 19.4 — Revisão e fechamento
+
+- ☐ CI verde + PR + CHANGELOG
+
+**Branch:** sprint/19-qa-dashboard → main (via PR)
+
+**Conhecido (fora de escopo):** HHI/risk de senadores ausente no Gold
+(`supplier_concentration`/`risk_scores` sem linha p/ ids do Senado) —
+UI já exibe "—"; cobertura do analytics vira item de backlog.
