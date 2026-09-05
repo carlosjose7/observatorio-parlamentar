@@ -14,6 +14,7 @@ import os
 from datetime import date
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import pytest
 
@@ -369,7 +370,7 @@ class TestClassificacaoComBackfill:
         try:
             from pipeline.config import get_dbt_vars
             result = dbtRunner().invoke([
-                "build",
+                "run",
                 "--project-dir", str(_GOLD),
                 "--profiles-dir", str(_GOLD),
                 "--select", "dim_parlamentar desp_parlamento",
@@ -381,7 +382,7 @@ class TestClassificacaoComBackfill:
             try:
                 con.execute("SET search_path = 'gold'")
                 linhas = con.execute(
-                    "SELECT cod_documento, id_parlamentar_resolvido, "
+                    "SELECT cod_documento, id_parlamentar, "
                     "surrogate_key FROM desp_parlamento"
                 ).fetchall()
             finally:
