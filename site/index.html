@@ -112,6 +112,38 @@ nav a:hover{color:var(--ink)}
 }
 .nav-github:hover{border-color:var(--navy);color:var(--navy)}
 
+/* MENU MOBILE (ADR-045) */
+.menu-toggle{
+  display:none;
+  width:44px;
+  height:44px;
+  padding:0;
+  background:none;
+  border:1px solid var(--line);
+  cursor:pointer;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  gap:5px;
+  position:relative;
+}
+.menu-toggle span{
+  display:block;
+  width:20px;
+  height:2px;
+  background:var(--ink);
+  transition:transform .2s ease,opacity .2s ease;
+}
+.menu-toggle[aria-expanded="true"] span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.menu-toggle[aria-expanded="true"] span:nth-child(2){opacity:0}
+.menu-toggle[aria-expanded="true"] span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+.menu-mobile{display:none}
+body.menu-open{overflow:hidden}
+body.menu-open header{z-index:40}
+@media(prefers-reduced-motion:reduce){
+  .menu-toggle span{transition:none}
+}
+
 /* HERO */
 .hero{
   position:relative;
@@ -565,6 +597,36 @@ footer{
 /* MOBILE */
 @media(max-width:850px){
   nav ul{display:none}
+  .menu-toggle{display:flex}
+  .menu-mobile.open{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    position:fixed;
+    inset:0;
+    z-index:30;
+    background:var(--green);
+    padding:110px 32px 32px;
+  }
+  .menu-mobile a.menu-link{
+    color:#fff;
+    text-decoration:none;
+    font-size:19px;
+    font-weight:600;
+    padding:12px 0;
+  }
+  .menu-mobile a.menu-link:hover{opacity:.85}
+  .menu-mobile .menu-cta{
+    margin-top:16px;
+    background:#fff;
+    color:var(--green);
+    text-decoration:none;
+    text-align:center;
+    font-weight:700;
+    font-size:16px;
+    padding:14px 20px;
+  }
+  .menu-mobile :focus-visible{outline-color:#fff}
   .hero{grid-template-columns:1fr;min-height:auto;padding:82px 0 70px;gap:20px}
   .hero-art{min-height:300px}
   .pano-grid{grid-template-columns:1fr;gap:44px}
@@ -617,6 +679,19 @@ footer{
       </a>
       <a class="nav-cta" href="/app/">Abrir o Dashboard</a>
     </div>
+
+    <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="menu-mobile" aria-label="Abrir menu de navegação">
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+    </button>
+  </div>
+
+  <div class="menu-mobile" id="menu-mobile" role="dialog" aria-modal="true" aria-label="Menu de navegação" hidden>
+    <a class="menu-link" href="#dados">Dados</a>
+    <a class="menu-link" href="#metodologia">Metodologia</a>
+    <a class="menu-link" href="#perguntas">O que investigamos</a>
+    <a class="menu-cta" href="/app/">Abrir o Dashboard</a>
   </div>
 </header>
 
@@ -994,6 +1069,61 @@ if (location.protocol === "file:") {
   } else {
     fetchAndRender();
   }
+})();
+</script>
+<script>
+/* Menu mobile — ADR-045: toggle de classe, Esc, foco preso, sem dependências */
+(function(){
+  var toggle = document.getElementById('menu-toggle');
+  var panel = document.getElementById('menu-mobile');
+  if (!toggle || !panel) { return; }
+  var lastFocused = null;
+
+  function isOpen(){ return toggle.getAttribute('aria-expanded') === 'true'; }
+
+  function open(){
+    lastFocused = document.activeElement;
+    panel.hidden = false;
+    panel.classList.add('open');
+    document.body.classList.add('menu-open');
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-label', 'Fechar menu de navegação');
+    var first = panel.querySelector('a[href]');
+    if (first) { first.focus(); }
+  }
+
+  function close(){
+    panel.classList.remove('open');
+    panel.hidden = true;
+    document.body.classList.remove('menu-open');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Abrir menu de navegação');
+    if (lastFocused && document.contains(lastFocused)) { lastFocused.focus(); }
+    else { toggle.focus(); }
+  }
+
+  toggle.addEventListener('click', function(){ isOpen() ? close() : open(); });
+
+  panel.addEventListener('click', function(e){
+    if (e.target.closest('a[href]')) { close(); }
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (!isOpen()) { return; }
+    if (e.key === 'Escape') { close(); return; }
+    if (e.key !== 'Tab') { return; }
+    var items = [toggle].concat(
+      Array.prototype.slice.call(panel.querySelectorAll('a[href]'))
+    ).filter(function(el){ return el.offsetParent !== null; });
+    if (!items.length) { return; }
+    var first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+
+  window.addEventListener('resize', function(){
+    if (isOpen() && window.innerWidth > 850) { close(); }
+  });
 })();
 </script>
 </body>

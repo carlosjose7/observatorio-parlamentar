@@ -1764,14 +1764,14 @@ antes de iniciar implementação.
 
 **Arquivo:** site/index.html (CSS + JS inline ou <script> próprio)
 
-- ☐ Botão hambúrguer visível apenas em @media(max-width:850px)
-- ☐ aria-label e aria-expanded dinâmicos no botão
-- ☐ Painel overlay fullscreen (background: var(--green)), replica
+- ☑ Botão hambúrguer visível apenas em @media(max-width:850px)
+- ☑ aria-label e aria-expanded dinâmicos no botão
+- ☑ Painel overlay fullscreen (background: var(--green)), replica
   os links do <nav> desktop (Dados, Metodologia, O que investigamos)
   + CTA Dashboard
-- ☐ Fechamento por tecla Esc
-- ☐ Fechamento ao clicar em um link
-- ☐ Foco movido para o primeiro link ao abrir; foco preso enquanto
+- ☑ Fechamento por tecla Esc
+- ☑ Fechamento ao clicar em um link
+- ☑ Foco movido para o primeiro link ao abrir; foco preso enquanto
   aberto
 - ☐ Teste manual de navegação por teclado (Tab, Esc)
 
