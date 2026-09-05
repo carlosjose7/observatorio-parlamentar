@@ -321,17 +321,26 @@ class ApiClient:
 
     # ── Agregações (análises/gráficos) ───────────────────────────
 
-    def agregacao_por_uf(self, limite: int = 10) -> dict[str, Any]:
+    def agregacao_por_uf(self, limite: int = 10, ano: int | None = None) -> dict[str, Any]:
         """GET /agregacoes/por-uf (gastos por UF, ordenados por total)."""
-        return self._get("/agregacoes/por-uf", {"limite": limite})
+        params: dict[str, Any] = {"limite": limite}
+        if ano:
+            params["ano"] = ano
+        return self._get("/agregacoes/por-uf", params)
 
-    def agregacao_por_partido(self, limite: int = 10) -> dict[str, Any]:
+    def agregacao_por_partido(self, limite: int = 10, ano: int | None = None) -> dict[str, Any]:
         """GET /agregacoes/por-partido (gastos por partido, por total)."""
-        return self._get("/agregacoes/por-partido", {"limite": limite})
+        params: dict[str, Any] = {"limite": limite}
+        if ano:
+            params["ano"] = ano
+        return self._get("/agregacoes/por-partido", params)
 
-    def top_parlamentares(self, limite: int = 10) -> dict[str, Any]:
+    def top_parlamentares(self, limite: int = 10, ano: int | None = None) -> dict[str, Any]:
         """GET /agregacoes/top-parlamentares (ranking por gasto acumulado)."""
-        return self._get("/agregacoes/top-parlamentares", {"limite": limite})
+        params: dict[str, Any] = {"limite": limite}
+        if ano:
+            params["ano"] = ano
+        return self._get("/agregacoes/top-parlamentares", params)
 
     def top_fornecedores(self, limite: int = 10) -> dict[str, Any]:
         """GET /agregacoes/top-fornecedores (ranking por valor recebido)."""
