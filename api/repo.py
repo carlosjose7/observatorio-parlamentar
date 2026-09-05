@@ -1289,20 +1289,25 @@ _JOIN_VIGENTE = (
 )
 
 
-def _agregar_por_dimensao(con: duckdb.DuckDBPyConnection, coluna: str, limite: int) -> list[AgregacaoItem]:
+def _agregar_por_dimensao(
+    con: duckdb.DuckDBPyConnection, coluna: str, limite: int, *, ano: int | None = None,
+) -> list[AgregacaoItem]:
     """GROUP BY genérico sobre uma coluna da dimensão parlamentar vigente."""
+    join_ano = " join dim_data d on d.data_sk = f.data_sk" if ano is not None else ""
+    filtro_ano = " and d.ano = ?" if ano is not None else ""
+    params: list[object] = [ano] if ano is not None else []
     linhas = con.execute(
         f"""
         select p.{coluna} as rotulo,
                sum(f.valor_liquido) as total,
                count(*) as num_despesas
-        from fact_despesa f {_JOIN_VIGENTE}
-        where p.{coluna} is not null
+        from fact_despesa f {_JOIN_VIGENTE}{join_ano}
+        where p.{coluna} is not null{filtro_ano}
         group by 1
         order by total desc
         limit ?
         """,
-        [limite],
+        [*params, limite],
     ).fetchall()
     return [
         AgregacaoItem(rotulo=r[0], total=r[1], num_despesas=r[2]) for r in linhas
@@ -1310,24 +1315,27 @@ def _agregar_por_dimensao(con: duckdb.DuckDBPyConnection, coluna: str, limite: i
 
 
 @_tratar_erro_gold
-def agregar_gastos_por_uf(*, limite: int) -> ListaAgregacao:
+def agregar_gastos_por_uf(*, limite: int, ano: int | None = None) -> ListaAgregacao:
     """Gastos agregados por UF do parlamentar vigente, ordenados por total."""
     with _conexao() as con:
-        itens = _agregar_por_dimensao(con, "sigla_uf", limite)
+        itens = _agregar_por_dimensao(con, "sigla_uf", limite, ano=ano)
     return ListaAgregacao(limite=limite, itens=itens)
 
 
 @_tratar_erro_gold
-def agregar_gastos_por_partido(*, limite: int) -> ListaAgregacao:
+def agregar_gastos_por_partido(*, limite: int, ano: int | None = None) -> ListaAgregacao:
     """Gastos agregados por partido do parlamentar vigente, ordenados por total."""
     with _conexao() as con:
-        itens = _agregar_por_dimensao(con, "sigla_partido", limite)
+        itens = _agregar_por_dimensao(con, "sigla_partido", limite, ano=ano)
     return ListaAgregacao(limite=limite, itens=itens)
 
 
 @_tratar_erro_gold
-def agregar_top_parlamentares(*, limite: int) -> ListaAgregacao:
+def agregar_top_parlamentares(*, limite: int, ano: int | None = None) -> ListaAgregacao:
     """Top parlamentares por gasto acumulado na versão vigente."""
+    join_ano = " join dim_data d on d.data_sk = f.data_sk" if ano is not None else ""
+    filtro_ano = " and d.ano = ?" if ano is not None else ""
+    params: list[object] = [ano] if ano is not None else []
     with _conexao() as con:
         linhas = con.execute(
             f"""
@@ -1336,13 +1344,13 @@ def agregar_top_parlamentares(*, limite: int) -> ListaAgregacao:
                    count(*) as num_despesas,
                    max(p.sigla_partido) as sigla_partido,
                    max(p.sigla_uf) as sigla_uf
-            from fact_despesa f {_JOIN_VIGENTE}
-            where p.nome is not null
+            from fact_despesa f {_JOIN_VIGENTE}{join_ano}
+            where p.nome is not null{filtro_ano}
             group by 1
             order by total desc
             limit ?
             """,
-            [limite],
+            [*params, limite],
         ).fetchall()
     return ListaAgregacao(
         limite=limite,

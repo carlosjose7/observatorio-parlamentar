@@ -16,11 +16,15 @@ import streamlit as st
 from dashboard.client import ApiClient
 from dashboard.comparacao import calcular_sobreposicao
 from dashboard.ui import (
+    anos_de_janela,
     aplicar_identidade,
     avatar_parlamentar,
     botao_voltar,
     carregar_com_feedback,
     formatar_moeda,
+    formatar_moeda_compacto,
+    num_seguro,
+    rotulo_parlamentar,
 )
 
 st.set_page_config(page_title="Batalha Parlamentar", page_icon="⚔️", layout="wide")
@@ -64,10 +68,7 @@ def _buscar_parlamentar(posicao: str) -> dict | None:
         st.warning(f"Nenhum parlamentar encontrado para {posicao}.")
         return None
 
-    opcoes = {
-        f"{i['nome']} ({i['sigla_partido']}-{i['sigla_uf']})": i["id_parlamentar"]
-        for i in itens
-    }
+    opcoes = {rotulo_parlamentar(i): i["id_parlamentar"] for i in itens}
     sel = st.selectbox(f"Parlamentar {posicao}", list(opcoes.keys()), key=chave_sel)
     if sel is None:
         return None
@@ -96,15 +97,25 @@ def _render_perfil_lateral(label: str, agente: dict) -> None:
 
 
 def _render_metricasComparativas(
-    metricas_a: dict, metricas_b: dict, nome_a: str, nome_b: str
+    metricas_a: dict, metricas_b: dict, nome_a: str, nome_b: str,
+    janela_a: tuple[str | None, str | None], janela_b: tuple[str | None, str | None],
 ) -> None:
-    """Métricas lado a lado em colunas."""
+    """Métricas lado a lado em colunas, com média anual comparável.
+
+    Sprint 19.5: totais lifetime destoam quando os mandatos têm tamanhos
+    diferentes — a média anual (total ÷ anos de janela) é o número
+    comparável; o total segue exibido com a janela explícita.
+    """
+    anos_a = anos_de_janela(*janela_a)
+    anos_b = anos_de_janela(*janela_b)
     st.markdown("### Métricas")
     col_a, col_b = st.columns(2)
 
     with col_a:
         st.markdown(f"**{nome_a}**")
-        st.metric("Total gasto", formatar_moeda(metricas_a.get("total_gasto")))
+        st.caption(f"Janela: {janela_a[0] or '?'} a {janela_a[1] or '?'} ({anos_a} anos)")
+        st.metric("Total gasto", formatar_moeda_compacto(metricas_a.get("total_gasto")))
+        st.metric("Média anual", formatar_moeda_compacto(num_seguro(metricas_a.get("total_gasto")) / anos_a))
         st.metric("Transações", metricas_a.get("num_transacoes"))
         st.metric("Fornecedores", metricas_a.get("num_fornecedores"))
         hhi_a = metricas_a.get("hhi_recente")
@@ -112,7 +123,9 @@ def _render_metricasComparativas(
 
     with col_b:
         st.markdown(f"**{nome_b}**")
-        st.metric("Total gasto", formatar_moeda(metricas_b.get("total_gasto")))
+        st.caption(f"Janela: {janela_b[0] or '?'} a {janela_b[1] or '?'} ({anos_b} anos)")
+        st.metric("Total gasto", formatar_moeda_compacto(metricas_b.get("total_gasto")))
+        st.metric("Média anual", formatar_moeda_compacto(num_seguro(metricas_b.get("total_gasto")) / anos_b))
         st.metric("Transações", metricas_b.get("num_transacoes"))
         st.metric("Fornecedores", metricas_b.get("num_fornecedores"))
         hhi_b = metricas_b.get("hhi_recente")
@@ -138,7 +151,7 @@ def _render_radar_duplo(risco_a: dict | None, risco_b: dict | None) -> None:
 
     fig = go.Figure()
     if risco_a:
-        vals_a = [risco_a.get(d, 0) for d in dimensoes]
+        vals_a = [num_seguro(risco_a.get(d)) for d in dimensoes]
         fig.add_trace(go.Scatterpolar(
             r=vals_a + [vals_a[0]],
             theta=labels + [labels[0]],
@@ -150,7 +163,7 @@ def _render_radar_duplo(risco_a: dict | None, risco_b: dict | None) -> None:
             hovertemplate="%{theta}: %{r:.3f}<extra>A</extra>",
         ))
     if risco_b:
-        vals_b = [risco_b.get(d, 0) for d in dimensoes]
+        vals_b = [num_seguro(risco_b.get(d)) for d in dimensoes]
         fig.add_trace(go.Scatterpolar(
             r=vals_b + [vals_b[0]],
             theta=labels + [labels[0]],
@@ -188,10 +201,10 @@ def _render_risk_index(risco_a: dict | None, risco_b: dict | None) -> None:
     st.markdown("### Risk Index")
     c1, c2 = st.columns(2)
     with c1:
-        idx_a = risco_a.get("risk_index", 0) if risco_a else 0
+        idx_a = num_seguro(risco_a.get("risk_index")) if risco_a else 0.0
         st.progress(min(1.0, idx_a), text=f"Parlamentar A: {idx_a:.3f}")
     with c2:
-        idx_b = risco_b.get("risk_index", 0) if risco_b else 0
+        idx_b = num_seguro(risco_b.get("risk_index")) if risco_b else 0.0
         st.progress(min(1.0, idx_b), text=f"Parlamentar B: {idx_b:.3f}")
 
 
@@ -317,6 +330,8 @@ def main() -> None:
         agente_b.get("metricas", {}),
         agente_a["nome"],
         agente_b["nome"],
+        (agente_a.get("janela_inicio"), agente_a.get("janela_fim")),
+        (agente_b.get("janela_inicio"), agente_b.get("janela_fim")),
     )
 
     st.divider()

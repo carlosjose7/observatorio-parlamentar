@@ -76,6 +76,43 @@ def test_limite_acima_do_maximo_rejeitado(_cliente):
     assert resposta.status_code == 422
 
 
+def test_por_uf_filtrado_por_ano(_cliente):
+    # Só 2022: a despesa de 700.00 (202211) da MARIA (DF); SP some.
+    itens = {
+        item["rotulo"]: item
+        for item in _cliente.get("/agregacoes/por-uf", params={"ano": 2022}).json()["itens"]
+    }
+    assert set(itens) == {"DF"}
+    assert float(itens["DF"]["total"]) == 700.00
+    assert itens["DF"]["num_despesas"] == 1
+
+
+def test_por_partido_filtrado_por_ano(_cliente):
+    # Só 2023: MARIA (PSDB) 1500 + 300.50; ANA (PT) 900.
+    itens = {
+        item["rotulo"]: item
+        for item in _cliente.get("/agregacoes/por-partido", params={"ano": 2023}).json()["itens"]
+    }
+    assert float(itens["PSDB"]["total"]) == 1800.50
+    assert float(itens["PT"]["total"]) == 900.00
+
+
+def test_top_parlamentares_filtrado_por_ano(_cliente):
+    itens = _cliente.get("/agregacoes/top-parlamentares", params={"ano": 2022}).json()["itens"]
+    assert [item["rotulo"] for item in itens] == ["MARIA DA SILVA"]
+    assert float(itens[0]["total"]) == 700.00
+
+
+def test_ano_sem_dados_retorna_vazio(_cliente):
+    corpo = _cliente.get("/agregacoes/por-uf", params={"ano": 2020}).json()
+    assert corpo["itens"] == []
+
+
+def test_ano_fora_da_faixa_rejeitado(_cliente):
+    assert _cliente.get("/agregacoes/por-uf", params={"ano": 1999}).status_code == 422
+    assert _cliente.get("/agregacoes/por-uf", params={"ano": 2101}).status_code == 422
+
+
 def test_gold_indisponivel_503_agregacoes(tmp_path, monkeypatch):
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "inexistente.duckdb"))
     load_env_settings.cache_clear()

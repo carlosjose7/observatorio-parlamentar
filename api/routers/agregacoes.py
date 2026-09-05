@@ -42,9 +42,12 @@ def get_gastos_por_uf(
         le=_config.limite_maximo,
         description="Quantidade de UFs no ranking",
     ),
+    ano: int | None = Query(
+        default=None, ge=2000, le=2100, description="Ano de competência (None = todos)",
+    ),
 ) -> ListaAgregacao:
     try:
-        return agregar_gastos_por_uf(limite=limite)
+        return agregar_gastos_por_uf(limite=limite, ano=ano)
     except GoldIndisponivel as exc:
         raise _erro_gold("agregacoes_por_uf", exc)
 
@@ -57,9 +60,12 @@ def get_gastos_por_partido(
         le=_config.limite_maximo,
         description="Quantidade de partidos no ranking",
     ),
+    ano: int | None = Query(
+        default=None, ge=2000, le=2100, description="Ano de competência (None = todos)",
+    ),
 ) -> ListaAgregacao:
     try:
-        return agregar_gastos_por_partido(limite=limite)
+        return agregar_gastos_por_partido(limite=limite, ano=ano)
     except GoldIndisponivel as exc:
         raise _erro_gold("agregacoes_por_partido", exc)
 
@@ -72,9 +78,12 @@ def get_top_parlamentares(
         le=_config.limite_maximo,
         description="Quantidade de parlamentares no ranking",
     ),
+    ano: int | None = Query(
+        default=None, ge=2000, le=2100, description="Ano de competência (None = todos)",
+    ),
 ) -> ListaAgregacao:
     try:
-        return agregar_top_parlamentares(limite=limite)
+        return agregar_top_parlamentares(limite=limite, ano=ano)
     except GoldIndisponivel as exc:
         raise _erro_gold("agregacoes_top_parlamentares", exc)
 
