@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import httpx
 import pandas as pd
-import pytest
 
 from pipeline.camara.schemas import CamaraFiliacaoPartidaria
 from pipeline.contracts import LoadMetadata
@@ -243,5 +242,5 @@ class TestSalvarCacheFiliacoes:
     def test_cache_vazio_nao_cria_arquivo(self, tmp_path):
         from pipeline.camara.soap_extract import salvar_cache_filiacoes
 
-        resultado = salvar_cache_filiacoes([], tmp_path / "filiacoes", _run_meta())
+        salvar_cache_filiacoes([], tmp_path / "filiacoes", _run_meta())
         assert not any(tmp_path.glob("**/*.parquet"))

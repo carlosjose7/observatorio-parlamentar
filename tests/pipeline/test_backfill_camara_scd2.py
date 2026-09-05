@@ -11,7 +11,6 @@ Cobre:
 from __future__ import annotations
 
 import os
-from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -21,6 +20,7 @@ import pytest
 from pipeline.camara.schemas import CamaraFiliacaoPartidaria
 from pipeline.contracts import LoadMetadata
 from pipeline.silver import COLUNAS_SILVER_PARLAMENTAR
+from pipeline.storage import LocalParquetStorage
 
 
 def _run_meta(**override) -> LoadMetadata:
@@ -245,9 +245,6 @@ class TestCarregarSilverParlamentarComBackfill:
         assert not resultado.aceitos.iloc[0]["partido_uf_aproximado"]
 
 
-from pipeline.storage import LocalParquetStorage
-
-
 class TestClassificacaoComBackfill:
     """Testes de classificação: despesa antiga casa com versão correta via dbt."""
 
@@ -321,8 +318,6 @@ class TestClassificacaoComBackfill:
     def test_despesa_antiga_casa_com_versao_correta(self, tmp_path):
         """Despesa de 2016 (partido PT) casa com versão do backfill, não REST."""
         from dbt.cli.main import dbtRunner
-
-        import pipeline.config as config
 
         # Parlamentar: PT em 2015-03-10 (backfill), PSD em 2026-08-07 (REST)
         parlamentar_rows = [
