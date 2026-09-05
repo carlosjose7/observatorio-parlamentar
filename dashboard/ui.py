@@ -26,11 +26,13 @@ def formatar_moeda(valor: float | None) -> str:
 
 
 def formatar_moeda_compacto(valor: float | None) -> str:
-    """Moeda compacta p/ KPIs (R$ 1,03 tri · R$ 45,2 mi · R$ 900 mil)."""
+    """Moeda compacta p/ KPIs (R$ 2,40 tri · R$ 1,04 bi · R$ 45,2 mi)."""
     if valor is None or not isinstance(valor, (int, float)):
         return "—"
+    if valor >= 1_000_000_000_000:
+        return f"R$ {(valor / 1_000_000_000_000):.2f}".replace(".", ",") + " tri"
     if valor >= 1_000_000_000:
-        return f"R$ {(valor / 1_000_000_000):.2f}".replace(".", ",") + " tri"
+        return f"R$ {(valor / 1_000_000_000):.2f}".replace(".", ",") + " bi"
     if valor >= 1_000_000:
         return f"R$ {(valor / 1_000_000):.2f}".replace(".", ",") + " mi"
     if valor >= 1_000:

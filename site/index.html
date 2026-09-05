@@ -385,7 +385,8 @@ if (location.protocol === "file:") {
 
   function formatCurrency(value) {
     if (value == null || isNaN(value)) return '—';
-    if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(2).replace('.', ',') + ' tri';
+    if (value >= 1000000000000) return 'R$ ' + (value / 1000000000000).toFixed(2).replace('.', ',') + ' tri';
+    if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(2).replace('.', ',') + ' bi';
     if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(2).replace('.', ',') + ' mi';
     return 'R$ ' + (value / 1000).toFixed(1).replace('.', ',') + ' mil';
   }
