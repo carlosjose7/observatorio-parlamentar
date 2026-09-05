@@ -1832,11 +1832,15 @@ o toggle/overlay seguem os 800px do layout vigente.
 
 ### Onda 18.3 — Revisão técnica e fechamento
 
-- ☐ Revisão técnica (Revisor Técnico)
-- ☐ Teste manual desktop + mobile ≤850px + teclado
-- ☐ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
+- ☑ Revisão técnica (Revisor Técnico)
+- ☑ Teste manual desktop + mobile ≤800px + teclado (mock Chromium
+  390×844 touch: 20 checks verdes, screenshots revisados)
+- ☑ ADR.md, BACKLOG.md, CHANGELOG.md sincronizados
 
-**Branch:** sprint/18-homepage-v3 → main (via PR)
+**Branch:** sprint/18-fechamento → main (via PR)
+
+**Resultado Sprint 18:** homepage v3 com dados 100% vivos entregue
+(Ondas 18.1–18.3). Sprint FECHADA em 2026-09-05.
 
 ---
 

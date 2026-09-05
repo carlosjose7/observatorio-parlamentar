@@ -8,6 +8,39 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 18 — Homepage v3 com Dados Vivos (05/09/2026) — FECHADA
+
+### Adicionado
+- **Rebuild da inicial** (`site/index.html`, ADR-046): layout do modelo
+  de referência (DM Sans, paleta v3, hero com foto, métricas, panorama,
+  rankings, metodologia, perguntas, footer) com **zero números
+  estáticos** — métricas via `/agent/context`, `/agent/anomalias` e
+  `/agent/parlamentar`; rankings top 5 via `/agregacoes/por-uf` e
+  `/por-partido`; fallback "—" sem API.
+- **Foto do hero** (`site/hero.jpg`, 122KB) extraída do base64 do modelo.
+- **Menu mobile adaptado** ao nav v3 (10 links do dashboard, ≤800px).
+
+### Corrigido
+- Seções-âncora (`#dados`, `#metodologia`, `#perguntas`) e cadeias de
+  métricas resilientes (fallback no relatório de qualidade; dimensões
+  via top anomalia).
+- Overlay mobile fora do `header` (o `backdrop-filter` criava containing
+  block e quebrava o fullscreen) e `.brand-name` oculto em ≤520px
+  (especificidade).
+
+## Sprint 17 — Menu Mobile do Site Institucional (05/09/2026) — FECHADA
+
+### Adicionado
+- **ADR-045** (aceito): overlay fullscreen com JS vanilla, Esc, foco
+  preso, `aria-expanded` dinâmico.
+- **Menu mobile** no site (Ondas 17.1–17.2).
+
+### Removido (superseded)
+- Ondas 17.3/17.4 (microinterações e refino mobile) — superseded pelo
+  rebuild v3 da Sprint 18 (ADR-046).
+
+---
+
 ---
 
 ## Infraestrutura — Deploy automático via GitHub Actions (27/08/2026)

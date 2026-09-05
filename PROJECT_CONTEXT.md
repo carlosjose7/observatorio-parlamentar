@@ -239,12 +239,18 @@ Fontes Externas (APIs + CSVs)
 ```
 
 > **Nota (ADR-036):** a raiz do domínio (`/`) serve uma landing page
-> estática institucional (`site/index.html`), sem acesso a dado
+> institucional (`site/index.html`), sem acesso a dado
 > algum — puramente Nginx servindo arquivo, sem upstream. O Streamlit
 > vive no subcaminho `/app/`. Isso amenda o mapeamento de rota
 > originalmente descrito no ADR-007 (que previa `/` → Streamlit);
 > a decisão de fundo — Streamlit como única camada de apresentação de
 > *dados* — permanece inalterada.
+>
+> **Nota (ADR-046, Sprint 18):** a landing v3 busca dados vivos da API
+> via `fetch` (métricas e rankings, somente `GET` público, com fallback
+> "—"). Continua arquivo estático servido pelo Nginx — o "sem upstream"
+> acima refere-se a não haver proxy reverso para `/`, não a ausência
+> de chamadas client-side à API.
 >
 > **Nota (ADR-042):** fisicamente, Silver e Gold vivem no MESMO
 > arquivo DuckDB (`data/silver/observatorio.duckdb`), em schemas
