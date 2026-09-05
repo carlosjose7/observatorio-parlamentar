@@ -2779,6 +2779,6 @@ Consequências:
   rankings exibem "—" em vez de números (estados de loading vazios
   são piores que fallback explícito).
 - site/hero.jpg entra no deploy estático (nginx COPY site/).
-- Exige teste manual (desktop + mobile ≤850px, teclado) antes do
+- Exige teste manual (desktop + mobile ≤800px, teclado) antes do
   fechamento da Sprint 18.
 - BACKLOG.md e CHANGELOG.md atualizados ao final da sprint.
