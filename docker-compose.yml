@@ -68,6 +68,7 @@ services:
      # escreve no Gold, nem sob comprometimento do container.
     volumes:
       - ./data:/app/data:ro
+      - visitas-data:/app/data/analytics
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -223,3 +224,4 @@ volumes:
   certbot-etc:
   certbot-var:
   certbot-www:
+  visitas-data:
