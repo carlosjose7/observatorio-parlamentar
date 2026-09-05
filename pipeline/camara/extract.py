@@ -47,15 +47,24 @@ def _listar_deputados(
     client: httpx.Client,
     retry_settings: RetryDefaultSettings | None,
     limiter: RateLimiter,
+    id_legislatura: int | None = None,
 ) -> list[int]:
+    """Lista IDs de deputados, opcionalmente filtrando por legislatura.
+
+    Quando ``id_legislatura`` é fornecido, adiciona o parâmetro
+    ``idLegislatura`` ao request (API da Câmara aceita esse filtro).
+    Sem filtro, retorna apenas deputados da legislatura atual.
+    """
     url = cfg.base_url + cfg.endpoints["deputados"].path
     ids: list[int] = []
     pagina = 1
     while True:
-        params = {
+        params: dict[str, Any] = {
             cfg.paginacao.parametro_pagina: pagina,
             cfg.paginacao.parametro_itens: _itens_por_pagina(cfg),
         }
+        if id_legislatura is not None:
+            params["idLegislatura"] = id_legislatura
         dados = request_json(client, url, params, retry_settings, limiter=limiter)
         itens = dados.get("dados", [])
         ids.extend(item["id"] for item in itens)
@@ -229,6 +238,11 @@ def extract_deputados(
     um registro por deputado e a dedup da Silver concentra snapshots
     idênticos.
 
+    A extração itera sobre legislaturas 54–57 para incluir deputados
+    históricos (não apenas a legislatura atual). IDs duplicados entre
+    legislaturas são deduplicados — o detalhe (GET /deputados/{id})
+    retorna sempre o estado mais recente do deputado.
+
     Args:
         cfg: Configuração da fonte (`config/sources.yaml` → camara).
         client: Cliente HTTP compartilhado (injetável para testes).
@@ -240,10 +254,29 @@ def extract_deputados(
         ExtractResult com os registros de deputados e o watermark (data da
         execução).
     """
+    from pipeline.parlamento import LEGISLATURAS
+
     logger.info("iniciando_extracao_deputados")
     registros: list[CamaraBronzeDeputado] = []
     limiter = _limitador(cfg)
-    for id_deputado in _listar_deputados(cfg, client, retry_settings, limiter):
+
+    ids_unicos: set[int] = set()
+    for num_leg, _, _ in LEGISLATURAS:
+        if num_leg < 54:
+            continue
+        ids_leg = _listar_deputados(
+            cfg, client, retry_settings, limiter, id_legislatura=num_leg
+        )
+        novos = [i for i in ids_leg if i not in ids_unicos]
+        ids_unicos.update(novos)
+        logger.info(
+            "legislatura_extraida",
+            legislatura=num_leg,
+            total=len(ids_leg),
+            novos=len(novos),
+        )
+
+    for id_deputado in sorted(ids_unicos):
         url = cfg.base_url + cfg.endpoints["deputados_detalhe"].path.format(
             id_deputado=id_deputado
         )

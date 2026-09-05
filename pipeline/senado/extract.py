@@ -148,6 +148,21 @@ def _itens_senador(payload: dict) -> list[dict]:
     return parl
 
 
+def _itens_senador_por_legislatura(payload: dict) -> list[dict]:
+    """Extrai senadores do endpoint `/lista/legislatura/{N}.json`.
+
+    A resposta usa a key `ListaParlamentarLegislatura` (não
+    `ListaParlamentarEmExercicio`). A estrutura dos senadores é similar
+    mas `Mandatos` é lista (plural) e a UF está dentro de cada mandato.
+    """
+    lista = payload.get("ListaParlamentarLegislatura", {}) or {}
+    itens = lista.get("Parlamentares", {}) or {}
+    parl = itens.get("Parlamentar", []) or []
+    if isinstance(parl, dict):
+        parl = [parl]
+    return parl
+
+
 def _construir_senador(item: dict[str, Any], run_meta: LoadMetadata) -> SenadoBronzeParlamentar:
     """Acha um item `Parlamentar` do `lista/atual` no registro Bronze.
 
@@ -182,19 +197,67 @@ def _construir_senador(item: dict[str, Any], run_meta: LoadMetadata) -> SenadoBr
     )
 
 
+def _construir_senador_historico(
+    item: dict[str, Any], run_meta: LoadMetadata
+) -> list[SenadoBronzeParlamentar]:
+    """Constrói registros Bronze a partir do endpoint histórico `/lista/legislatura/{N}.json`.
+
+    Diferente do `lista/atual`, o endpoint histórico retorna `Mandatos`
+    (plural) como lista, e a UF está dentro de cada `Mandato`, não no
+    `IdentificacaoParlamentar`. Um senador pode ter múltiplos mandatos
+    (ex: suplente que assumiu) — gera um registro por mandato.
+    """
+    ident = item.get("IdentificacaoParlamentar", {}) or {}
+    mandatos = item.get("Mandatos", {}) or {}
+    mandato_list = mandatos.get("Mandato", []) or []
+    if isinstance(mandato_list, dict):
+        mandato_list = [mandato_list]
+
+    if not mandato_list:
+        mandato_list = [{}]
+
+    registros: list[SenadoBronzeParlamentar] = []
+    for mandato in mandato_list:
+        primeira = mandato.get("PrimeiraLegislaturaDoMandato", {}) or {}
+        segunda = mandato.get("SegundaLegislaturaDoMandato", {}) or {}
+        leg = primeira.get("NumeroLegislatura") or segunda.get("NumeroLegislatura")
+
+        meta = run_meta.model_copy(
+            update={"source_version": run_meta.execution_timestamp.date().isoformat()}
+        )
+        registros.append(
+            SenadoBronzeParlamentar(
+                id_senador=int(ident.get("CodigoParlamentar") or 0),
+                nome_parlamentar=ident.get("NomeParlamentar") or "",
+                nome_completo=ident.get("NomeCompletoParlamentar") or None,
+                sigla_partido=ident.get("SiglaPartidoParlamentar") or None,
+                sigla_uf=mandato.get("UfParlamentar") or None,
+                id_legislatura=int(leg) if leg else 0,
+                situacao=(mandato.get("DescricaoParticipacao") or None),
+                url_foto=ident.get("UrlFotoParlamentar"),
+                data_status=run_meta.execution_timestamp.date().isoformat(),
+                metadata=meta,
+            )
+        )
+
+    return registros
+
+
 def extract_senadores(
     cfg: SenadoSettings,
     client: httpx.Client,
     run_meta: LoadMetadata,
     retry_settings: RetryDefaultSettings | None = None,
 ) -> ExtractResult:
-    """Extrai o snapshot de dados mestres dos senadores em exercício (Onda 2).
+    """Extrai o snapshot de dados mestres dos senadores (Onda 2 + histórico).
 
-    Uma requisição ao endpoint `senador/lista/atual` da API de Dados Abertos
-    (a lista já carrega os atributos rastreados pelo SCD2 de
-    `dim_parlamentar` (ADR-020); sem segundo request por id). O snapshot é o
-    estado observado na data de execução (`data_status` = `run_meta`), mesmo
-    padrão dos deputados da Câmara.
+    Combina o endpoint atual (`lista/atual`) com endpoints históricos
+    (`/lista/legislatura/{N}.json` para N=54..57) para incluir senadores
+    de legislaturas anteriores.
+
+    O endpoint atual usa `ListaParlamentarEmExercicio` com `Mandato`
+    singular. Os endpoints históricos usam `ListaParlamentarLegislatura`
+    com `Mandatos` plural e UF dentro de cada mandato.
 
     Args:
         cfg: Configuração da fonte (`config/sources.yaml` → senado).
@@ -207,10 +270,49 @@ def extract_senadores(
         ExtractResult com os registros de senadores e o watermark (data da
         execução).
     """
+    from pipeline.parlamento import LEGISLATURAS
+
     logger.info("iniciando_extracao_senadores")
-    url = cfg.api_dados.base_url + cfg.api_dados.endpoints["senadores"].path
-    payload = request_json(client, url, None, retry_settings)
-    registros = [_construir_senador(item, run_meta) for item in _itens_senador(payload)]
+    registros: list[SenadoBronzeParlamentar] = []
+    ids_vistos: set[int] = set()
+
+    # Endpoint atual (senadores em exercício)
+    url_atual = cfg.api_dados.base_url + cfg.api_dados.endpoints["senadores"].path
+    payload = request_json(client, url_atual, None, retry_settings)
+    for item in _itens_senador(payload):
+        reg = _construir_senador(item, run_meta)
+        if reg.id_senador not in ids_vistos:
+            registros.append(reg)
+            ids_vistos.add(reg.id_senador)
+
+    # Endpoints históricos (legislaturas 54-57)
+    base_url = cfg.api_dados.base_url
+    for num_leg, _, _ in LEGISLATURAS:
+        if num_leg < 54:
+            continue
+        url_leg = f"{base_url}/senador/lista/legislatura/{num_leg}.json"
+        try:
+            payload_leg = request_json(client, url_leg, None, retry_settings)
+            itens = _itens_senador_por_legislatura(payload_leg)
+            novos = 0
+            for item in itens:
+                for reg in _construir_senador_historico(item, run_meta):
+                    if reg.id_senador not in ids_vistos:
+                        registros.append(reg)
+                        ids_vistos.add(reg.id_senador)
+                        novos += 1
+            logger.info(
+                "legislatura_senado_extraida",
+                legislatura=num_leg,
+                total=len(itens),
+                novos=novos,
+            )
+        except Exception as e:
+            logger.warning(
+                "legislatura_senado_erro",
+                legislatura=num_leg,
+                erro=str(e),
+            )
 
     watermark = run_meta.execution_timestamp.date().isoformat()
     return ExtractResult(
