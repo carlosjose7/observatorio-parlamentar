@@ -1619,7 +1619,7 @@ melhoria da representação CSS do Congresso Nacional e botão de retorno
 
 ---
 
-## Sprint 16 — Cobertura Histórica de Parlamentares (Câmara + Senado)
+## Sprint 16 — Cobertura Histórica de Parlamentares (Câmara + Senado) — FECHADA
 
 **Objetivo:** Buscar dados de parlamentares por legislatura (não
 apenas "atual") para eliminar os residuals de quarentena:
@@ -1721,7 +1721,7 @@ com os novos dados.
   são nomes sem match na API histórica)
 - Cobertura total: >90% (antes: 57,8%)
 
-**Branch:** `sprint/16-cobertura-historica` → `main` (via PR)
+**Branch:** `sprint/16-cobertura-historica` → `main` (via PR #51)
 
 **Notas:**
 - Legislaturas 54-57 (2011-2027) cobrem todo o período CEAPS
@@ -1730,6 +1730,14 @@ com os novos dados.
   Senado usa path parameter (`/legislatura/{N}.json`).
 - Não mexe em despesas (já funciona por `id_legislatura` no
   endpoint de despesas da Câmara, e por CSV no Senado).
+
+**Resultado:**
+- Câmara: 513 → 1.461 deputados (+184%)
+- Senado: 81 → 549 senadores (+578%)
+- Cobertura: 57,8% → 60,4% (+111.016 despesas resolvidas)
+- Residual `parlamentar_nao_resolvido`: 119.008 (senadores pré-2011,
+  legislatura <54, fora do escopo)
+- ADR-044 aceito e implementado
 
 ---
 
