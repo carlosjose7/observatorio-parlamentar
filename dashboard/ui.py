@@ -46,6 +46,23 @@ def rotulo_parlamentar(item: dict) -> str:
     return f"{item.get('nome', '?')} ({partido}-{item.get('sigla_uf', '?')})"
 
 
+def num_seguro(valor: Any) -> float:
+    """Número ou 0.0 — scores/métricas vêm None p/ quem não tem linha no Gold."""
+    try:
+        return float(valor) if valor is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def anos_de_janela(inicio: str | None, fim: str | None) -> int:
+    """Nº de anos civis cobertos pela janela 'AAAA-MM' (mínimo 1)."""
+    try:
+        a0, a1 = int(str(inicio)[:4]), int(str(fim)[:4])
+        return max(1, a1 - a0 + 1)
+    except (TypeError, ValueError):
+        return 1
+
+
 def metricas_seguras(rotulo: str, valor: Any, **kwargs: Any) -> None:
     """`st.metric` com valor formatado quando não nulo, senão placeholder."""
     if valor is None:

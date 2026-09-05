@@ -80,21 +80,44 @@ def _render_janela(serie: dict | None) -> None:
     )
 
 
+def _anos_da_serie(serie: dict | None) -> list[int]:
+    """Anos disponíveis a partir dos períodos AAAAMM da série."""
+    itens = (serie or {}).get("itens") or []
+    return sorted({int(i["periodo"][:4]) for i in itens if i.get("periodo")})
+
+
+def _filtrar_serie_ano(serie: dict | None, ano: int | None) -> dict | None:
+    """Série restrita a um ano (filtro no cliente; None = todos)."""
+    if serie is None or ano is None:
+        return serie
+    prefixo = str(ano)
+    return {**serie, "itens": [i for i in serie.get("itens", []) if str(i.get("periodo", "")).startswith(prefixo)]}
+
+
 def main() -> None:
-    uf = carregar_com_feedback(
-        lambda: client.agregacao_por_uf(limite=10),
-        spinner="Agregando gastos por UF...",
-    )
-    partido = carregar_com_feedback(
-        lambda: client.agregacao_por_partido(limite=10),
-        spinner="Agregando gastos por partido...",
-    )
     serie = carregar_com_feedback(
         lambda: client.despesas_no_tempo(),
         spinner="Montando série mensal...",
     )
 
-    _render_janela(serie)
+    anos = _anos_da_serie(serie)
+    ano_sel = st.selectbox(
+        "Ano", ["Todos"] + anos,
+        format_func=lambda a: str(a), key="analises_ano",
+    )
+    ano = None if ano_sel == "Todos" else int(ano_sel)
+
+    uf = carregar_com_feedback(
+        lambda: client.agregacao_por_uf(limite=10, ano=ano),
+        spinner="Agregando gastos por UF...",
+    )
+    partido = carregar_com_feedback(
+        lambda: client.agregacao_por_partido(limite=10, ano=ano),
+        spinner="Agregando gastos por partido...",
+    )
+    serie_recorte = _filtrar_serie_ano(serie, ano)
+
+    _render_janela(serie_recorte)
 
     col_uf, col_partido = st.columns(2)
     with col_uf:
@@ -102,10 +125,10 @@ def main() -> None:
     with col_partido:
         _render_secao("Gastos por partido", partido, "ranking")
 
-    _render_secao("Gastos no tempo (mês de competência)", serie, "tempo")
+    _render_secao("Gastos no tempo (mês de competência)", serie_recorte, "tempo")
 
     top = carregar_com_feedback(
-        lambda: client.top_parlamentares(limite=10),
+        lambda: client.top_parlamentares(limite=10, ano=ano),
         spinner="Calculando top parlamentares...",
     )
     if top and top.get("itens"):

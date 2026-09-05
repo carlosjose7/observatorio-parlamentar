@@ -1905,12 +1905,25 @@ Partido, buscas e seletores afetados.
 - ☑ Moeda compacta Tri/Bi; link GitHub no footer; contador com
   `increment=false`
 
-### Onda 19.4 — Revisão e fechamento
+### Onda 19.4 — Filtro de período nos agregados (rodada 2 do QA)
 
-- ☐ CI verde + PR + CHANGELOG
+- ☑ `ano` opcional em por-uf/por-partido/top-parlamentares
+  (join `dim_data`, `d.ano = ?`); série filtra no cliente
+- ☑ Seletor de ano na Análises (Todos + anos da série)
 
-**Branch:** sprint/19-qa-dashboard → main (via PR)
+### Onda 19.5 — Batalha e ML (rodada 2 do QA)
+
+- ☐ Batalha: média anual (total/anos de janela) + janelas explícitas;
+  labels e radar/risk None-safe
+- ☐ ML: valores compactos (Tri/Bi)
+
+### Onda 19.6 — Revisão e fechamento formal
+
+- ☐ CI verde + PR + CHANGELOG + validação em produção
+
+**Branch:** sprint/19-qa-round2 → main (via PR)
 
 **Conhecido (fora de escopo):** HHI/risk de senadores ausente no Gold
-(`supplier_concentration`/`risk_scores` sem linha p/ ids do Senado) —
-UI já exibe "—"; cobertura do analytics vira item de backlog.
+(`supplier_concentration`/`risk_scores`/`network_*`, outliers zerado
+p/ id 6009) — UI exibe "—"/vazio; cobertura do analytics vira item
+de pipeline.
