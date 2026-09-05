@@ -14,15 +14,15 @@ Fonte: https://www.camara.leg.br/SitCamaraWS/Deputados.asmx
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import httpx
 import structlog
 from lxml import etree  # noqa: SLF001 — isolado neste módulo (ADR-043)
+
 from pipeline.camara.schemas import CamaraFiliacaoPartidaria
 from pipeline.config import RetryDefaultSettings
 from pipeline.contracts import LoadMetadata
-from pipeline.utils import RateLimiter, _tentativa, _resolver_settings
+from pipeline.utils import RateLimiter, _resolver_settings, _tentativa
 
 logger = structlog.get_logger()
 
