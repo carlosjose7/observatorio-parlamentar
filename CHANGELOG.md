@@ -14,9 +14,13 @@ Histórico das alterações, organizado por sprint (ver
 - **API:** `sigla_partido` nullable (uma linha NULL dava 500 na página
   inteira — Partido/Estado/buscas); contador com `?increment=false`;
   top-parlamentares com partido/UF.
+- **API (19.4):** filtro `ano` opcional em por-uf/por-partido/
+  top-parlamentares (join `dim_data`); seletor de ano na Análises.
 - **Dashboard:** ML à prova de None (TypeError no HHI de senadores);
   nomes/documentos em texto cheio; Panorama compacto (Tri/Bi) + link
   site; grafo com labels curtos; gastos paginados (anos completos).
+- **Dashboard (19.5):** Batalha com média anual (total ÷ anos de
+  janela) + janelas explícitas; ML em moeda compacta.
 - **Site:** moeda Tri/Bi/Mil; link GitHub no footer; contador sem
   inflar; grupo NESTA PÁGINA no menu mobile.
 - **Infra:** pin `streamlit==1.62.0` (addendum ADR-006); volume

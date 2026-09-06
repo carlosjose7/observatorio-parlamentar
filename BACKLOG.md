@@ -1913,17 +1913,29 @@ Partido, buscas e seletores afetados.
 
 ### Onda 19.5 — Batalha e ML (rodada 2 do QA)
 
-- ☐ Batalha: média anual (total/anos de janela) + janelas explícitas;
+- ☑ Batalha: média anual (total/anos de janela) + janelas explícitas;
   labels e radar/risk None-safe
-- ☐ ML: valores compactos (Tri/Bi)
+- ☑ ML: valores compactos (Tri/Bi)
 
 ### Onda 19.6 — Revisão e fechamento formal
 
-- ☐ CI verde + PR + CHANGELOG + validação em produção
+- ☑ CI verde + PR + CHANGELOG + validação em produção
+  (mock 23/23, `R$ 1,04 bi` no ar, zero erros de console)
 
-**Branch:** sprint/19-qa-round2 → main (via PR)
+**Branch:** sprint/19-qa-round2 → main (via PR #66)
+
+**Sprint 19 FECHADA em 2026-09-05.**
 
 **Conhecido (fora de escopo):** HHI/risk de senadores ausente no Gold
 (`supplier_concentration`/`risk_scores`/`network_*`, outliers zerado
 p/ id 6009) — UI exibe "—"/vazio; cobertura do analytics vira item
 de pipeline.
+
+---
+
+## Sprint 20+ — Backlog futuro (pipeline)
+
+- ☐ Estender cobertura do analytics ao Senado (`risk_scores`,
+  `supplier_concentration`, `network_*`, outliers): senadores hoje
+  têm métricas mas zero linhas nessas tabelas (ex.: id 6009) —
+  ML/Batalha/Rede exibem "—"/vazio para senadores.
