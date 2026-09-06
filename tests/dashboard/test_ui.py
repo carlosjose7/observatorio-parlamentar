@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from dashboard.ui import formatar_moeda
+from dashboard.ui import anos_de_janela, formatar_moeda, formatar_moeda_compacto, num_seguro
 
 
 class TestFormatarMoeda:
@@ -64,3 +64,52 @@ class TestExportacaoVazia:
         assert "df" in chamadas
         # Default: CSV + Excel + PDF (RF-08, formatos de config/dashboard.yaml)
         assert chamadas.count("download") == 3
+
+
+class TestFormatarMoedaCompacto:
+    """Sprint 19: faixas tri/bi/mi/mil (10^9 = bilhão em pt-BR)."""
+
+    def test_nulo_vira_travessao(self):
+        assert formatar_moeda_compacto(None) == "—"
+
+    def test_bilhao(self):
+        assert formatar_moeda_compacto(1038541771.85) == "R$ 1,04 bi"
+
+    def test_trilhao(self):
+        assert formatar_moeda_compacto(2_500_000_000_000) == "R$ 2,50 tri"
+
+    def test_milhao(self):
+        assert formatar_moeda_compacto(531600) == "R$ 531,6 mil"
+
+    def test_abaixo_de_mil(self):
+        assert formatar_moeda_compacto(900) == "R$ 900,00"
+
+
+class TestNumSeguro:
+    """Sprint 19: scores/métricas None viram 0.0 (sem TypeError)."""
+
+    def test_none_vira_zero(self):
+        assert num_seguro(None) == 0.0
+
+    def test_numero_passa(self):
+        assert num_seguro(1.5) == 1.5
+
+    def test_texto_invalido_vira_zero(self):
+        assert num_seguro("abc") == 0.0
+
+
+class TestAnosDeJanela:
+    """Sprint 19.5: base da média anual da Batalha."""
+
+    def test_janela_completa(self):
+        assert anos_de_janela("2015-02", "2026-08") == 12
+
+    def test_mesmo_ano(self):
+        assert anos_de_janela("2019-01", "2019-12") == 1
+
+    def test_janela_parcial(self):
+        assert anos_de_janela("2020-01", "2022-12") == 3
+
+    def test_none_vira_um(self):
+        assert anos_de_janela(None, None) == 1
+        assert anos_de_janela("abc", None) == 1

@@ -1930,3 +1930,12 @@ Partido, buscas e seletores afetados.
 (`supplier_concentration`/`risk_scores`/`network_*`, outliers zerado
 p/ id 6009) — UI exibe "—"/vazio; cobertura do analytics vira item
 de pipeline.
+
+---
+
+## Sprint 20+ — Backlog futuro (pipeline)
+
+- ☐ Estender cobertura do analytics ao Senado (`risk_scores`,
+  `supplier_concentration`, `network_*`, outliers): senadores hoje
+  têm métricas mas zero linhas nessas tabelas (ex.: id 6009) —
+  ML/Batalha/Rede exibem "—"/vazio para senadores.
