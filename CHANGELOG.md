@@ -8,6 +8,30 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 20 — Correções pós-QA (10/09/2026)
+
+### Corrigido
+- **Pipeline (20.1):** etapa analytics lia `main.*` stale pré-ADR-042
+  em vez de `gold.*` — Senado ausente em risk/HHI/rede/outliers
+  apesar de promovido no fato. Schema-qualified + rebuild completo
+  (risk 3.114 linhas, 560 do Senado, 2015–2026); guardrail
+  `alertar_analytics_vazio` mira `gold.*` (antes nunca disparava).
+- **API (20.2, ADR-047):** `GET /agent/parlamentar/{id}` com janela
+  per-parlamentar (era global) — Batalha volta a calcular
+  `pct_cobertura` real e a média anual usa o mandato, não o Gold.
+- **API (20.3):** `top-parlamentares` com `partido`/`uf`/`pagina`;
+  `no-tempo` com `partido`/`uf` (opcionais, sem quebra de contrato).
+- **Dashboard (20.3):** Partido/Estado reescritas server-side
+  (fim do fan-out N+1 que causava "API indisponível"); cache 300s.
+- **Dashboard (20.2):** Risk Index "—" quando ausente (era 0.0).
+- **Dashboard (20.4):** atalhos `st.page_link` na inicial, incluindo
+  Análises e Batalha.
+- **Site (20.4):** nav + menu mobile + cards de Análises, Batalha e Rede.
+- **Testes (20.5):** 4 novos contratos (senado no agent, janela
+  per-ID, filtros+paginação do top, filtros da série).
+
+---
+
 ## Sprint 19 — QA Dashboard + Site (05/09/2026)
 
 ### Corrigido

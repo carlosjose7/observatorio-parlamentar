@@ -158,6 +158,41 @@ print(con.execute('select run_id, status from pipeline_runs order by execution_t
 "
 ```
 
+### 5.5 Reconstruir o Gold/analytics após mudança de schema (Sprint 20)
+
+Sempre que mudar schema em Bronze/Silver/Gold (ex.: coluna nova como
+`url_foto`, separação Silver/Gold do ADR-042), o DuckDB local precisa de
+rebuild — o pipeline incremental não reescreve tabelas cujo SELECT mudou,
+e resíduos do schema antigo (`main.*` pré-ADR-042) calam a etapa
+analytics, que lê `gold.*` (Sprint 20: Senado sumiu de risk/HHI/rede por
+esse motivo, com o guardrail silencioso junto).
+
+Caminho canônico (mesma ordem do DAG `observatorio_pipeline`):
+```bash
+cp data/silver/observatorio.duckdb /tmp/observatorio-backup-$(date +%Y%m%d).duckdb
+# 1. Gold core (tudo exceto os 5 models analytics)
+#    dbt build --exclude expense_outliers network_edges network_nodes politician_similarity risk_scores
+# 2. Analytics (ml_staging: outliers → rede → risco)
+python -c "from pipeline.analytics_stage import executar_etapa_analytics; print(executar_etapa_analytics('rebuild-manual'))"
+# 3. Gold analytics (os 5 models que leem ml_staging)
+#    dbt build --select expense_outliers network_edges network_nodes politician_similarity risk_scores
+```
+Sem dbt/Python 3.11 à mão, o fallback é SQL direto (modelos em
+`pipeline/gold/models/analytics/*.sql`, trocando `{{ ref() }}`/`{{ source() }}`
+por `gold.*`/`ml_staging.*`) + `executar_etapa_analytics` num container
+`python:3.11-slim` com `scikit-learn networkx pandas duckdb` (Sprint 20
+rodou assim; `supplier_concentration`/`supplier_growth` são puro-SQL).
+
+Verificação mínima pós-rebuild (trocar 6009 por um id Senado vigente):
+```sql
+SET search_path='gold';
+select count(*) from risk_scores;  -- ~3114 (era 1780 no stale)
+select * from risk_scores where id_parlamentar = 6009;
+select count(*) from network_edges where id_parlamentar = 6009;
+```
+E smoke na API: `GET /agent/parlamentar/6009` deve trazer `hhi_recente`,
+`risco.risk_index` e `janela_*` do próprio histórico (ADR-047).
+
 ---
 
 ## 6. Segurança

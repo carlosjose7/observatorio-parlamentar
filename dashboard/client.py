@@ -335,20 +335,39 @@ class ApiClient:
             params["ano"] = ano
         return self._get("/agregacoes/por-partido", params)
 
-    def top_parlamentares(self, limite: int = 10, ano: int | None = None) -> dict[str, Any]:
-        """GET /agregacoes/top-parlamentares (ranking por gasto acumulado)."""
-        params: dict[str, Any] = {"limite": limite}
+    def top_parlamentares(
+        self, limite: int = 10, ano: int | None = None,
+        partido: str | None = None, uf: str | None = None,
+        pagina: int = 1,
+    ) -> dict[str, Any]:
+        """GET /agregacoes/top-parlamentares (ranking por gasto acumulado).
+
+        Sprint 20: filtros `partido`/`uf` + `pagina` para as páginas
+        Partido/Estado sem fan-out N+1.
+        """
+        params: dict[str, Any] = {"limite": limite, "pagina": pagina}
         if ano:
             params["ano"] = ano
+        if partido:
+            params["partido"] = partido
+        if uf:
+            params["uf"] = uf
         return self._get("/agregacoes/top-parlamentares", params)
 
     def top_fornecedores(self, limite: int = 10) -> dict[str, Any]:
         """GET /agregacoes/top-fornecedores (ranking por valor recebido)."""
         return self._get("/agregacoes/top-fornecedores", {"limite": limite})
 
-    def despesas_no_tempo(self) -> dict[str, Any]:
+    def despesas_no_tempo(
+        self, partido: str | None = None, uf: str | None = None,
+    ) -> dict[str, Any]:
         """GET /agregacoes/no-tempo (série mensal AAAAMM de total e contagem)."""
-        return self._get("/agregacoes/no-tempo")
+        params: dict[str, Any] = {}
+        if partido:
+            params["partido"] = partido
+        if uf:
+            params["uf"] = uf
+        return self._get("/agregacoes/no-tempo", params or None)
 
     # ── Agent (JSON semântico agregado, ADR-032) ─────────────────
 

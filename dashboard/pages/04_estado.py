@@ -1,8 +1,12 @@
 """dashboard/pages/04_estado.py — visão por estado (UF).
 
-Lista parlamentares de uma UF com resumo de despesas, consumindo
-`GET /parlamentares` (filtro `uf`) + `GET /parlamentares/{id}/gastos`.
-Exportação (RF-08).
+Sprint 20 (Onda 20.3): reescrita server-side — antes, 1 + N×até5 GETs
+(`gastos_parlamentar_tudo` por parlamentar) estouravam o timeout de 30s e
+exibiam "API indisponível" (sintoma mais frequente nesta página, com 214
+parlamentares em SP). Agora: `GET /agregacoes/por-uf` (totais),
+`GET /agregacoes/top-parlamentares?uf=` (ranking + totais, paginado),
+`GET /agregacoes/no-tempo?uf=` (série mensal) e
+`GET /parlamentares?uf=` (roster p/ Situação). Exportação (RF-08).
 """
 
 from __future__ import annotations
@@ -26,8 +30,6 @@ aplicar_identidade()
 botao_voltar()
 st.title("🗺️ Estado")
 
-client = ApiClient()
-
 _UF = [
     "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
     "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC",
@@ -35,70 +37,129 @@ _UF = [
 ]
 
 
-def _parlamentares_da_uf(uf: str) -> pd.DataFrame:
-    payload = carregar_com_feedback(
-        lambda: client.listar_parlamentares(uf=uf, limite=100),
-        spinner=f"Carregando {uf}...",
-    )
-    if not payload:
-        return pd.DataFrame()
-    return pd.DataFrame(payload.get("itens", []))
+@st.cache_data(ttl=300)
+def _totais_uf() -> list[dict]:
+    """Totais por UF (1 chamada agregada)."""
+    payload = ApiClient().agregacao_por_uf(limite=27)
+    return payload.get("itens", [])
+
+
+@st.cache_data(ttl=300)
+def _top_da_uf(uf: str, ano: int | None, max_paginas: int = 3) -> list[dict]:
+    """Ranking + totais dos parlamentares da UF (paginado, server-side)."""
+    client = ApiClient()
+    itens: list[dict] = []
+    for pagina in range(1, max_paginas + 1):
+        payload = client.top_parlamentares(
+            limite=100, ano=ano, uf=uf, pagina=pagina,
+        )
+        lote = (payload or {}).get("itens", [])
+        itens.extend(lote)
+        if len(lote) < 100:
+            break
+    return itens
+
+
+@st.cache_data(ttl=300)
+def _serie_da_uf(uf: str) -> list[dict]:
+    """Série mensal da UF (server-side)."""
+    payload = ApiClient().despesas_no_tempo(uf=uf)
+    return (payload or {}).get("itens", [])
+
+
+@st.cache_data(ttl=300)
+def _roster_da_uf(uf: str, max_paginas: int = 3) -> list[dict]:
+    """Roster vigente da UF (p/ coluna Situação)."""
+    client = ApiClient()
+    itens: list[dict] = []
+    for pagina in range(1, max_paginas + 1):
+        payload = client.listar_parlamentares(
+            uf=uf, pagina=pagina, limite=100,
+        )
+        lote = (payload or {}).get("itens", [])
+        itens.extend(lote)
+        if len(lote) < 100:
+            break
+    return itens
 
 
 def main() -> None:
-    uf = st.selectbox("UF", _UF)
-    df = _parlamentares_da_uf(uf)
-    if df.empty:
-        st.info(f"Nenhum parlamentar da UF {uf}.")
+    totais = carregar_com_feedback(
+        _totais_uf, spinner="Carregando totais por UF...",
+    )
+    if totais is None:
         return
 
-    # Despesas (paginadas: histórico completo p/ o filtro de ano) por parlamentar.
-    linhas = []
-    for _, row in df.iterrows():
-        itens = carregar_com_feedback(
-            lambda rid=row["id_parlamentar"]: client.gastos_parlamentar_tudo(rid),
-            spinner="",
-        )
-        for x in itens or []:
-            linhas.append(
-                {
-                    "nome": row["nome"],
-                    "partido": row["sigla_partido"],
-                    "situacao": row["situacao_normalizada"],
-                    "ano": x["ano"],
-                    "mes": x["mes"],
-                    "valor_liquido": float(x["valor_liquido"]),
-                }
-            )
-    if not linhas:
+    uf = st.selectbox("UF", _UF)
+
+    serie_itens = carregar_com_feedback(
+        lambda: _serie_da_uf(uf),
+        spinner=f"Carregando série de {uf}...",
+    )
+    if serie_itens is None:
+        return
+    anos = sorted({int(i["periodo"][:4]) for i in serie_itens if i.get("periodo")})
+    ano_sel = st.selectbox(
+        "Ano", ["Todos"] + anos, format_func=str, key=f"uf_{uf}_ano",
+    )
+    ano = None if ano_sel == "Todos" else int(ano_sel)
+
+    top_itens = carregar_com_feedback(
+        lambda: _top_da_uf(uf, ano),
+        spinner=f"Agregando {uf}...",
+    )
+    if top_itens is None:
+        return
+    if not top_itens:
         st.info(f"Nenhuma despesa encontrada para parlamentares da UF {uf}.")
         return
 
-    despesas = filtro_periodo(pd.DataFrame(linhas), key_prefix=f"uf_{uf}")
-    if despesas.empty:
-        st.info("Nenhuma despesa nos períodos selecionados.")
-        return
+    roster = carregar_com_feedback(
+        lambda: _roster_da_uf(uf),
+        spinner="Carregando roster...",
+    )
+    situacao = {(r.get("nome"), r.get("sigla_partido")): r.get("situacao_normalizada")
+                for r in (roster or [])}
 
-    resumo = (
-        despesas.groupby(["nome", "partido", "situacao"], as_index=False)["valor_liquido"]
-        .sum()
-        .sort_values("valor_liquido", ascending=False)
-        .rename(
-            columns={
-                "nome": "Parlamentar",
-                "partido": "Partido",
-                "situacao": "Situação",
-                "valor_liquido": "Total gasto",
-            }
-        )
-    )
+    df_top = pd.DataFrame(top_itens)
+    df_top["Total gasto"] = df_top["total"].astype(float)
+    df_top["Parlamentar"] = df_top["rotulo"]
+    df_top["Partido"] = df_top["sigla_partido"].fillna("—")
+    df_top["Situação"] = [
+        situacao.get((n, p), "—")
+        for n, p in zip(df_top["rotulo"], df_top["sigla_partido"])
+    ]
+    df_top["N despesas"] = df_top["num_despesas"].astype(int)
+
+    total_recorte = float(df_top["Total gasto"].sum())
     st.markdown(
-        f"**{len(resumo)} parlamentares da UF {uf} · "
-        f"{formatar_moeda(resumo['Total gasto'].sum())} no recorte**"
+        f"**{len(df_top)} parlamentares da UF {uf} · "
+        f"{formatar_moeda(total_recorte)} no recorte**"
     )
-    grafico_mensal(despesas)
-    resumo["Total gasto"] = resumo["Total gasto"].map(formatar_moeda)
-    tabela_exportavel(resumo, nome_arquivo=f"uf_{uf}")
+    total_uf_gold = next(
+        (float(i.get("total") or 0) for i in totais if i.get("rotulo") == uf), None,
+    )
+    if total_uf_gold is not None:
+        st.caption(f"{uf} soma {formatar_moeda(total_uf_gold)} no Gold.")
+
+    if serie_itens:
+        df_serie = pd.DataFrame([
+            {"ano": int(i["periodo"][:4]), "mes": int(i["periodo"][4:6]),
+             "valor_liquido": float(i["total"])}
+            for i in serie_itens if i.get("periodo")
+        ])
+        if ano is not None:
+            df_serie = df_serie[df_serie["ano"] == ano]
+        df_serie = filtro_periodo(df_serie, key_prefix=f"uf_{uf}")
+        if not df_serie.empty:
+            grafico_mensal(df_serie)
+
+    resumo = df_top[["Parlamentar", "Partido", "Situação", "Total gasto", "N despesas"]].sort_values(
+        "Total gasto", ascending=False,
+    )
+    tabela = resumo.copy()
+    tabela["Total gasto"] = tabela["Total gasto"].map(formatar_moeda)
+    tabela_exportavel(tabela, nome_arquivo=f"uf_{uf}")
 
 
 main()

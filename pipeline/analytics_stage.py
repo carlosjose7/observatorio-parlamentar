@@ -55,6 +55,11 @@ def resolver_caminho_db(db_path: str | None) -> str:
 def _carregar_insumos(caminho: str) -> tuple:
     """Lê fatos, dimensão de datas e concentração do Gold (read-only).
 
+    Nomes schema-qualified (`gold.*`): o DuckDB guarda resíduos pré-ADR-042
+    em `main.*` (stale) e o nome não-qualificado resolvia para eles — a etapa
+    analytics processava o snapshot antigo (Onda 20.1: Senado ausente em
+    risk/network/outliers apesar de promovido em `gold.fact_despesa`).
+
     `valor_liquido`/`valor_glosa` são convertidos para DOUBLE porque a coluna
     física do fato é DECIMAL(18,2) — o pandas traria `decimal.Decimal`
     (object dtype), que quebra a aritmética de z-score/Isolation Forest.
@@ -75,20 +80,26 @@ def _carregar_insumos(caminho: str) -> tuple:
             return pd.DataFrame()
 
     try:
-        fatos = con.execute(
-            """
-            select * replace (
-                cast(valor_liquido as double) as valor_liquido,
-                cast(valor_glosa as double) as valor_glosa
-            )
-            from fact_despesa
-            """
-        ).fetchdf()
+        try:
+            fatos = con.execute(
+                """
+                select * replace (
+                    cast(valor_liquido as double) as valor_liquido,
+                    cast(valor_glosa as double) as valor_glosa
+                )
+                from gold.fact_despesa
+                """
+            ).fetchdf()
+        except duckdb.Error:
+            # Banco sem Gold (ex.: teste com DuckDB vazio): sem fatos, a
+            # etapa encerra sem escrever — mesmo contrato de fato vazio.
+            logger.warning("analytics_gold_ausente", caminho=caminho)
+            fatos = pd.DataFrame()
         dim_data = _opcional(
-            "select data_sk, data, ano, mes, is_dia_util from dim_data"
+            "select data_sk, data, ano, mes, is_dia_util from gold.dim_data"
         )
         concentracao = _opcional(
-            "select ano, id_parlamentar, hhi from supplier_concentration"
+            "select ano, id_parlamentar, hhi from gold.supplier_concentration"
         )
     finally:
         con.close()
@@ -195,12 +206,12 @@ def alertar_analytics_vazio(
     caminho = resolver_caminho_db(db_path)
     con = duckdb.connect(caminho, read_only=True)
     try:
-        num_fatos = con.execute("select count(*) from fact_despesa").fetchone()[0]
+        num_fatos = con.execute("select count(*) from gold.fact_despesa").fetchone()[0]
         if not num_fatos:
             return
         for tabela in models:
             try:
-                n = con.execute(f"select count(*) from main.{tabela}").fetchone()[0]
+                n = con.execute(f"select count(*) from gold.{tabela}").fetchone()[0]
             except duckdb.Error:
                 n = 0
             if n == 0:
