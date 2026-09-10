@@ -69,6 +69,15 @@ ssh -i "$SSH_KEY" "$SSH_DEST" "
     # Garante o bit de execução do script (o systemd invoca o ExecStart sem
     # prefixo `bash`; sem +x o start falha com status=203/EXEC Permission denied).
     chmod +x ~/observatorio-parlamentar/scripts/run_pipeline_daily.sh
+    # Com SELinux enforcing, o rsync recria o script com contexto user_home_t
+    # (ou user_tmp_t) e o systemd (init_t) recebe EACCES no spawn — mesmo
+    # sintoma 203/EXEC do +x ausente. bin_t resolve; regra persistente via
+    # `semanage fcontext` (incidente 06–09/09/2026, 4 dias sem pipeline).
+    if command -v semanage >/dev/null 2>&1; then
+        sudo semanage fcontext -a -t bin_t \
+            '/home/opc/observatorio-parlamentar/scripts(/.*)?' 2>/dev/null || true
+        sudo restorecon ~/observatorio-parlamentar/scripts/run_pipeline_daily.sh
+    fi
     sudo systemctl daemon-reload
     sudo systemctl enable observatorio-pipeline.timer
     sudo systemctl start observatorio-pipeline.timer
