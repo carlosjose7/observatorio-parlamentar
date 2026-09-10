@@ -2841,3 +2841,42 @@ Consequências:
   retornam `janela_*` distintas; `calcular_sobreposicao` cobre
   contido/parcial/sem-interseção.
 - BACKLOG.md e CHANGELOG.md atualizados ao final da sprint.
+
+---
+
+ADR-048
+Título: Alvos de deploy — VPS como produção única; Community Cloud fora; HML opt-in
+
+Status:
+Proposto — branch docs/adr-048-alvos-deploy (pós-merge do PR #68)
+
+Contexto:
+O ADR-007 cita "Oracle Cloud Always Free + Streamlit Community Cloud"
+como infra gratuita, mas a decisão só normatiza o Compose na VPS
+(nginx → `/api/` FastAPI, `/app/` Streamlit, `/` site estático) — o
+Community Cloud nunca recebeu papel, e o dashboard hoje é servido pela
+VPS. O `docs/guia_deploy_operacao.md §7` descreve o fluxo
+`develop → HML → main`, mas o fluxo observado das Sprints 15–20 foi
+`feature → PR direto para main` (sem passar por `develop`/HML). Na
+Sprint 20, a replicação para `observatorio-parlamentar-hml/` foi
+explicitamente adiada até resolver esta ambiguidade.
+
+Decisão:
+1. Produção = VPS Oracle (Compose), único alvo. Streamlit Community
+   Cloud está FORA do escopo — remover a menção do contexto do
+   ADR-007 como alvo válido (mantida só como histórico).
+2. HML (`-p hml`, `data.hml/`, portas 18xxx) segue existindo como
+   ambiente de homologação OPT-IN, não gate obrigatório: usa-se quando
+   a mudança toca pipeline/Gold/deploy (ex.: rebuilds como o da
+   Onda 20.1); mudanças de dashboard/site/API com contrato estável
+   seguem `feature → PR → main`, com CI + smoke pós-merge.
+3. `develop` deixa de ser branch de passagem obrigatória; espelhos
+   `hml/` só por decisão explícita por PR (como a adiada na Sprint 20).
+
+Consequências:
+- `docs/guia_deploy_operacao.md §7` precisa de revisão: trocar "ciclo
+  de validação" obrigatório por matriz (o que exige HML vs. o que vai
+  direto), mantendo o passo-a-passo existente para quando HML aplicar.
+- Deploy de `main` na VPS (prod) não muda; nada é desligado.
+- PRs de dashboard/site ficam mais rápidos; o risco é coberto pelo
+  smoke pós-merge (Seção 5 do guia) + contrato 22/22 no CI.
