@@ -81,9 +81,22 @@ def get_top_parlamentares(
     ano: int | None = Query(
         default=None, ge=2000, le=2100, description="Ano de competência (None = todos)",
     ),
+    partido: str | None = Query(
+        default=None, min_length=2, max_length=20,
+        description="Filtra pela sigla do partido vigente (ex: PL)",
+    ),
+    uf: str | None = Query(
+        default=None, min_length=2, max_length=2,
+        description="Filtra pela UF vigente (ex: SP)",
+    ),
+    pagina: int = Query(
+        default=1, ge=1, description="Página corrente (1-based)",
+    ),
 ) -> ListaAgregacao:
     try:
-        return agregar_top_parlamentares(limite=limite, ano=ano)
+        return agregar_top_parlamentares(
+            limite=limite, ano=ano, partido=partido, uf=uf, pagina=pagina,
+        )
     except GoldIndisponivel as exc:
         raise _erro_gold("agregacoes_top_parlamentares", exc)
 
@@ -105,9 +118,18 @@ def get_top_fornecedores(
 
 
 @router.get("/no-tempo", response_model=SerieTemporal)
-def get_despesas_no_tempo() -> SerieTemporal:
+def get_despesas_no_tempo(
+    partido: str | None = Query(
+        default=None, min_length=2, max_length=20,
+        description="Filtra pela sigla do partido vigente (ex: PL)",
+    ),
+    uf: str | None = Query(
+        default=None, min_length=2, max_length=2,
+        description="Filtra pela UF vigente (ex: SP)",
+    ),
+) -> SerieTemporal:
     """Série mensal (AAAAMM) de total gasto e quantidade de despesas."""
     try:
-        return agregar_despesas_no_tempo()
+        return agregar_despesas_no_tempo(partido=partido, uf=uf)
     except GoldIndisponivel as exc:
         raise _erro_gold("agregacoes_no_tempo", exc)

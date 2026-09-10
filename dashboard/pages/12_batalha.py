@@ -197,15 +197,25 @@ def _render_radar_duplo(risco_a: dict | None, risco_b: dict | None) -> None:
 
 
 def _render_risk_index(risco_a: dict | None, risco_b: dict | None) -> None:
-    """Risk index comparativo com barras de progresso."""
+    """Risk index comparativo com barras de progresso.
+
+    Sprint 20 (ADR-047): `None` (sem linha em `risk_scores`) exibe "—" em
+    vez de 0.0 — zero é um score válido e enganaria a comparação.
+    """
     st.markdown("### Risk Index")
     c1, c2 = st.columns(2)
     with c1:
-        idx_a = num_seguro(risco_a.get("risk_index")) if risco_a else 0.0
-        st.progress(min(1.0, idx_a), text=f"Parlamentar A: {idx_a:.3f}")
+        if risco_a and risco_a.get("risk_index") is not None:
+            idx_a = num_seguro(risco_a.get("risk_index"))
+            st.progress(min(1.0, idx_a), text=f"Parlamentar A: {idx_a:.3f}")
+        else:
+            st.metric("Parlamentar A", "—")
     with c2:
-        idx_b = num_seguro(risco_b.get("risk_index")) if risco_b else 0.0
-        st.progress(min(1.0, idx_b), text=f"Parlamentar B: {idx_b:.3f}")
+        if risco_b and risco_b.get("risk_index") is not None:
+            idx_b = num_seguro(risco_b.get("risk_index"))
+            st.progress(min(1.0, idx_b), text=f"Parlamentar B: {idx_b:.3f}")
+        else:
+            st.metric("Parlamentar B", "—")
 
 
 def _render_anomalias(anom_a: dict, anom_b: dict) -> None:

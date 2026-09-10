@@ -2794,3 +2794,50 @@ Consequências:
 - Exige teste manual (desktop + mobile ≤800px, teclado) antes do
   fechamento da Sprint 18.
 - BACKLOG.md e CHANGELOG.md atualizados ao final da sprint.
+
+---
+
+ADR-047
+Título: Janela per-parlamentar em GET /agent/parlamentar/{id} + média anual como métrica comparável na Batalha
+
+Status:
+Aceito — Sprint 20 aberta em 2026-09-10
+
+Contexto:
+`api/repo.py:obter_agente_parlamentar` calculava `janela_inicio/fim` com
+`select min(data_sk), max(data_sk) from fact_despesa` SEM filtro por
+parlamentar — a janela era global e idêntica para todos. Consequências
+(Onda 20.2): `dashboard/comparacao.py:calcular_sobreposicao` sempre
+retornava `pct_cobertura = 1.0`, o aviso de mandatos distintos em
+`12_batalha.py` (`pct < 0.75`) nunca disparava, e a média anual
+(`total ÷ anos de janela`) dividia pelo tamanho do Gold em vez do
+mandato real — comparar um parlamentar com 2 mandatos contra outro com
+1 somava lifetimes incomparáveis sem normalização efetiva.
+
+Decisão:
+1. A janela passa a ser per-parlamentar: `min/max(data_sk) from
+   fact_despesa where id_parlamentar = ?`. Formato do envelope
+   (`janela_inicio/fim` em AAAA-MM, `api/schemas/agent.py`) mantido —
+   muda só a semântica, de global para individual. Sem versionamento de
+   path: é correção de bug de um campo documentado como "janela
+   analisada" do parlamentar; consumidores são `08_ml.py`, `12_batalha.py`
+   e agentes via ADR-032, todos beneficiados sem adaptação.
+2. Na Batalha, a média anual (`total ÷ anos civis da janela per-ID`,
+   `ui.py:anos_de_janela`, mínimo 1) é a métrica comparável em destaque;
+   o total lifetime segue exibido com a janela explícita de cada lado.
+3. O aviso de comparabilidade (`pct_cobertura < 0.75`) volta a funcionar
+   com janelas reais; o caption de período comum permanece informativo
+   (não bloqueia a comparação — decisão do produto na Sprint 20).
+4. `11_analises.py:_render_janela` NÃO muda: usa a série global de
+   `GET /agregacoes/no-tempo`, que continua global por definição.
+
+Consequências:
+- `janela_*` de parlamentares com histórico parcial passam a refletir o
+  próprio histórico (ex.: 2022–2026 em vez de 2015–2026) — ML e Batalha
+  exibem captions diferentes do Gold global, o que é o comportamento
+  correto e já comunicado no caption ("métricas refletem apenas as
+  despesas carregadas nesse período").
+- Exige teste de contrato: dois parlamentares com janelas distintas
+  retornam `janela_*` distintas; `calcular_sobreposicao` cobre
+  contido/parcial/sem-interseção.
+- BACKLOG.md e CHANGELOG.md atualizados ao final da sprint.

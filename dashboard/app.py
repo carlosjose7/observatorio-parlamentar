@@ -121,7 +121,24 @@ def main() -> None:
     _render_execucoes_recentes(client)
 
     st.markdown("---")
-    st.info("Navegue pelas páginas no menu lateral para explorar os dados.")
+    st.markdown("### Explorar")
+    st.caption(
+        "Análises agregadas e Batalha também estão no menu lateral — "
+        "atalhos abaixo."
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.page_link("pages/02_parlamentar.py", label="Parlamentar", icon="👤")
+        st.page_link("pages/03_partido.py", label="Partido", icon="🏛️")
+    with c2:
+        st.page_link("pages/04_estado.py", label="Estado", icon="🗺️")
+        st.page_link("pages/06_rede.py", label="Rede", icon="🕸️")
+    with c3:
+        st.page_link("pages/11_analises.py", label="Análises", icon="📊")
+        st.page_link("pages/12_batalha.py", label="Batalha Parlamentar", icon="⚔️")
+    with c4:
+        st.page_link("pages/07_anomalias.py", label="Anomalias", icon="🚨")
+        st.page_link("pages/08_ml.py", label="Scores de Risco", icon="🧠")
 
 
 main()

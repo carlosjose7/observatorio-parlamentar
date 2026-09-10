@@ -1015,6 +1015,8 @@ def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
         )
         janela = con.execute(
             "select min(data_sk), max(data_sk) from fact_despesa"
+            " where id_parlamentar = ?",
+            [id_parlamentar],
         ).fetchone()
         hhi_linha = con.execute(
             "select ano, hhi from supplier_concentration"
@@ -1331,11 +1333,26 @@ def agregar_gastos_por_partido(*, limite: int, ano: int | None = None) -> ListaA
 
 
 @_tratar_erro_gold
-def agregar_top_parlamentares(*, limite: int, ano: int | None = None) -> ListaAgregacao:
-    """Top parlamentares por gasto acumulado na versão vigente."""
+def agregar_top_parlamentares(
+    *, limite: int, ano: int | None = None,
+    partido: str | None = None, uf: str | None = None, pagina: int = 1,
+) -> ListaAgregacao:
+    """Top parlamentares por gasto acumulado na versão vigente.
+
+    Sprint 20 (Onda 20.3): filtros opcionais `partido`/`uf` + `pagina`
+    para as páginas Partido/Estado consumirem ranking + totais em 1-3
+    chamadas agregadas, sem o fan-out N+1 de `gastos_parlamentar_tudo`.
+    """
     join_ano = " join dim_data d on d.data_sk = f.data_sk" if ano is not None else ""
     filtro_ano = " and d.ano = ?" if ano is not None else ""
+    filtro_partido = " and upper(p.sigla_partido) = upper(?)" if partido else ""
+    filtro_uf = " and upper(p.sigla_uf) = upper(?)" if uf else ""
     params: list[object] = [ano] if ano is not None else []
+    if partido:
+        params.append(partido)
+    if uf:
+        params.append(uf)
+    offset = (max(1, pagina) - 1) * limite
     with _conexao() as con:
         linhas = con.execute(
             f"""
@@ -1345,12 +1362,12 @@ def agregar_top_parlamentares(*, limite: int, ano: int | None = None) -> ListaAg
                    max(p.sigla_partido) as sigla_partido,
                    max(p.sigla_uf) as sigla_uf
             from fact_despesa f {_JOIN_VIGENTE}{join_ano}
-            where p.nome is not null{filtro_ano}
+            where p.nome is not null{filtro_ano}{filtro_partido}{filtro_uf}
             group by 1
             order by total desc
-            limit ?
+            limit ? offset ?
             """,
-            [*params, limite],
+            [*params, limite, offset],
         ).fetchall()
     return ListaAgregacao(
         limite=limite,
@@ -1397,18 +1414,39 @@ def agregar_top_fornecedores(*, limite: int) -> ListaTopFornecedores:
 
 
 @_tratar_erro_gold
-def agregar_despesas_no_tempo() -> SerieTemporal:
-    """Série mensal (AAAAMM) de total e quantidade de despesas."""
+def agregar_despesas_no_tempo(
+    *, partido: str | None = None, uf: str | None = None,
+) -> SerieTemporal:
+    """Série mensal (AAAAMM) de total e quantidade de despesas.
+
+    Sprint 20 (Onda 20.3): filtros opcionais `partido`/`uf` (versão
+    vigente) para a série das páginas Partido/Estado sem downloads.
+    """
+    join_dim = (
+        " join dim_parlamentar p on p.surrogate_key = f.surrogate_key"
+        " and p.is_current"
+        if (partido or uf) else ""
+    )
+    filtros = ""
+    params: list[object] = []
+    if partido:
+        filtros += " and upper(p.sigla_partido) = upper(?)"
+        params.append(partido)
+    if uf:
+        filtros += " and upper(p.sigla_uf) = upper(?)"
+        params.append(uf)
     with _conexao() as con:
         linhas = con.execute(
-            """
+            f"""
             select substr(cast(f.data_sk as varchar), 1, 6) as periodo,
                    sum(f.valor_liquido) as total,
                    count(*) as num_despesas
-            from fact_despesa f
+            from fact_despesa f{join_dim}
+            where 1 = 1{filtros}
             group by 1
             order by 1
-            """
+            """,
+            params,
         ).fetchall()
     return SerieTemporal(
         itens=[

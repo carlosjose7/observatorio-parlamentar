@@ -1935,7 +1935,47 @@ de pipeline.
 
 ## Sprint 20+ — Backlog futuro (pipeline)
 
-- ☐ Estender cobertura do analytics ao Senado (`risk_scores`,
-  `supplier_concentration`, `network_*`, outliers): senadores hoje
-  têm métricas mas zero linhas nessas tabelas (ex.: id 6009) —
-  ML/Batalha/Rede exibem "—"/vazio para senadores.
+- ☑ Estender cobertura do analytics ao Senado (`risk_scores`,
+  `supplier_concentration`, `network_*`, outliers) — CONCLUÍDO na
+  Sprint 20 (Onda 20.1): causa raiz era Gold analytics stale (etapa
+  lia `main.*` pré-ADR-042) + `supplier_concentration` de 2023–2026;
+  rebuild cobre 2015–2026, 560 linhas Senado em `risk_scores`
+  (ex.: id 6009 com risk/HHI/rede). Quarentena `nao_resolvido`
+  (~119k, ex-senadores por nome) segue como item futuro de matching.
+- ☐ Matching por nome do Senado p/ ex-mandatos (quarentena
+  `parlamentar_nao_resolvido`, ex.: PAULO BAUER, JOSÉ SERRA) —
+  fallback UF+legislatura contra versões SCD2 não-vigentes.
+- ☐ `dim_parlamentar.is_current` abrange ~2010 linhas (ex-mandatos do
+  backfill contam como vigentes) — rever SCD2 `is_current` vs
+  `situacao_normalizada` (rosters PT 204 / SP 214 acima do real).
+
+---
+
+## Sprint 20 — Correções pós-QA (10/09/2026)
+
+**Branch:** sprint/20-correcoes-senado-batalha → main
+**ADR novo:** ADR-047 (janela per-parlamentar + média anual na Batalha).
+
+☑ Onda 20.0 — Baseline: `gold.fact` 843.630 (Senado 129.224) vs
+  analytics só 2023–2026 sem Senado; `main.*` stale identificado.
+☑ Onda 20.1 — Senado HHI/Risk/Rede (P0): `analytics_stage.py` passa a
+  ler `gold.*` (+ guardrail `alertar_analytics_vazio`); rebuild
+  `supplier_concentration` (3.114, 560 Senado) + `supplier_growth` +
+  `ml_staging` (843.630 fatos, risk 3.114) + 5 models analytics;
+  API verificada viva (6009: HHI 0.182, risk 0.206, 322 arestas).
+☑ Onda 20.2 — Batalha janela per-ID (P0, ADR-047): `api/repo.py`
+  filtra `id_parlamentar`; Risk Index exibe "—" em vez de 0.0 quando
+  ausente; warning `pct<0.75` reativado com janelas reais.
+☑ Onda 20.3 — Partido/Estado server-side (P1): `top-parlamentares`
+  ganha `partido`/`uf`/`pagina`, `no-tempo` ganha `partido`/`uf`;
+  páginas reescritas (≤7 chamadas leves + `st.cache_data(300)`,
+  p95 <0,25s medido: por-partido 0,23s, top-UF 0,20s, série 0,19s).
+☑ Onda 20.4 — Home web/mobile (P1): nav + menu-mobile + 3 novos cards
+  (Análises, Batalha, Rede); `dashboard/app.py` com atalhos
+  `st.page_link` incluindo Análises/Batalha.
+☑ Onda 20.5 — Validação: contrato 22/22 (4 testes novos Sprint 20);
+  api+dashboard+nginx rebuildados e smoke 200 em todas as rotas.
+  Pré-existentes sem relação (falham em `main` limpa):
+  `test_docs_habilitado_por_padrao`, `test_tabela_com_dados_gera_csv`.
+
+**Sprint 20 FECHADA em 2026-09-10.**

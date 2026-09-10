@@ -180,6 +180,8 @@ def _seed(db: Path) -> None:
             "insert into ml_staging.risk_scores values (?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 (2023, 1, 0.7, 0.2, 0.3, 0.4, 0.5, 0.35, "r", "p", "2026-01-01 00:00:00", "s"),
+                # Sprint 20: senado também tem risk (regressão Onda 20.1)
+                (2023, 6, 0.1, 0.1, 0.1, 0.1, 0.1, 0.12, "r", "p", "2026-01-01 00:00:00", "s"),
             ],
         )
     finally:
@@ -548,3 +550,62 @@ def test_agent_context_liga_todos_os_schemas_da_gold(_cliente_gold):
     assert corpo["qualidade"]["total_registros"] == 100
     assert corpo["qualidade"]["total_quarentena"] == 2
     assert corpo["pipeline"]["run_id"] is None
+
+
+# ── Sprint 20: Senado no agent + janela per-parlamentar + filtros ────
+
+
+def test_agent_parlamentar_senado_tem_risco_hhi_e_janela_propria(_cliente_gold):
+    """`/agent/parlamentar/6` (senado) expõe risco/HHI/janela (Onda 20.1).
+
+    Regressão do gap "ML/Rede sem dados para senador": com o Gold
+    analytics reconstruído, senadora com 1 despesa de 200 em 1 fornecedor
+    tem hhi = 1.0, risk_index semeado e janela do próprio histórico.
+    """
+    corpo = _cliente_gold.get("/agent/parlamentar/6").json()
+    assert corpo["fonte"] == "senado"
+    assert corpo["metricas"]["hhi_recente"] == pytest.approx(1.0)
+    assert corpo["metricas"]["hhi_periodo"] == 2023
+    assert corpo["risco"]["risk_index"] == 0.12
+    assert corpo["janela_inicio"] == "2023-03"
+    assert corpo["janela_fim"] == "2023-03"
+
+
+def test_agent_janela_por_parlamentar_nao_global(_cliente_gold):
+    """Janelas distintas por parlamentar (ADR-047, Onda 20.2).
+
+    Antes: `min/max(data_sk)` sem filtro → janela global idêntica para
+    todos e `pct_cobertura` da Batalha sempre 1.0.
+    """
+    a = _cliente_gold.get("/agent/parlamentar/1").json()
+    assert (a["janela_inicio"], a["janela_fim"]) == ("2023-05", "2023-06")
+    b = _cliente_gold.get("/agent/parlamentar/6").json()
+    assert (b["janela_inicio"], b["janela_fim"]) == ("2023-03", "2023-03")
+
+
+def test_top_parlamentares_filtros_partido_uf_pagina(_cliente_gold):
+    """`top-parlamentares` com `partido`/`uf`/`pagina` (Onda 20.3)."""
+    g = _cliente_gold.get(
+        "/agregacoes/top-parlamentares", params={"partido": "PARTIDO G"},
+    ).json()
+    assert [i["rotulo"] for i in g["itens"]] == ["MARIA SANTOS"]
+    uf = _cliente_gold.get(
+        "/agregacoes/top-parlamentares", params={"uf": "PR"},
+    ).json()
+    assert [i["rotulo"] for i in uf["itens"]] == ["MARIA SANTOS"]
+    p2 = _cliente_gold.get(
+        "/agregacoes/top-parlamentares", params={"limite": 1, "pagina": 2},
+    ).json()
+    assert [i["rotulo"] for i in p2["itens"]] == ["JOSE SILVA"]
+
+
+def test_no_tempo_filtros_partido_uf(_cliente_gold):
+    """`no-tempo` com `partido`/`uf` (Onda 20.3)."""
+    g = _cliente_gold.get(
+        "/agregacoes/no-tempo", params={"partido": "PARTIDO G"},
+    ).json()
+    assert [(i["periodo"], i["total"]) for i in g["itens"]] == [("202303", 200.0)]
+    uf = _cliente_gold.get(
+        "/agregacoes/no-tempo", params={"uf": "SP"},
+    ).json()
+    assert {i["periodo"] for i in uf["itens"]} == {"202305", "202306"}

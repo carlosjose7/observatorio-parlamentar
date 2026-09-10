@@ -1,8 +1,11 @@
 """dashboard/pages/03_partido.py — visão por partido.
 
-Lista parlamentares de um partido com resumo de despesas, consumindo
-`GET /parlamentares` (filtro `partido`) + `GET /parlamentares/{id}/gastos`
-para o total. Exportação (RF-08).
+Sprint 20 (Onda 20.3): reescrita server-side — antes, 1 + N×até5 GETs
+(`gastos_parlamentar_tudo` por parlamentar) estouravam o timeout de 30s e
+exibiam "API indisponível". Agora: `GET /agregacoes/por-partido` (opções),
+`GET /agregacoes/top-parlamentares?partido=` (ranking + totais, paginado),
+`GET /agregacoes/no-tempo?partido=` (série mensal) e
+`GET /parlamentares?partido=` (roster p/ Situação). Exportação (RF-08).
 """
 
 from __future__ import annotations
@@ -26,90 +29,136 @@ aplicar_identidade()
 botao_voltar()
 st.title("🏛️ Partido")
 
-client = ApiClient()
+
+@st.cache_data(ttl=300)
+def _opcoes_partido() -> list[dict]:
+    """Ranking de partidos (total desc) — 1 chamada agregada."""
+    payload = ApiClient().agregacao_por_partido(limite=40)
+    return payload.get("itens", [])
 
 
-def _lista_partidos() -> list[str]:
-    """Partidos distintos a partir da lista paginada de parlamentares."""
-    payload = carregar_com_feedback(
-        lambda: client.listar_parlamentares(limite=100),
-        spinner="Carregando partidos...",
-    )
-    if not payload:
-        return []
-    itens = payload.get("itens", [])
-    return sorted({i["sigla_partido"] for i in itens if i.get("sigla_partido")})
+@st.cache_data(ttl=300)
+def _top_do_partido(partido: str, ano: int | None, max_paginas: int = 3) -> list[dict]:
+    """Ranking + totais dos membros do partido (paginado, server-side)."""
+    client = ApiClient()
+    itens: list[dict] = []
+    for pagina in range(1, max_paginas + 1):
+        payload = client.top_parlamentares(
+            limite=100, ano=ano, partido=partido, pagina=pagina,
+        )
+        lote = (payload or {}).get("itens", [])
+        itens.extend(lote)
+        if len(lote) < 100:
+            break
+    return itens
 
 
-def _parlamentares_do_partido(partido: str) -> pd.DataFrame:
-    payload = carregar_com_feedback(
-        lambda: client.listar_parlamentares(partido=partido, limite=100),
-        spinner=f"Carregando {partido}...",
-    )
-    if not payload:
-        return pd.DataFrame()
-    return pd.DataFrame(payload.get("itens", []))
+@st.cache_data(ttl=300)
+def _serie_do_partido(partido: str) -> list[dict]:
+    """Série mensal do partido (server-side)."""
+    payload = ApiClient().despesas_no_tempo(partido=partido)
+    return (payload or {}).get("itens", [])
+
+
+@st.cache_data(ttl=300)
+def _roster_do_partido(partido: str, max_paginas: int = 3) -> list[dict]:
+    """Roster vigente do partido (p/ coluna Situação)."""
+    client = ApiClient()
+    itens: list[dict] = []
+    for pagina in range(1, max_paginas + 1):
+        payload = client.listar_parlamentares(
+            partido=partido, pagina=pagina, limite=100,
+        )
+        lote = (payload or {}).get("itens", [])
+        itens.extend(lote)
+        if len(lote) < 100:
+            break
+    return itens
 
 
 def main() -> None:
-    partidos = _lista_partidos()
-    if not partidos:
+    ranking_partidos = carregar_com_feedback(
+        _opcoes_partido, spinner="Carregando partidos...",
+    )
+    if not ranking_partidos:
         st.info("Nenhum partido encontrado.")
         return
 
-    partido = st.selectbox("Partido", partidos)
-    df = _parlamentares_do_partido(partido)
-    if df.empty:
-        st.info(f"Nenhum parlamentar de {partido}.")
-        return
+    total_geral = sum(float(i.get("total") or 0) for i in ranking_partidos)
+    opcoes = [i["rotulo"] for i in ranking_partidos]
+    partido = st.selectbox("Partido", opcoes)
 
-    # Despesas (paginadas: histórico completo p/ o filtro de ano) por parlamentar.
-    linhas = []
-    for _, row in df.iterrows():
-        itens = carregar_com_feedback(
-            lambda rid=row["id_parlamentar"]: client.gastos_parlamentar_tudo(rid),
-            spinner="",
-        )
-        for x in itens or []:
-            linhas.append(
-                {
-                    "nome": row["nome"],
-                    "uf": row["sigla_uf"],
-                    "situacao": row["situacao_normalizada"],
-                    "ano": x["ano"],
-                    "mes": x["mes"],
-                    "valor_liquido": float(x["valor_liquido"]),
-                }
-            )
-    if not linhas:
+    serie_itens = carregar_com_feedback(
+        lambda: _serie_do_partido(partido),
+        spinner=f"Carregando série de {partido}...",
+    )
+    if serie_itens is None:
+        return
+    anos = sorted({int(i["periodo"][:4]) for i in serie_itens if i.get("periodo")})
+    ano_sel = st.selectbox(
+        "Ano", ["Todos"] + anos, format_func=str, key=f"partido_{partido}_ano",
+    )
+    ano = None if ano_sel == "Todos" else int(ano_sel)
+
+    top_itens = carregar_com_feedback(
+        lambda: _top_do_partido(partido, ano),
+        spinner=f"Agregando {partido}...",
+    )
+    if top_itens is None:
+        return
+    if not top_itens:
         st.info(f"Nenhuma despesa encontrada para parlamentares de {partido}.")
         return
 
-    despesas = filtro_periodo(pd.DataFrame(linhas), key_prefix=f"partido_{partido}")
-    if despesas.empty:
-        st.info("Nenhuma despesa nos períodos selecionados.")
-        return
+    roster = carregar_com_feedback(
+        lambda: _roster_do_partido(partido),
+        spinner="Carregando roster...",
+    )
+    situacao = {(r.get("nome"), r.get("sigla_uf")): r.get("situacao_normalizada")
+                for r in (roster or [])}
 
-    resumo = (
-        despesas.groupby(["nome", "uf", "situacao"], as_index=False)["valor_liquido"]
-        .sum()
-        .sort_values("valor_liquido", ascending=False)
-        .rename(
-            columns={
-                "nome": "Parlamentar",
-                "uf": "UF",
-                "situacao": "Situação",
-                "valor_liquido": "Total gasto",
-            }
-        )
+    df_top = pd.DataFrame(top_itens)
+    df_top["Total gasto"] = df_top["total"].astype(float)
+    df_top["Parlamentar"] = df_top["rotulo"]
+    df_top["UF"] = df_top["sigla_uf"].fillna("—")
+    df_top["Situação"] = [
+        situacao.get((n, u), "—")
+        for n, u in zip(df_top["rotulo"], df_top["sigla_uf"])
+    ]
+    df_top["N despesas"] = df_top["num_despesas"].astype(int)
+
+    total_recorte = float(df_top["Total gasto"].sum())
+    total_partido_gold = sum(
+        float(i.get("total") or 0) for i in ranking_partidos if i["rotulo"] == partido
     )
     st.markdown(
-        f"**{len(resumo)} parlamentares de {partido} · "
-        f"{formatar_moeda(resumo['Total gasto'].sum())} no recorte**"
+        f"**{len(df_top)} parlamentares de {partido} · "
+        f"{formatar_moeda(total_recorte)} no recorte**"
     )
-    grafico_mensal(despesas)
-    resumo["Total gasto"] = resumo["Total gasto"].map(formatar_moeda)
-    tabela_exportavel(resumo, nome_arquivo=f"partido_{partido}")
+    if total_geral:
+        st.caption(
+            f"{partido} soma {formatar_moeda(total_partido_gold)} no Gold "
+            f"({total_recorte / total_geral:.1%} do total entre partidos)."
+        )
+
+    if serie_itens:
+        df_serie = pd.DataFrame([
+            {"ano": int(i["periodo"][:4]), "mes": int(i["periodo"][4:6]),
+             "valor_liquido": float(i["total"])}
+            for i in serie_itens if i.get("periodo")
+        ])
+        if ano is not None:
+            df_serie = df_serie[df_serie["ano"] == ano]
+        df_serie = filtro_periodo(df_serie, key_prefix=f"partido_{partido}")
+        if not df_serie.empty:
+            grafico_mensal(df_serie)
+
+    resumo = df_top[["Parlamentar", "UF", "Situação", "Total gasto", "N despesas"]].sort_values(
+        "Total gasto", ascending=False,
+    )
+    tabela = resumo.copy()
+    tabela["Total gasto"] = tabela["Total gasto"].map(formatar_moeda)
+    tabela_exportavel(tabela, nome_arquivo=f"partido_{partido}")
 
 
 main()
