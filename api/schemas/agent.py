@@ -80,6 +80,14 @@ class AgentParlamentar(_Rigido):
     top_fornecedores: list[FornecedorTop]
     janela_inicio: str | None
     janela_fim: str | None
+    recorte_inicio: str | None = Field(
+        default=None,
+        description="Início do recorte AAAA-MM, quando pedido via ?inicio= (Sprint 21)",
+    )
+    recorte_fim: str | None = Field(
+        default=None,
+        description="Fim do recorte AAAA-MM, quando pedido via ?fim= (Sprint 21)",
+    )
 
 
 # ── /agent/fornecedor/{cnpj_cpf_valor} ──────────────────────────

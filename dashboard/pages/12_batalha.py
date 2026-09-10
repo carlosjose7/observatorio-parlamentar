@@ -13,7 +13,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from dashboard.client import ApiClient
+from dashboard.client import ApiClient, ApiError, ApiIndisponivel
 from dashboard.comparacao import calcular_sobreposicao
 from dashboard.ui import (
     anos_de_janela,
@@ -75,12 +75,46 @@ def _buscar_parlamentar(posicao: str) -> dict | None:
     return next(i for i in itens if i["id_parlamentar"] == opcoes[sel])
 
 
-def _carregar_agente(id_parlamentar: int) -> dict | None:
-    """Carrega o payload agent de um parlamentar."""
-    return carregar_com_feedback(
-        lambda: client.agent_parlamentar(id_parlamentar),
-        spinner="Carregando dados...",
-    )
+def _carregar_agente(
+    id_parlamentar: int,
+    inicio: str | None = None,
+    fim: str | None = None,
+) -> dict | None:
+    """Payload agent, com cache de 5 min por (id, recorte).
+
+    Sprint 21: o recorte (período comum/ano) recarrega via
+    `?inicio=&fim=` sem refazer chamadas a cada rerun. Falha de API
+    retorna None (sem cachear o erro — a mensagem sai no chamador).
+    """
+    return _agente_cacheado(id_parlamentar, inicio, fim)
+
+
+@st.cache_data(ttl=300)
+def _agente_cacheado(
+    id_parlamentar: int,
+    inicio: str | None,
+    fim: str | None,
+) -> dict | None:
+    try:
+        with st.spinner("Carregando dados..."):
+            return ApiClient().agent_parlamentar(
+                id_parlamentar, inicio=inicio, fim=fim,
+            )
+    except (ApiError, ApiIndisponivel):
+        return None
+
+
+def _anos_comuns(
+    janela_a: tuple[str | None, str | None],
+    janela_b: tuple[str | None, str | None],
+) -> list[int]:
+    """Anos civis presentes nas duas janelas (p/ filtro de ano)."""
+    try:
+        a = set(range(int(str(janela_a[0])[:4]), int(str(janela_a[1])[:4]) + 1))
+        b = set(range(int(str(janela_b[0])[:4]), int(str(janela_b[1])[:4]) + 1))
+        return sorted(a & b)
+    except (TypeError, ValueError):
+        return []
 
 
 def _render_perfil_lateral(label: str, agente: dict) -> None:
@@ -285,13 +319,86 @@ def main() -> None:
 
     st.divider()
 
-    # Carregar dados de ambos
-    agente_a = _carregar_agente(par_a["id_parlamentar"])
-    agente_b = _carregar_agente(par_b["id_parlamentar"])
+    # Janelas completas primeiro (definem o recorte disponível).
+    agente_a_full = _carregar_agente(par_a["id_parlamentar"])
+    agente_b_full = _carregar_agente(par_b["id_parlamentar"])
 
-    if agente_a is None or agente_b is None:
+    if agente_a_full is None or agente_b_full is None:
         st.error("Não foi possível carregar os dados de um dos parlamentares.")
         return
+
+    janela_a = (agente_a_full.get("janela_inicio"), agente_a_full.get("janela_fim"))
+    janela_b = (agente_b_full.get("janela_inicio"), agente_b_full.get("janela_fim"))
+
+    # Comparabilidade de período
+    sobreposicao = calcular_sobreposicao(
+        janela_a[0], janela_a[1], janela_b[0], janela_b[1],
+    )
+    anos = _anos_comuns(janela_a, janela_b)
+
+    # Modo de comparação (Sprint 21: mandato x mandato por padrão).
+    opcoes_modo = ["Período comum"]
+    if anos:
+        opcoes_modo.append("Ano específico")
+    opcoes_modo.append("Histórico completo")
+    modo = st.radio(
+        "Comparar", opcoes_modo, horizontal=True, key="bat_modo",
+        help="Período comum restringe ambos ao intervalo sobreposto; "
+        "ano específico compara um exercício; histórico usa o lifetime.",
+    )
+
+    recorte: tuple[str | None, str | None] | None = None
+    ano_sel: int | None = None
+    if modo == "Ano específico" and anos:
+        ano_sel = st.selectbox("Ano", anos, index=len(anos) - 1, key="bat_ano")
+        recorte = (f"{ano_sel}-01", f"{ano_sel}-12")
+    elif modo == "Período comum" and sobreposicao.inicio_comum:
+        recorte = (sobreposicao.inicio_comum, sobreposicao.fim_comum)
+
+    if recorte:
+        agente_a = _carregar_agente(
+            par_a["id_parlamentar"], inicio=recorte[0], fim=recorte[1],
+        )
+        agente_b = _carregar_agente(
+            par_b["id_parlamentar"], inicio=recorte[0], fim=recorte[1],
+        )
+        if agente_a is None or agente_b is None:
+            st.error("Não foi possível carregar o recorte de um dos parlamentares.")
+            return
+        st.success(
+            f"Período comparado: **{recorte[0]} a {recorte[1]}** — métricas, "
+            "top fornecedores e anomalias restritos ao intervalo "
+            "(igual para ambos)."
+        )
+        st.caption(
+            f"Janelas completas — A: {janela_a[0] or '?'} a {janela_a[1] or '?'} · "
+            f"B: {janela_b[0] or '?'} a {janela_b[1] or '?'}."
+        )
+        janela_cmp_a = janela_cmp_b = recorte
+    else:
+        agente_a, agente_b = agente_a_full, agente_b_full
+        if modo == "Período comum":
+            st.warning(
+                "Sem sobreposição entre as janelas — exibindo o histórico "
+                "completo de cada um (totais não comparáveis)."
+            )
+        if sobreposicao.inicio_comum and sobreposicao.fim_comum:
+            st.caption(
+                f"Período comum: **{sobreposicao.inicio_comum} a {sobreposicao.fim_comum}** "
+                f"({sobreposicao.pct_cobertura:.0%} de cobertura do menor mandato)"
+            )
+        if (
+            sobreposicao.pct_cobertura < 0.75
+            and sobreposicao.inicio_comum is not None
+        ):
+            st.warning(
+                "⚠ Os parlamentares têm períodos de mandato distintos "
+                f"(A: {sobreposicao.inicio_a}–{sobreposicao.fim_a}, "
+                f"B: {sobreposicao.inicio_b}–{sobreposicao.fim_b}) — "
+                "valores totais não são diretamente comparáveis. "
+                "Veja as métricas abaixo para uma comparação contextual."
+            )
+        janela_cmp_a, janela_cmp_b = janela_a, janela_b
 
     # Cabeçalho com perfis
     col_perfil_a, col_perfil_b = st.columns(2)
@@ -306,42 +413,16 @@ def main() -> None:
             agente_b,
         )
 
-    # Comparabilidade de período
-    sobreposicao = calcular_sobreposicao(
-        agente_a.get("janela_inicio"),
-        agente_a.get("janela_fim"),
-        agente_b.get("janela_inicio"),
-        agente_b.get("janela_fim"),
-    )
-
-    if sobreposicao.inicio_comum and sobreposicao.fim_comum:
-        st.caption(
-            f"Período comum: **{sobreposicao.inicio_comum} a {sobreposicao.fim_comum}** "
-            f"({sobreposicao.pct_cobertura:.0%} de cobertura do menor mandato)"
-        )
-
-    if (
-        sobreposicao.pct_cobertura < 0.75
-        and sobreposicao.inicio_comum is not None
-    ):
-        st.warning(
-            "⚠ Os parlamentares têm períodos de mandato distintos "
-            f"(A: {sobreposicao.inicio_a}–{sobreposicao.fim_a}, "
-            f"B: {sobreposicao.inicio_b}–{sobreposicao.fim_b}) — "
-            "valores totais não são diretamente comparáveis. "
-            "Veja as métricas abaixo para uma comparação contextual."
-        )
-
     st.divider()
 
-    # Métricas comparativas
+    # Métricas comparativas (janelas do modo ativo: recorte ou lifetime)
     _render_metricasComparativas(
         agente_a.get("metricas", {}),
         agente_b.get("metricas", {}),
         agente_a["nome"],
         agente_b["nome"],
-        (agente_a.get("janela_inicio"), agente_a.get("janela_fim")),
-        (agente_b.get("janela_inicio"), agente_b.get("janela_fim")),
+        janela_cmp_a,
+        janela_cmp_b,
     )
 
     st.divider()

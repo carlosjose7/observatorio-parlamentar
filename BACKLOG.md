@@ -1979,3 +1979,20 @@ de pipeline.
   `test_docs_habilitado_por_padrao`, `test_tabela_com_dados_gera_csv`.
 
 **Sprint 20 FECHADA em 2026-09-10.**
+
+---
+
+## Sprint 21 — Batalha mandato x mandato (em andamento)
+
+**Branch:** feat/batalha-periodo-comum → main
+
+- ☑ `GET /agent/parlamentar/{id}?inicio=AAAA-MM&fim=AAAA-MM`:
+  métricas, top-5, anomalias, HHI e risco restritos ao recorte;
+  `janela_*` segue o histórico completo; recorte ecoa em
+  `recorte_inicio/fim` (envelope compatível, campos opcionais).
+- ☑ Batalha com modo de comparação (padrão: período comum) +
+  filtro de ano (anos de interseção) + histórico completo;
+  payloads com `st.cache_data(300)` por (id, recorte).
+- Caso motivador: Marcos Pereira (janela 2019–2026) x Kim Kataguiri
+  (2022–2026) — no período comum ambos comparam 2022-04 a 2026-08
+  (R$ 1,80M x R$ 0,16M no recorte, em vez de lifetime incomparável).

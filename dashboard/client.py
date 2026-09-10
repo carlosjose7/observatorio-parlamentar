@@ -371,9 +371,24 @@ class ApiClient:
 
     # ── Agent (JSON semântico agregado, ADR-032) ─────────────────
 
-    def agent_parlamentar(self, id_parlamentar: int) -> dict[str, Any]:
-        """GET /agent/parlamentar/{id} (métricas + risco + anomalias)."""
-        return self._get(f"/agent/parlamentar/{_codificar_path(id_parlamentar)}")
+    def agent_parlamentar(
+        self, id_parlamentar: int,
+        inicio: str | None = None, fim: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /agent/parlamentar/{id} (métricas + risco + anomalias).
+
+        Sprint 21: `inicio`/`fim` (AAAA-MM) restringem ao recorte
+        (mandato x mandato; um ano = AAAA-01 a AAAA-12).
+        """
+        params: dict[str, Any] = {}
+        if inicio:
+            params["inicio"] = inicio
+        if fim:
+            params["fim"] = fim
+        return self._get(
+            f"/agent/parlamentar/{_codificar_path(id_parlamentar)}",
+            params or None,
+        )
 
     def agent_fornecedor(self, cnpj_cpf_valor: str) -> dict[str, Any]:
         """GET /agent/fornecedor/{cnpj_cpf_valor} (métricas + top parlamentares)."""
