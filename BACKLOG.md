@@ -1993,6 +1993,11 @@ de pipeline.
 - ☑ Batalha com modo de comparação (padrão: período comum) +
   filtro de ano (anos de interseção) + histórico completo;
   payloads com `st.cache_data(300)` por (id, recorte).
+- ☑ Partido/Estado: chave do seletor de ano renomeada (`*_ano_sel`) —
+  colidia com o multiselect de `filtro_periodo` (`DuplicateElementKey`).
+- ☑ Comunidades: `GET /rede/comunidades?periodo=AAAA` — payload integral
+  (862 comunidades, 11,7 MB/39 s) estourava timeout e teto da API;
+  página Rede escopa por ano (default: recente) com 50 nós/comunidade.
 - Caso motivador: Marcos Pereira (janela 2019–2026) x Kim Kataguiri
   (2022–2026) — no período comum ambos comparam 2022-04 a 2026-08
   (R$ 1,80M x R$ 0,16M no recorte, em vez de lifetime incomparável).

@@ -175,10 +175,26 @@ def _rede_do_parlamentar(id_parlamentar: int) -> None:
 
 
 def _comunidades() -> None:
-    """Comunidades detectadas no grafo (ADR-030)."""
+    """Comunidades detectadas no grafo (ADR-030).
+
+    Sprint 21: escopo por ano (default = mais recente) + teto de 50
+    nós/comunidade — o payload integral 2015–2026 (~860 comunidades)
+    estourava o timeout de 30 s e o limite de 10 MB da API.
+    """
     st.subheader("Comunidades detectadas")
+    serie = carregar_com_feedback(
+        lambda: ApiClient().despesas_no_tempo(),
+        spinner="",
+    )
+    anos = sorted(
+        {int(i["periodo"][:4]) for i in (serie or {}).get("itens", []) if i.get("periodo")},
+        reverse=True,
+    )
+    ano = None
+    if anos:
+        ano = st.selectbox("Ano do grafo", anos, key="rede_com_ano")
     payload = carregar_com_feedback(
-        client.comunidades,
+        lambda: client.comunidades(limite_nos=50, periodo=ano),
         spinner="Carregando comunidades...",
     )
     if payload is None:

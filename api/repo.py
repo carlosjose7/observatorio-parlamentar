@@ -828,7 +828,9 @@ def obter_rede_fornecedor(id_fornecedor: int) -> RedeFornecedor | None:
 
 
 @_tratar_erro_gold
-def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
+def listar_comunidades(
+    limite_nos: int = 200, periodo: int | None = None,
+) -> ListaComunidades:
     """Comunidades do grafo materializado (`network_nodes`, ADR-030) + nomes.
 
     Agrupa os nós por `(comunidade_id, periodo)` obtidos da Gold e resolve o
@@ -839,7 +841,13 @@ def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
     Gate 3 (auditoria Sprint 7): `limite_nos` limita os nós por comunidade
     (top por pagerank) para o payload nunca explodir com grafos reais —
     o teto é enforced no SQL, não apenas na exibição.
+
+    Sprint 21: `periodo` (ano) opcional — após o rebuild 2015–2026 o
+    grafo tem ~860 comunidades e o payload integral estourou 10 MB/30 s
+    (timeout do dashboard). Escopar por ano reduz ~12x.
     """
+    filtro_periodo = " and nn.periodo = ?" if periodo is not None else ""
+    params: list[object] = [periodo] if periodo is not None else []
     with _conexao() as con:
         linhas = con.execute(
             """
@@ -859,11 +867,14 @@ def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
                        and dp.is_current
                 left join dim_fornecedor df
                     on nn.tipo_no = 'fornecedor' and df.id_fornecedor = nn.id_no
+                where 1 = 1"""
+            + filtro_periodo
+            + """
             ) sub
             where sub.rn <= ?
             order by periodo desc, comunidade_id, tipo_no, id_no
             """,
-            [limite_nos],
+            [*params, limite_nos],
         ).fetchall()
 
     grupos: dict[tuple[int, int], dict] = {}

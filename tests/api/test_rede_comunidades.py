@@ -39,6 +39,22 @@ def test_no_tem_metricas_materializadas(_cliente):
     assert parlamentar["degree_centrality"] == 3.0
 
 
+def test_comunidades_filtram_por_periodo(_cliente):
+    """`?periodo=` restringe ao ano do grafo (Sprint 21).
+
+    Sem ele o payload integral 2015–2026 estourou 10 MB/30 s no
+    dashboard — a página Rede agora escopa por ano (default: recente).
+    """
+    corpo = _cliente.get("/rede/comunidades", params={"periodo": 2023}).json()
+    assert corpo["total"] == 1
+    assert corpo["itens"][0]["comunidade_id"] == 7
+    assert corpo["itens"][0]["periodo"] == 2023
+
+    vazio = _cliente.get("/rede/comunidades", params={"periodo": 2020}).json()
+    assert vazio["total"] == 0
+    assert vazio["itens"] == []
+
+
 def test_gold_indisponivel_503_comunidades(tmp_path, monkeypatch):
     monkeypatch.setenv("DUCKDB_DATABASE_PATH", str(tmp_path / "inexistente.duckdb"))
     load_env_settings.cache_clear()
