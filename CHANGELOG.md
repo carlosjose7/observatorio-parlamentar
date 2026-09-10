@@ -8,6 +8,16 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — pipeline parado + CNPJ nulo (10/09/2026)
+
+### Corrigido
+- **Infra:** spawn do pipeline negado pelo SELinux (4 dias em 203/EXEC);
+  contexto `bin_t` + regra fcontext, reaplicados pelo `deploy.sh`.
+- **Pipeline:** `resolve_tipo_documento` aceita CNPJ nulo/NaN (ADR-011),
+  destravando `executar_silver`.
+
+---
+
 ## Sprint 20 — Correções pós-QA (10/09/2026)
 
 ### Corrigido
