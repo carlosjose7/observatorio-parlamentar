@@ -106,10 +106,14 @@ def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "fonte": ["camara"] * n,
-            "id_parlamentar": df_bronze["id_deputado"].astype("int64"),
+            # Int64 nulável (padrão de id_legislatura_fonte): Bronze novo
+            # traz id/ano/mês nulos — nulo flui p/ quarentena no gate
+            # Pandera em vez de derrubar a carga (IntCastingNaNError,
+            # 10/09/2026, 3 runs falhos em executar_silver).
+            "id_parlamentar": df_bronze["id_deputado"].astype("Int64"),
             "nome_parlamentar": pd.Series([None] * n, dtype="object"),
-            "ano": df_bronze["ano"].astype("int64"),
-            "mes": df_bronze["mes"].astype("int64"),
+            "ano": df_bronze["ano"].astype("Int64"),
+            "mes": df_bronze["mes"].astype("Int64"),
             "cod_documento": df_bronze["cod_documento"].astype(str),
             "data_documento": pd.to_datetime(
                 df_bronze["data_documento"].map(parse_date_multi_format)
@@ -190,7 +194,7 @@ def construir_silver_parlamentar(df_bronze: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "fonte": ["camara"] * n,
-            "id_parlamentar": df_bronze["id_deputado"].astype("int64"),
+            "id_parlamentar": df_bronze["id_deputado"].astype("Int64"),
             "nome": df_bronze["nome_eleitoral"].fillna(df_bronze["nome_civil"]),
             "sigla_partido": df_bronze["sigla_partido"],
             "sigla_uf": df_bronze["sigla_uf"],

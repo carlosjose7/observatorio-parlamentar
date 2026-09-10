@@ -20,5 +20,11 @@ USER airflow
 RUN pip install --no-cache-dir \
     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt" \
     -e ".[pipeline,analytics]"
+# duckdb ACIMA do pin do constraints (1.0.0 → 1.5.5, pyproject): o storage
+# do Gold é 1.5.5 e o formato quebra entre minors ("field id mismatch" no
+# checkpoint, 10/09/2026). Constraints vazio só nesta camada para não
+# reabrir o backtracking do resolver acima. dbt-duckdb 1.8 aceita
+# `duckdb>=1.0.0` sem teto — compatível.
+RUN PIP_CONSTRAINT=/dev/null pip install --no-cache-dir "duckdb==1.5.5"
 
 ENV PYTHONPATH=/opt/airflow:$PYTHONPATH

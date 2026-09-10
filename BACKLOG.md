@@ -1993,3 +1993,11 @@ de pipeline.
   Bronze novo trouxe `cnpj_cpf_fornecedor` nulo (NaN) e
   `resolve_tipo_documento` quebrava no `.strip()`. ADR-011 já manda
   ausência = `(None, None)` — implementado p/ NaN/int/bool/float.
+- ☑ Em cadeia, o mesmo Bronze nulo quebrou `parse_date_multi_format`
+  e irmãs (`normalize.py`, ADR-016 "nunca lança") + `astype(int64)`
+  em 6 casts de `camara/senado/transform.py` (→ `Int64` nulável,
+  nulo flui p/ quarentena) — guard único `_texto_ou_none`.
+- ☑ Sopa de versões duckdb (scheduler 1.0.0 x Gold 1.5.5) quebrava o
+  checkpoint ("field id mismatch"): pin único `duckdb==1.5.5`
+  (pyproject `api` + upgrade pós-constraints no `pipeline/Dockerfile`;
+  dbt-duckdb 1.8 aceita `>=1.0.0` sem teto).
