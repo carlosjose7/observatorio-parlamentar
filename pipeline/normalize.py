@@ -40,6 +40,27 @@ _ANO_MINIMO_PLAUSIVEL = 2012
 _ANO_MAXIMO_PLAUSIVEL = 2100
 
 
+def _texto_ou_none(valor: object) -> str | None:
+    """Normaliza entrada de parser para `str` estrita ou `None`.
+
+    O Bronze novo traz campos ausentes como NaN (float) — `NaN.strip()`
+    derrubava as cargas Silver (10/09/2026, 3 runs falhos). NaN, None,
+    bool e tipos inesperados = ausência (`None`); int vira dígitos;
+    str segue para `.strip()` no chamador. Nunca lança.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, int):
+        return str(valor)
+    if isinstance(valor, float):
+        return None  # NaN ou decimal — nunca documento/data válidos
+    if isinstance(valor, str):
+        return valor
+    return None
+
+
 def _ano_plausivel(ano: int) -> bool:
     """Ano dentro do intervalo aceito pelas fontes (2012..2100)."""
     return _ANO_MINIMO_PLAUSIVEL <= ano <= _ANO_MAXIMO_PLAUSIVEL
@@ -64,11 +85,12 @@ def parse_date_multi_format(
     Returns:
         Objeto `date`, ou `None` se não for possível interpretar.
     """
-    if not valor or not valor.strip():
+    texto = _texto_ou_none(valor)
+    if not texto or not texto.strip():
         return None
+    texto = texto.strip()
 
     candidatos = formatos or (*_ISO_FORMATS, _PTBR_FORMAT)
-    texto = valor.strip()
 
     for fmt in candidatos:
         try:
@@ -102,9 +124,10 @@ def parse_decimal_ptbr(valor: str | None) -> Decimal | None:
     Returns:
         `Decimal` ou `None` se a string não for interpretável.
     """
-    if valor is None:
+    texto = _texto_ou_none(valor)
+    if texto is None:
         return None
-    texto = valor.strip()
+    texto = texto.strip()
     if not texto:
         return None
 
@@ -140,9 +163,10 @@ def clean_document_number(valor: str | None) -> str | None:
     Returns:
         String com apenas dígitos, ou `None` se vazio.
     """
-    if not valor or not valor.strip():
+    texto = _texto_ou_none(valor)
+    if not texto or not texto.strip():
         return None
-    digitos = "".join(char for char in valor.strip() if char.isdigit())
+    digitos = "".join(char for char in texto.strip() if char.isdigit())
     if not digitos:
         return None
     return digitos
@@ -162,9 +186,10 @@ def normalizar_nome_proprio(valor: str | None) -> str | None:
     Returns:
         Nome em maiúsculas sem acentos, ou `None` se vazio.
     """
-    if not valor or not valor.strip():
+    texto = _texto_ou_none(valor)
+    if not texto or not texto.strip():
         return None
-    maiusculos = valor.strip().upper()
+    maiusculos = texto.strip().upper()
     decomposto = unicodedata.normalize("NFD", maiusculos)
     return "".join(
         char for char in decomposto if not unicodedata.combining(char)

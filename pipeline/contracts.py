@@ -92,7 +92,20 @@ def resolve_tipo_documento(cnpj_cpf_raw: str | None) -> tuple[str | None, TipoDo
         de CPF antes de persistir — esta função apenas classifica, não
         realiza o hash.
     """
-    if not cnpj_cpf_raw or not cnpj_cpf_raw.strip():
+    if cnpj_cpf_raw is None:
+        return None, None
+    if not isinstance(cnpj_cpf_raw, str):
+        # Ausência vinda do pandas (NaN float) ou número puro: NaN =
+        # nulo; int = dígitos. Qualquer outro tipo = nulo — nunca cria
+        # identidade fantasma (regressão 10/09/2026: Bronze com CNPJ
+        # nulo derrubava executar_silver com AttributeError em .strip()).
+        if isinstance(cnpj_cpf_raw, bool):
+            return None, None
+        if isinstance(cnpj_cpf_raw, int):
+            cnpj_cpf_raw = str(cnpj_cpf_raw)
+        else:
+            return None, None
+    if not cnpj_cpf_raw.strip():
         return None, None
 
     digits = "".join(char for char in cnpj_cpf_raw if char.isdigit())

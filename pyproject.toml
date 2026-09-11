@@ -28,7 +28,11 @@ dependencies = [
 api = [
     "fastapi[standard]>=0.110.0",
     "uvicorn[standard]>=0.29.0",
-    "duckdb>=1.0.0",
+    # REGRA: duckdb com pin exato e ÚNICO em todos os grupos/imagens —
+    # o formato de storage quebra entre minors e o scheduler (1.0.0)
+    # parou de escrever no Gold gerado como 1.5.5 (Sprint 20/21,
+    # "field id mismatch" no checkpoint). Nunca relaxar para >=.
+    "duckdb==1.5.5",
 ]
 pipeline = [
     "apache-airflow[postgres]==2.9.3",
@@ -38,6 +42,10 @@ pipeline = [
     # `Capability.MicrobatchConcurrency` — E2E HML 21/08/2026).
     "dbt-core~=1.8.0",
     "dbt-duckdb~=1.8.0",
+    # Intencionalmente >= aqui (e NÃO ==): o constraints do Airflow fixa
+    # duckdb==1.0.0 e o build falharia em ResolutionImpossible. A versão
+    # efetiva de produção é imposta no pipeline/Dockerfile (upgrade para
+    # ==1.5.5 com constraints vazio) — ver REGRA no grupo `api`.
     "duckdb>=1.0.0",
     "minio>=7.2.0",
     "pandera>=0.18.0",

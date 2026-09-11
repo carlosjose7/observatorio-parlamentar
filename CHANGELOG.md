@@ -8,6 +8,18 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — pipeline parado + CNPJ nulo (10/09/2026)
+
+### Corrigido
+- **Infra:** spawn do pipeline negado pelo SELinux (4 dias em 203/EXEC);
+  contexto `bin_t` + regra fcontext, reaplicados pelo `deploy.sh`.
+- **Pipeline:** `resolve_tipo_documento` e parsers de `normalize.py`
+  aceitam NaN (ADR-011/016), casts `Int64` nuláveis com quarentena, e
+  pin único `duckdb==1.5.5` (fim da sopa de versões no checkpoint) —
+  destravando `executar_silver`.
+
+---
+
 ## Sprint 20 — Correções pós-QA (10/09/2026)
 
 ### Corrigido

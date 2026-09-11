@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from pipeline.normalize import (
     clean_document_number,
+    normalizar_nome_proprio,
     parse_date_multi_format,
     parse_decimal_ptbr,
 )
@@ -106,3 +107,27 @@ class TestCleanDocumentNumber:
 
     def test_somente_simbolos_retorna_none(self):
         assert clean_document_number("---/...") is None
+
+
+class TestEntradasNaoStringRegressao1009:
+    """NaN/int vindos do Bronze novo não derrubam a Silver (10/09/2026).
+
+    `executar_silver` falhou 3x: `.strip()` em float via
+    `parse_date_multi_format` (e irmãs). "Nunca lança" (ADR-016) agora
+    vale também para NaN — ausência vira `None` (quarentena).
+    """
+
+    def test_nan_em_todos_os_parsers_retorna_none(self):
+        nan = float("nan")
+        assert parse_date_multi_format(nan) is None
+        assert parse_decimal_ptbr(nan) is None
+        assert clean_document_number(nan) is None
+        assert normalizar_nome_proprio(nan) is None
+
+    def test_bool_e_float_nao_documento_retornam_none(self):
+        assert clean_document_number(True) is None
+        assert normalizar_nome_proprio(12.5) is None
+        assert parse_decimal_ptbr(12.5) is None
+
+    def test_int_vira_texto(self):
+        assert clean_document_number(11222333000181) == "11222333000181"
