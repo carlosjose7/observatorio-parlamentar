@@ -2001,3 +2001,27 @@ de pipeline.
   checkpoint ("field id mismatch"): pin único `duckdb==1.5.5`
   (pyproject `api` + upgrade pós-constraints no `pipeline/Dockerfile`;
   dbt-duckdb 1.8 aceita `>=1.0.0` sem teto).
+
+---
+
+## Hotfix — StreamlitDuplicateElementKey em Partido/Estado (13/09/2026)
+
+**Branch:** fix/streamlit-duplicate-key-partido-estado → main
+
+- ☑ Causa raiz (log de produção + leitura de código): em
+  `dashboard/pages/03_partido.py` o `st.selectbox("Ano")` usa
+  `key=f"partido_{partido}_ano"`, e `filtro_periodo(df_serie,
+  key_prefix=f"partido_{partido}")` monta internamente
+  `key=f"{key_prefix}_ano"` (`dashboard/ui.py`) — a mesma string.
+  Dois widgets com a mesma key → `StreamlitDuplicateElementKey`,
+  e a página quebra sempre que a série mensal não está vazia.
+  `04_estado.py` tem o clone exato do bug (`uf_{uf}` no lugar de
+  `partido_{partido}`).
+- ☑ Corrigido: `key_prefix` da série virou `partido_{partido}_serie`
+  / `uf_{uf}_serie` (2 linhas, sem mudança de contrato de API,
+  sem ADR).
+- ☑ Regressão via Streamlit `AppTest` (`ruff`/`py_compile` não pegam
+  colisão de key, só um run real do app pega):
+  `tests/dashboard/test_partido_estado_appstate.py` (4 casos) com
+  `ApiClient` mockado e série mensal não vazia — `at.exception`
+  vazio nas duas páginas + troca de partido/UF entre reruns.
