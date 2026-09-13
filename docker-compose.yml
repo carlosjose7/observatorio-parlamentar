@@ -163,6 +163,11 @@ services:
       - ./pipeline:/opt/airflow/pipeline
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
+      # Task logs fora do container efêmero (diagnóstico 09/2026: o
+      # gold_core morreu sem deixar traceback — scheduler do perfil
+      # pipeline é removido ao final de cada run). Só tem efeito no
+      # próximo `up`; nada é reiniciado por este diff.
+      - ./logs/airflow:/opt/airflow/logs
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -206,6 +211,9 @@ services:
       - ./analytics:/opt/airflow/analytics
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
+      # Idem webserver: o scheduler (único executor de tasks no perfil
+      # pipeline) escreve aqui; o webserver só lê para exibir na UI.
+      - ./logs/airflow:/opt/airflow/logs
     depends_on:
       postgres:
         condition: service_healthy
