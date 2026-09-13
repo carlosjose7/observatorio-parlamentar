@@ -119,8 +119,25 @@ def _rodar_dbt(selecao: str | None, exclusao: str | None, rotulo: str) -> str:
             filter(bool, (str(GOLD), os.environ.get("PYTHONPATH", "")))
         ),
     }
-    subprocess.run([sys.executable, "-c", "".join(argumentos)], env=env, check=True)
-    logger.info("dbt_build_ok", etapa=rotulo)
+    resultado = subprocess.run(
+        [sys.executable, "-u", "-c", "".join(argumentos)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if resultado.returncode != 0:
+        logger.error(
+            "dbt_build_falhou",
+            etapa=rotulo,
+            returncode=resultado.returncode,
+            stdout_tail=resultado.stdout[-4000:],
+            stderr_tail=resultado.stderr[-4000:],
+        )
+        raise RuntimeError(
+            f"dbt build ({rotulo}) falhou com exit {resultado.returncode}: "
+            f"{(resultado.stderr or resultado.stdout or '(sem output, nem com -u)')[-2000:]}"
+        )
+    logger.info("dbt_build_ok", etapa=rotulo, stdout_tail=resultado.stdout[-500:])
     return rotulo
 
 
