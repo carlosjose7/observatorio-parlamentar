@@ -2880,3 +2880,104 @@ Consequências:
 - Deploy de `main` na VPS (prod) não muda; nada é desligado.
 - PRs de dashboard/site ficam mais rápidos; o risco é coberto pelo
   smoke pós-merge (Seção 5 do guia) + contrato 22/22 no CI.
+
+---
+
+ADR-049
+Título: Recorte AAAA-MM em GET /agent/parlamentar/{id} (Batalha mandato x mandato)
+
+Status:
+Proposto — branch feat/batalha-periodo-comum (revisão antes do merge)
+
+Contexto:
+O ADR-047 corrigiu a janela para per-parlamentar e elegeu a média anual
+como métrica comparável, mas a comparação lifetime segue incomparável
+quando os mandatos diferem. Caso motivador: Marcos Pereira (janela
+2019–2026) x Kim Kataguiri (2022–2026) — comparar lifetimes soma
+R$ 1,80M x R$ 0,16M sem normalização efetiva; no período comum
+(2022-04 a 2026-08) a comparação é honesta.
+
+Decisão:
+1. `GET /agent/parlamentar/{id}` ganha `?inicio=AAAA-MM&fim=AAAA-MM`
+   (`Query` com pattern, `inicio > fim` → 422). Com recorte, métricas,
+   top-5, anomalias, HHI e risco restringem-se ao intervalo;
+   `janela_*` segue o histórico completo (lifetime) e o recorte ecoa
+   em `recorte_inicio/fim` (`api/schemas/agent.py`, opcionais com
+   default None). Envelope retrocompatível, sem versionamento de
+   path: sem params, o comportamento é idêntico ao anterior (janela
+   per-ID, ADR-047). Consumidores atuais (`08_ml.py`, `12_batalha.py`,
+   agentes via ADR-032) não precisam de adaptação.
+2. Granularidade dividida (limitação assumida, não bug): métricas,
+   anomalias e top usam precisão de mês (`data_sk` entre AAAA-MM-01
+   e AAAA-MM-31); HHI (`supplier_concentration.ano`) e risco
+   (`risk_scores.periodo`) usam precisão de ano — as tabelas-fonte
+   são anuais. Um recorte 2022-04..2026-08 retorna métricas dos meses
+   exatos, mas HHI/risco dos anos 2022..2026 cheios.
+3. HHI/risco no recorte = linha mais recente DENTRO dele, não
+   agregação. Recorte sem despesas: zeros honestos (`num_transacoes`
+   0, `total_gasto` None, `top_fornecedores` [], `risco` None) —
+   mesma semântica de vazio já praticada; dashboard renderiza "—".
+4. Recorte unilateral (só `inicio` ou só `fim`) é válido e aberto do
+   outro lado; só o intervalo invertido é 422.
+5. Na Batalha (`12_batalha.py`), modos de comparação — "Período
+   comum" (padrão), "Ano específico" (anos de interseção) e
+   "Histórico completo" — via `?inicio=&fim=`, com cache 300s por
+   (id, recorte). O caption do recorte declara as duas proveniências
+   (meses exatos vs. anos cheios) e um aviso aparece sempre que o
+   recorte não alinha com ano cheio.
+6. Testes de contrato exigidos (já na branch):
+   `test_agent_recorte_mes_restringe_metricas`,
+   `test_agent_recorte_sem_dados_e_valores_nulos`,
+   `test_agent_recorte_hhi_risco_no_intervalo`,
+   `test_agent_recorte_invalido_422` em
+   `tests/integration/test_api_gold_contrato.py`.
+
+Consequências:
+- Semântica dupla `janela_*` (lifetime) vs `recorte_*` (slice):
+  consumidores devem ler `recorte_*` quando presente — mesma classe
+  de misreading do ADR-047; captions do dashboard exibem o recorte
+  explicitamente, nunca só a janela.
+- A limitação de granularidade (item 2) consta no caption da Batalha
+  quando o recorte não começa em janeiro/termina em dezembro.
+- `risco: None` em recorte sem linha de risco exige o fallback "—"
+  já existente — sem ele a página quebra.
+- O escopo anual de `GET /rede/comunidades` é objeto do ADR-050
+  (outro endpoint, outro problema).
+- BACKLOG.md e CHANGELOG.md atualizados ao fechamento da sprint.
+
+---
+
+ADR-050
+Título: Escopo anual em GET /rede/comunidades (?periodo=AAAA)
+
+Status:
+Proposto — branch feat/batalha-periodo-comum (revisão antes do merge)
+
+Contexto:
+Após o rebuild 2015–2026 o grafo materializado (`network_nodes`,
+ADR-030) tem ~860 comunidades; o payload integral de
+`GET /rede/comunidades` (11,7 MB/39 s) estoura o timeout de 30 s e o
+teto de resposta da API, quebrando a página Rede. O Gold já agrega
+por `(comunidade_id, periodo)` — o endpoint só não expunha o filtro.
+É problema de escalabilidade de payload, não de comparação de
+mandatos (única relação com o ADR-049 é a sprint).
+
+Decisão:
+1. `GET /rede/comunidades` ganha `?periodo=AAAA` (opcional,
+   2000–2100); sem ele, comportamento idêntico ao anterior. O filtro
+   é aplicado no SQL (`where nn.periodo = ?`), antes do top-N por
+   pagerank — o teto `limite_nos` (Gate 3, auditoria Sprint 7) segue
+   enforced na consulta, nunca na exibição.
+2. A página Rede (`06_rede.py`) escopa por ano (default: mais
+   recente), 50 nós/comunidade; `ApiClient.comunidades(limite_nos,
+   periodo)`.
+3. Teste de contrato: filtro em `tests/api/test_rede_comunidades.py`
+   (já na branch).
+
+Consequências:
+- Comparar comunidades entre anos exige N chamadas (uma por ano); o
+  endpoint não agrega multi-ano — decisão consciente: o caso de uso
+  da página é o retrato anual.
+- Payload cai ~12x (11,7 MB → ~658 KB no ano recente), voltando a
+  caber no timeout.
+- BACKLOG.md e CHANGELOG.md atualizados ao fechamento da sprint.

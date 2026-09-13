@@ -8,6 +8,17 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 21 — Batalha mandato x mandato (em andamento)
+
+### Adicionado
+- **API:** `GET /agent/parlamentar/{id}` aceita `?inicio=AAAA-MM&fim=AAAA-MM`
+  (opcionais; `inicio>fim` → 422) restringindo métricas, top, anomalias,
+  HHI e risco ao recorte; `recorte_inicio/fim` no envelope.
+- **Dashboard:** Batalha com modos Período comum (padrão), Ano específico
+  e Histórico completo; recorte com cache de 5 min.
+
+---
+
 ## Hotfix — StreamlitDuplicateElementKey em Partido/Estado (13/09/2026)
 
 ### Corrigido

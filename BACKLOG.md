@@ -2025,3 +2025,25 @@ de pipeline.
   `tests/dashboard/test_partido_estado_appstate.py` (4 casos) com
   `ApiClient` mockado e série mensal não vazia — `at.exception`
   vazio nas duas páginas + troca de partido/UF entre reruns.
+
+---
+
+## Sprint 21 — Batalha mandato x mandato (em andamento)
+
+**Branch:** feat/batalha-periodo-comum → main
+
+- ☑ `GET /agent/parlamentar/{id}?inicio=AAAA-MM&fim=AAAA-MM`:
+  métricas, top-5, anomalias, HHI e risco restritos ao recorte;
+  `janela_*` segue o histórico completo; recorte ecoa em
+  `recorte_inicio/fim` (envelope compatível, campos opcionais).
+- ☑ Batalha com modo de comparação (padrão: período comum) +
+  filtro de ano (anos de interseção) + histórico completo;
+  payloads com `st.cache_data(300)` por (id, recorte).
+- ☑ Partido/Estado: chave do seletor de ano renomeada (`*_ano_sel`) —
+  colidia com o multiselect de `filtro_periodo` (`DuplicateElementKey`).
+- ☑ Comunidades: `GET /rede/comunidades?periodo=AAAA` — payload integral
+  (862 comunidades, 11,7 MB/39 s) estourava timeout e teto da API;
+  página Rede escopa por ano (default: recente) com 50 nós/comunidade.
+- Caso motivador: Marcos Pereira (janela 2019–2026) x Kim Kataguiri
+  (2022–2026) — no período comum ambos comparam 2022-04 a 2026-08
+  (R$ 1,80M x R$ 0,16M no recorte, em vez de lifetime incomparável).

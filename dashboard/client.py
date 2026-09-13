@@ -285,13 +285,20 @@ class ApiClient:
 
     # ── Rede ─────────────────────────────────────────────────────
 
-    def comunidades(self, limite_nos: int = 200) -> dict[str, Any]:
+    def comunidades(
+        self, limite_nos: int = 200, periodo: int | None = None,
+    ) -> dict[str, Any]:
         """GET /rede/comunidades (comunidades detectadas no grafo).
 
         `limite_nos` limita os nós por comunidade (Gate 3, auditoria Sprint 7)
         — a API aplica o teto na consulta, nunca no cliente.
+        Sprint 21: `periodo` (ano) escopa o grafo — o payload integral
+        2015–2026 estoura timeout/limite de resposta.
         """
-        return self._get("/rede/comunidades", {"limite_nos": limite_nos})
+        params: dict[str, Any] = {"limite_nos": limite_nos}
+        if periodo:
+            params["periodo"] = periodo
+        return self._get("/rede/comunidades", params)
 
     def rede_fornecedor(self, id_fornecedor: int) -> dict[str, Any]:
         """GET /rede/fornecedores/{id} (parlamentares conectados ao fornecedor)."""
@@ -371,9 +378,24 @@ class ApiClient:
 
     # ── Agent (JSON semântico agregado, ADR-032) ─────────────────
 
-    def agent_parlamentar(self, id_parlamentar: int) -> dict[str, Any]:
-        """GET /agent/parlamentar/{id} (métricas + risco + anomalias)."""
-        return self._get(f"/agent/parlamentar/{_codificar_path(id_parlamentar)}")
+    def agent_parlamentar(
+        self, id_parlamentar: int,
+        inicio: str | None = None, fim: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /agent/parlamentar/{id} (métricas + risco + anomalias).
+
+        Sprint 21: `inicio`/`fim` (AAAA-MM) restringem ao recorte
+        (mandato x mandato; um ano = AAAA-01 a AAAA-12).
+        """
+        params: dict[str, Any] = {}
+        if inicio:
+            params["inicio"] = inicio
+        if fim:
+            params["fim"] = fim
+        return self._get(
+            f"/agent/parlamentar/{_codificar_path(id_parlamentar)}",
+            params or None,
+        )
 
     def agent_fornecedor(self, cnpj_cpf_valor: str) -> dict[str, Any]:
         """GET /agent/fornecedor/{cnpj_cpf_valor} (métricas + top parlamentares)."""

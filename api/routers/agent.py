@@ -13,7 +13,7 @@ Fronteiras de erro idênticas às ondas anteriores: Gold ausente/desatualizada �
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from api.repo import (
     GoldIndisponivel,
@@ -40,9 +40,30 @@ def _erro_gold(endpoint: str, exc: Exception) -> HTTPException:
 
 
 @router.get("/parlamentar/{id_parlamentar}", response_model=AgentParlamentar)
-def get_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar:
+def get_agente_parlamentar(
+    id_parlamentar: int,
+    inicio: str | None = Query(
+        default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+        description="Recorte a partir de AAAA-MM (ex: 2023-01)",
+    ),
+    fim: str | None = Query(
+        default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+        description="Recorte até AAAA-MM (ex: 2023-12)",
+    ),
+) -> AgentParlamentar:
+    """Contexto do parlamentar, opcionalmente restrito ao recorte.
+
+    Sprint 21 (mandato x mandato): `?inicio=AAAA-MM&fim=AAAA-MM`
+    restringe métricas/top/anomalias/HHI/risco ao intervalo — um ano
+    específico é `inicio=AAAA-01&fim=AAAA-12`. `janela_*` segue global
+    do histórico; o recorte ecoa em `recorte_inicio/fim`.
+    """
+    if inicio and fim and inicio > fim:
+        raise HTTPException(
+            status_code=422, detail="inicio deve ser anterior ou igual a fim (AAAA-MM)",
+        )
     try:
-        resultado = obter_agente_parlamentar(id_parlamentar)
+        resultado = obter_agente_parlamentar(id_parlamentar, inicio=inicio, fim=fim)
     except GoldIndisponivel as exc:
         raise _erro_gold("agent_parlamentar", exc)
     if resultado is None:

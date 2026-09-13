@@ -34,9 +34,13 @@ def _erro_gold(endpoint: str, exc: Exception) -> HTTPException:
 @router.get("/comunidades", response_model=ListaComunidades)
 def get_comunidades(
     limite_nos: int = Query(default=200, ge=1, le=1000),
+    periodo: int | None = Query(
+        default=None, ge=2000, le=2100,
+        description="Filtra pelo ano do grafo (None = todos; recomendado: ano recente)",
+    ),
 ) -> ListaComunidades:
     try:
-        return listar_comunidades(limite_nos=limite_nos)
+        return listar_comunidades(limite_nos=limite_nos, periodo=periodo)
     except GoldIndisponivel as exc:
         raise _erro_gold("rede_comunidades", exc)
 

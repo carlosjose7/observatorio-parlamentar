@@ -828,7 +828,9 @@ def obter_rede_fornecedor(id_fornecedor: int) -> RedeFornecedor | None:
 
 
 @_tratar_erro_gold
-def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
+def listar_comunidades(
+    limite_nos: int = 200, periodo: int | None = None,
+) -> ListaComunidades:
     """Comunidades do grafo materializado (`network_nodes`, ADR-030) + nomes.
 
     Agrupa os nós por `(comunidade_id, periodo)` obtidos da Gold e resolve o
@@ -839,7 +841,13 @@ def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
     Gate 3 (auditoria Sprint 7): `limite_nos` limita os nós por comunidade
     (top por pagerank) para o payload nunca explodir com grafos reais —
     o teto é enforced no SQL, não apenas na exibição.
+
+    Sprint 21: `periodo` (ano) opcional — após o rebuild 2015–2026 o
+    grafo tem ~860 comunidades e o payload integral estourou 10 MB/30 s
+    (timeout do dashboard). Escopar por ano reduz ~12x.
     """
+    filtro_periodo = " and nn.periodo = ?" if periodo is not None else ""
+    params: list[object] = [periodo] if periodo is not None else []
     with _conexao() as con:
         linhas = con.execute(
             """
@@ -859,11 +867,14 @@ def listar_comunidades(limite_nos: int = 200) -> ListaComunidades:
                        and dp.is_current
                 left join dim_fornecedor df
                     on nn.tipo_no = 'fornecedor' and df.id_fornecedor = nn.id_no
+                where 1 = 1"""
+            + filtro_periodo
+            + """
             ) sub
             where sub.rn <= ?
             order by periodo desc, comunidade_id, tipo_no, id_no
             """,
-            [limite_nos],
+            [*params, limite_nos],
         ).fetchall()
 
     grupos: dict[tuple[int, int], dict] = {}
@@ -996,22 +1007,55 @@ def _agregado_metricas(con, clausula: str, parametros: list[object]) -> tuple:
     ).fetchone()
 
 
+def _faixa_recorte(
+    inicio: str | None, fim: str | None, coluna: str = "data_sk",
+) -> tuple[str, list[object], int | None, int | None]:
+    """Fragmento `and <col> between` para recorte AAAA-MM (Sprint 21).
+
+    `data_sk` é AAAAMMDD inteiro: início vira dia 01, fim vira dia 31
+    (cobre todos os meses). Devolve (cláusula, params, ano_ini, ano_fim)
+    — cláusula vazia e anos None quando sem recorte.
+    """
+    clausula = ""
+    params: list[object] = []
+    ano_ini = int(inicio[:4]) if inicio else None
+    ano_fim = int(fim[:4]) if fim else None
+    if inicio:
+        clausula += f" and {coluna} >= ?"
+        params.append(int(inicio.replace("-", "") + "01"))
+    if fim:
+        clausula += f" and {coluna} <= ?"
+        params.append(int(fim.replace("-", "") + "31"))
+    return clausula, params, ano_ini, ano_fim
+
+
 @_tratar_erro_gold
-def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
+def obter_agente_parlamentar(
+    id_parlamentar: int, *, inicio: str | None = None, fim: str | None = None,
+) -> AgentParlamentar | None:
     """Contexto semântico agregado de um parlamentar (ADR-032).
 
     Reúne perfil vigente (SCD2), métricas §8, `hhi` recente
     (`supplier_concentration`), scores do período mais recente
     (`risk_scores`), contagem de anomalias e top-5 fornecedores por valor.
     Parlamentar inexistente → `None` (router responde 404).
+
+    Sprint 21 (mandato x mandato): `inicio`/`fim` (AAAA-MM) restringem
+    métricas, top, anomalias, HHI e risco ao recorte — `janela_*`
+    continua refletindo o histórico completo. Sem recorte, comportamento
+    idêntico ao anterior (janela per-ID, ADR-047).
     """
     perfil = obter_perfil_parlamentar(id_parlamentar)
     if perfil is None:
         return None
 
+    faixa, params_faixa, ano_ini, ano_fim = _faixa_recorte(inicio, fim)
+    faixa_fd = _faixa_recorte(inicio, fim, "fd.data_sk")[0]
     with _conexao() as con:
         total, medio, n_transacoes, n_fornecedores, maximo, mediano, p95 = (
-            _agregado_metricas(con, "id_parlamentar = ?", [id_parlamentar])
+            _agregado_metricas(
+                con, f"id_parlamentar = ?{faixa}", [id_parlamentar, *params_faixa],
+            )
         )
         janela = con.execute(
             "select min(data_sk), max(data_sk) from fact_despesa"
@@ -1020,29 +1064,40 @@ def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
         ).fetchone()
         hhi_linha = con.execute(
             "select ano, hhi from supplier_concentration"
-            " where id_parlamentar = ? order by ano desc limit 1",
-            [id_parlamentar],
+            " where id_parlamentar = ?"
+            + (" and ano >= ?" if ano_ini is not None else "")
+            + (" and ano <= ?" if ano_fim is not None else "")
+            + " order by ano desc limit 1",
+            [id_parlamentar]
+            + ([ano_ini] if ano_ini is not None else [])
+            + ([ano_fim] if ano_fim is not None else []),
         ).fetchone()
         risco_linha = con.execute(
             "select periodo, supplier_concentration_score, political_exposure_score,"
             " supplier_dependency_score, expense_anomaly_score,"
             " network_influence_score, risk_index"
-            " from risk_scores where id_parlamentar = ? order by periodo desc limit 1",
-            [id_parlamentar],
+            " from risk_scores where id_parlamentar = ?"
+            + (" and periodo >= ?" if ano_ini is not None else "")
+            + (" and periodo <= ?" if ano_fim is not None else "")
+            + " order by periodo desc limit 1",
+            [id_parlamentar]
+            + ([ano_ini] if ano_ini is not None else [])
+            + ([ano_fim] if ano_fim is not None else []),
         ).fetchone()
         num_anomalias = con.execute(
-            "select count(*) from expense_outliers where id_parlamentar = ?",
-            [id_parlamentar],
+            "select count(*) from expense_outliers where id_parlamentar = ?"
+            + faixa,
+            [id_parlamentar, *params_faixa],
         ).fetchone()[0]
         top_linhas = con.execute(
             "select fd.id_fornecedor, df.nome_fornecedor,"
             " sum(fd.valor_liquido) as total_gasto, count(*) as num_transacoes"
             " from fact_despesa fd"
             " join dim_fornecedor df on df.id_fornecedor = fd.id_fornecedor"
-            " where fd.id_parlamentar = ?"
+            f" where fd.id_parlamentar = ?{faixa_fd}"
             " group by fd.id_fornecedor, df.nome_fornecedor"
             " order by total_gasto desc limit 5",
-            [id_parlamentar],
+            [id_parlamentar, *params_faixa],
         ).fetchall()
 
     risco = (
@@ -1084,6 +1139,8 @@ def obter_agente_parlamentar(id_parlamentar: int) -> AgentParlamentar | None:
         periodo_vigente_desde=perfil.effective_date.isoformat(),
         janela_inicio=_mes_de_data_sk(janela[0]) if janela else None,
         janela_fim=_mes_de_data_sk(janela[1]) if janela else None,
+        recorte_inicio=inicio,
+        recorte_fim=fim,
         metricas=metricas,
         risco=risco,
         anomalias=AnomaliasParlamentar(

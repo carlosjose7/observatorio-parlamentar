@@ -100,7 +100,7 @@ def main() -> None:
         return
     anos = sorted({int(i["periodo"][:4]) for i in serie_itens if i.get("periodo")})
     ano_sel = st.selectbox(
-        "Ano", ["Todos"] + anos, format_func=str, key=f"uf_{uf}_ano",
+        "Ano", ["Todos"] + anos, format_func=str, key=f"uf_{uf}_ano_sel",
     )
     ano = None if ano_sel == "Todos" else int(ano_sel)
 

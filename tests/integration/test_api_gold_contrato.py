@@ -609,3 +609,73 @@ def test_no_tempo_filtros_partido_uf(_cliente_gold):
         "/agregacoes/no-tempo", params={"uf": "SP"},
     ).json()
     assert {i["periodo"] for i in uf["itens"]} == {"202305", "202306"}
+
+
+# ── Sprint 21: recorte mandato x mandato no agent ─────────────────
+
+
+def test_agent_recorte_mes_restringe_metricas(_cliente_gold):
+    """`?inicio=&fim=` restringe métricas/top ao intervalo (Sprint 21).
+
+    JOSE tem D1 (2023-05, 100) + D2 (2023-06, 50): recorte de maio
+    retorna só D1, mas `janela_*` segue o histórico completo.
+    """
+    corpo = _cliente_gold.get(
+        "/agent/parlamentar/1", params={"inicio": "2023-05", "fim": "2023-05"},
+    ).json()
+    assert corpo["metricas"]["total_gasto"] == 100.0
+    assert corpo["metricas"]["num_transacoes"] == 1
+    assert corpo["janela_inicio"] == "2023-05"
+    assert corpo["janela_fim"] == "2023-06"
+    assert corpo["recorte_inicio"] == "2023-05"
+    assert corpo["recorte_fim"] == "2023-05"
+    top = corpo["top_fornecedores"]
+    assert [(t["nome_fornecedor"], t["total_gasto"]) for t in top] == [("LATAM", 100.0)]
+
+    junho = _cliente_gold.get(
+        "/agent/parlamentar/1", params={"inicio": "2023-06", "fim": "2023-06"},
+    ).json()
+    assert junho["metricas"]["total_gasto"] == 50.0
+    assert junho["metricas"]["num_transacoes"] == 1
+
+
+def test_agent_recorte_sem_dados_e_valores_nulos(_cliente_gold):
+    """Recorte sem despesas: zeros honestos, sem recorte = lifetime."""
+    vazio = _cliente_gold.get(
+        "/agent/parlamentar/1", params={"inicio": "2020-01", "fim": "2020-12"},
+    ).json()
+    assert vazio["metricas"]["num_transacoes"] == 0
+    assert vazio["metricas"]["total_gasto"] is None
+    assert vazio["top_fornecedores"] == []
+
+    cheio = _cliente_gold.get("/agent/parlamentar/1").json()
+    assert cheio["metricas"]["total_gasto"] == 150.0
+    assert cheio["recorte_inicio"] is None
+    assert cheio["recorte_fim"] is None
+
+
+def test_agent_recorte_hhi_risco_no_intervalo(_cliente_gold):
+    """HHI/risco do recorte usam o período mais recente DENTRO dele."""
+    dentro = _cliente_gold.get(
+        "/agent/parlamentar/6", params={"inicio": "2023-01", "fim": "2023-12"},
+    ).json()
+    assert dentro["metricas"]["hhi_recente"] == pytest.approx(1.0)
+    assert dentro["risco"]["risk_index"] == 0.12
+
+    fora = _cliente_gold.get(
+        "/agent/parlamentar/6", params={"inicio": "2024-01", "fim": "2024-12"},
+    ).json()
+    assert fora["metricas"]["hhi_recente"] is None
+    assert fora["risco"] is None
+
+
+def test_agent_recorte_invalido_422(_cliente_gold):
+    """`inicio` após `fim` → 422 (router valida antes do repo)."""
+    resp = _cliente_gold.get(
+        "/agent/parlamentar/1", params={"inicio": "2023-06", "fim": "2023-05"},
+    )
+    assert resp.status_code == 422
+    resp = _cliente_gold.get(
+        "/agent/parlamentar/1", params={"inicio": "2023-13"},
+    )
+    assert resp.status_code == 422
