@@ -1982,6 +1982,52 @@ de pipeline.
 
 ---
 
+## Hotfix — pipeline parado + CNPJ nulo (10/09/2026)
+
+**Branch:** fix/silver-cnpj-nulo → main
+
+- ☑ Scheduling diário parado 06–09/09: `203/EXEC` era SELinux negando
+  o spawn (`user_home_t`/`user_tmp_t` vs `init_t`) — corrigido com
+  `semanage fcontext bin_t` + `restorecon`, blindado no `deploy.sh`.
+- ☑ Na retomada, `executar_silver` falhou 3x seguidas em ~8s:
+  Bronze novo trouxe `cnpj_cpf_fornecedor` nulo (NaN) e
+  `resolve_tipo_documento` quebrava no `.strip()`. ADR-011 já manda
+  ausência = `(None, None)` — implementado p/ NaN/int/bool/float.
+- ☑ Em cadeia, o mesmo Bronze nulo quebrou `parse_date_multi_format`
+  e irmãs (`normalize.py`, ADR-016 "nunca lança") + `astype(int64)`
+  em 6 casts de `camara/senado/transform.py` (→ `Int64` nulável,
+  nulo flui p/ quarentena) — guard único `_texto_ou_none`.
+- ☑ Sopa de versões duckdb (scheduler 1.0.0 x Gold 1.5.5) quebrava o
+  checkpoint ("field id mismatch"): pin único `duckdb==1.5.5`
+  (pyproject `api` + upgrade pós-constraints no `pipeline/Dockerfile`;
+  dbt-duckdb 1.8 aceita `>=1.0.0` sem teto).
+
+---
+
+## Hotfix — StreamlitDuplicateElementKey em Partido/Estado (13/09/2026)
+
+**Branch:** fix/streamlit-duplicate-key-partido-estado → main
+
+- ☑ Causa raiz (log de produção + leitura de código): em
+  `dashboard/pages/03_partido.py` o `st.selectbox("Ano")` usa
+  `key=f"partido_{partido}_ano"`, e `filtro_periodo(df_serie,
+  key_prefix=f"partido_{partido}")` monta internamente
+  `key=f"{key_prefix}_ano"` (`dashboard/ui.py`) — a mesma string.
+  Dois widgets com a mesma key → `StreamlitDuplicateElementKey`,
+  e a página quebra sempre que a série mensal não está vazia.
+  `04_estado.py` tem o clone exato do bug (`uf_{uf}` no lugar de
+  `partido_{partido}`).
+- ☑ Corrigido: `key_prefix` da série virou `partido_{partido}_serie`
+  / `uf_{uf}_serie` (2 linhas, sem mudança de contrato de API,
+  sem ADR).
+- ☑ Regressão via Streamlit `AppTest` (`ruff`/`py_compile` não pegam
+  colisão de key, só um run real do app pega):
+  `tests/dashboard/test_partido_estado_appstate.py` (4 casos) com
+  `ApiClient` mockado e série mensal não vazia — `at.exception`
+  vazio nas duas páginas + troca de partido/UF entre reruns.
+
+---
+
 ## Sprint 21 — Batalha mandato x mandato (em andamento)
 
 **Branch:** feat/batalha-periodo-comum → main

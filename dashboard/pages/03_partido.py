@@ -149,7 +149,7 @@ def main() -> None:
         ])
         if ano is not None:
             df_serie = df_serie[df_serie["ano"] == ano]
-        df_serie = filtro_periodo(df_serie, key_prefix=f"partido_{partido}")
+        df_serie = filtro_periodo(df_serie, key_prefix=f"partido_{partido}_serie")
         if not df_serie.empty:
             grafico_mensal(df_serie)
 

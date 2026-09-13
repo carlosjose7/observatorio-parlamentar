@@ -91,8 +91,8 @@ def construir_silver(df_bronze: pd.DataFrame) -> pd.DataFrame:
             "fonte": ["senado"] * n,
             "id_parlamentar": pd.Series([None] * n, dtype="object"),
             "nome_parlamentar": df_bronze["senador"],
-            "ano": df_bronze["ano"].astype("int64"),
-            "mes": df_bronze["mes"].astype("int64"),
+            "ano": df_bronze["ano"].astype("Int64"),
+            "mes": df_bronze["mes"].astype("Int64"),
             "cod_documento": df_bronze["cod_documento"].astype(str),
             "data_documento": pd.to_datetime(
                 df_bronze["data"].map(parse_date_multi_format)
@@ -271,7 +271,7 @@ def construir_silver_parlamentar(
     df_atual = pd.DataFrame(
         {
             "fonte": ["senado"] * n,
-            "id_parlamentar": df_bronze["id_senador"].astype("int64"),
+            "id_parlamentar": df_bronze["id_senador"].astype("Int64"),
             "nome": df_bronze["nome_parlamentar"].fillna(df_bronze["nome_completo"]),
             "sigla_partido": df_bronze["sigla_partido"],
             "sigla_uf": df_bronze["sigla_uf"],

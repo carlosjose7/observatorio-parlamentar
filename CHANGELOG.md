@@ -19,6 +19,33 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — StreamlitDuplicateElementKey em Partido/Estado (13/09/2026)
+
+### Corrigido
+- **Dashboard:** `/app/partido` e `/app/estado` quebravam com
+  `StreamlitDuplicateElementKey` sempre que a série mensal não estava
+  vazia — o `selectbox("Ano")` (`partido_{partido}_ano` / `uf_{uf}_ano`)
+  colidia com o multiselect montado dentro de `filtro_periodo`
+  (`{key_prefix}_ano`, mesmo prefixo). Prefixo da série renomeado para
+  `partido_{partido}_serie` / `uf_{uf}_serie`, sem mudança de contrato.
+- **Testes:** regressão via `AppTest` em
+  `tests/dashboard/test_partido_estado_appstate.py` (4 casos: série
+  não vazia + troca de partido/UF entre reruns nas duas páginas).
+
+---
+
+## Hotfix — pipeline parado + CNPJ nulo (10/09/2026)
+
+### Corrigido
+- **Infra:** spawn do pipeline negado pelo SELinux (4 dias em 203/EXEC);
+  contexto `bin_t` + regra fcontext, reaplicados pelo `deploy.sh`.
+- **Pipeline:** `resolve_tipo_documento` e parsers de `normalize.py`
+  aceitam NaN (ADR-011/016), casts `Int64` nuláveis com quarentena, e
+  pin único `duckdb==1.5.5` (fim da sopa de versões no checkpoint) —
+  destravando `executar_silver`.
+
+---
+
 ## Sprint 20 — Correções pós-QA (10/09/2026)
 
 ### Corrigido
