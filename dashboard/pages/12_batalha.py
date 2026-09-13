@@ -367,9 +367,16 @@ def main() -> None:
             return
         st.success(
             f"Período comparado: **{recorte[0]} a {recorte[1]}** — métricas, "
-            "top fornecedores e anomalias restritos ao intervalo "
-            "(igual para ambos)."
+            "top fornecedores e anomalias restritos aos meses exatos do "
+            "intervalo (igual para ambos); HHI e scores de risco têm "
+            "granularidade anual (anos do intervalo)."
         )
+        if not (recorte[0].endswith("-01") and recorte[1].endswith("-12")):
+            st.warning(
+                "HHI e scores de risco têm granularidade anual: refletem os "
+                f"anos {recorte[0][:4]}–{recorte[1][:4]} cheios, não exatamente "
+                "o intervalo comparado acima."
+            )
         st.caption(
             f"Janelas completas — A: {janela_a[0] or '?'} a {janela_a[1] or '?'} · "
             f"B: {janela_b[0] or '?'} a {janela_b[1] or '?'}."
