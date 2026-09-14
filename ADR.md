@@ -2981,3 +2981,62 @@ Consequências:
 - Payload cai ~12x (11,7 MB → ~658 KB no ano recente), voltando a
   caber no timeout.
 - BACKLOG.md e CHANGELOG.md atualizados ao fechamento da sprint.
+
+---
+
+ADR-052
+Título: `sigla_partido` anulável em `dim_parlamentar` (teste `not_null` removido)
+
+Status:
+Aceito
+
+Contexto:
+O teste `not_null_dim_parlamentar_sigla_partido`
+(`pipeline/gold/models/emenda/schema.yml`, presente desde a Sprint 9,
+PR #7 — nunca exercitado com dado real do Senado até o fix de
+schema-qualification da Sprint 20, PR #68/#70) passou a falhar em
+14/09/2026 com 128 resultados, todos senadores do Senado, legislatura
+57, suplentes/históricos que nunca assumiram mandato.
+
+Checagem individual dos 128 casos contra a API do Senado (três
+fontes): identificação (`SiglaPartidoParlamentar`, já extraída),
+`GET /senador/{codigo}/filiacoes` (histórico de filiações, hoje
+ignorado pela extração) e `mandatos` (amostra 5918/6382/4551). Apenas
+5/128 têm partido resolvível via `filiacoes`; os 123 restantes não
+têm partido em nenhuma das três fontes — a própria API do Senado
+registra o estado como "S/Partido". Partido nulo é, para esse
+subconjunto, um fato da fonte, não uma falha de extração.
+
+Decisão:
+1. Remover o teste `not_null` de `sigla_partido` em
+   `dim_parlamentar` (`emenda/schema.yml`). `sigla_uf` permanece
+   `not_null` — o problema é específico de partido, não de vigência
+   em geral.
+2. Não implementar scraper de `filiacoes`: resgataria 5/128 linhas
+   ao custo de 128 chamadas HTTP/dia adicionais e de uma regra nova
+   de "qual filiação vale no snapshot" — desproporcional ao ganho.
+3. Não estender `dim_parlamentar_quarantine` para cobrir
+   `sigla_partido` nulo: os 128 têm identidade e legislatura válidas
+   (só falta partido) — quarentená-los removeria parlamentares reais
+   de `dim_parlamentar`, quebrando joins downstream (despesas,
+   votações, presença) para esse subconjunto sem necessidade.
+
+Consequências:
+- `sigla_partido` pode ser `NULL` em `dim_parlamentar` a partir desta
+  versão; qualquer consumidor (API, dashboard, analytics) que
+  particione ou agrupe por partido deve tratar `NULL` explicitamente
+  (ex: rótulo "S/Partido"), não assumir presença.
+- `not_null_dim_parlamentar_sigla_partido` não deve ser reintroduzido
+  sem novo ADR — reintroduzi-lo sem revisar o caso dos 128 reproduz
+  este mesmo incidente.
+- Caso a extração do Senado venha a consumir `filiacoes` no futuro
+  (fora de escopo aqui), o ganho esperado é de 5 linhas — não
+  justifica sozinho a mudança.
+- BACKLOG.md e CHANGELOG.md atualizados no mesmo diff (seções
+  "Hotfix — `sigla_partido` anulável em `dim_parlamentar`").
+- Nota de verificação (15/09/2026): a rebuild pós-merge fechou
+  PASS=168/ERROR=0/SKIP=0 (os 8 SKIPs efêmeros também
+  desapareceram). Teste removido e nulos ausentes na Silver de
+  14/09 co-ocorreram — não isolado se os SKIPs eram fallout do
+  teste falho ou puramente data-driven (594 linhas, 0 nulos no
+  rebuild). Efeito operacional é o mesmo; mecanismo fica em aberto.
