@@ -2887,7 +2887,7 @@ ADR-049
 Título: Recorte AAAA-MM em GET /agent/parlamentar/{id} (Batalha mandato x mandato)
 
 Status:
-Proposto — branch feat/batalha-periodo-comum (revisão antes do merge)
+Aceito — Sprint 21, PR #72 mergeado em 2026-09-12
 
 Contexto:
 O ADR-047 corrigiu a janela para per-parlamentar e elegeu a média anual
@@ -2951,7 +2951,7 @@ ADR-050
 Título: Escopo anual em GET /rede/comunidades (?periodo=AAAA)
 
 Status:
-Proposto — branch feat/batalha-periodo-comum (revisão antes do merge)
+Aceito — Sprint 21, PR #72 mergeado em 2026-09-12
 
 Contexto:
 Após o rebuild 2015–2026 o grafo materializado (`network_nodes`,
