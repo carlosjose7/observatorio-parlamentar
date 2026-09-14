@@ -2059,9 +2059,11 @@ de pipeline.
 
 ---
 
-## Sprint 21 — Batalha mandato x mandato (em andamento)
+## Sprint 21 — Batalha mandato x mandato
 
-**Branch:** feat/batalha-periodo-comum → main
+**Branch:** feat/batalha-periodo-comum → main (PR #72, merge 12/09/2026)
+
+**Sprint 21 FECHADA em 2026-09-14.**
 
 - ☑ `GET /agent/parlamentar/{id}?inicio=AAAA-MM&fim=AAAA-MM`:
   métricas, top-5, anomalias, HHI e risco restritos ao recorte;
@@ -2078,3 +2080,11 @@ de pipeline.
 - Caso motivador: Marcos Pereira (janela 2019–2026) x Kim Kataguiri
   (2022–2026) — no período comum ambos comparam 2022-04 a 2026-08
   (R$ 1,80M x R$ 0,16M no recorte, em vez de lifetime incomparável).
+- ☐ Carregado p/ Sprint 22 (validação): run 03:00 verde pós-merge
+  (build 168/168 em prod) — o fix ADR-052 só vale em `main` após o merge.
+- ☐ Carregado p/ Sprint 22: `severity: warn` p/ `sigla_partido`
+  (item ☐ do Hotfix 14/09 acima).
+- ☐ Carregado p/ Sprint 22: `_garantir_silver_cgu_vazio` cria em
+  `main`, sources esperam `silver` (dormente — CGU tem dados).
+- ☐ Carregado p/ Sprint 22: mecanismo do silent killer (11–13/09)
+  segue em aberto; recorrência é observável via instrumentação #74.
