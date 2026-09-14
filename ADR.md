@@ -3034,3 +3034,9 @@ Consequências:
   justifica sozinho a mudança.
 - BACKLOG.md e CHANGELOG.md atualizados no mesmo diff (seções
   "Hotfix — `sigla_partido` anulável em `dim_parlamentar`").
+- Nota de verificação (15/09/2026): a rebuild pós-merge fechou
+  PASS=168/ERROR=0/SKIP=0 (os 8 SKIPs efêmeros também
+  desapareceram). Teste removido e nulos ausentes na Silver de
+  14/09 co-ocorreram — não isolado se os SKIPs eram fallout do
+  teste falho ou puramente data-driven (594 linhas, 0 nulos no
+  rebuild). Efeito operacional é o mesmo; mecanismo fica em aberto.

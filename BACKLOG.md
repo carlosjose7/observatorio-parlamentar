@@ -2051,6 +2051,11 @@ de pipeline.
   analytics) precisam tratar `sigla_partido IS NULL` explicitamente
   — verificação de impacto downstream ainda não feita, registrar
   como item de acompanhamento se surgir quebra.
+- ☐ Follow-up (não bloqueante): sem o `not_null`, se `sigla_partido`
+  voltar a vir nulo em pull futuro do roster do Senado, nada acusa —
+  a dim acumula silenciosamente. Considerar `severity: warn` no
+  teste ou contagem no quality report para visibilidade sem quebrar
+  o build.
 
 ---
 
