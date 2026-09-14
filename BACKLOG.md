@@ -2028,6 +2028,32 @@ de pipeline.
 
 ---
 
+## Hotfix — `sigla_partido` anulável em `dim_parlamentar` (14/09/2026)
+
+**Branch:** fix/dim-parlamentar-sigla-partido-nullable → main
+
+- ☑ Causa raiz: `not_null_dim_parlamentar_sigla_partido`
+  (`pipeline/gold/models/emenda/schema.yml`, desde Sprint 9/PR #7)
+  nunca havia sido exercitado com dado real do Senado antes do fix
+  de schema-qualification (Sprint 20, PR #68/#70) — passou a falhar
+  em 14/09/2026 com 128 resultados, todos senadores/suplentes que
+  nunca assumiram mandato (legislatura 57).
+- ☑ Checagem individual dos 128 contra a API do Senado (identificação
+  + `filiacoes` + `mandatos`, amostra 5918/6382/4551): apenas 5/128
+  têm partido resolvível via `filiacoes`; os 123 restantes não têm
+  partido em nenhuma fonte — a própria API registra "S/Partido".
+- ☑ Decisão (ADR-052, Aceito): teste `not_null` removido de
+  `sigla_partido`; `sigla_uf` permanece `not_null`. Scraper de
+  `filiacoes` (resgataria só 5/128) e extensão de
+  `dim_parlamentar_quarantine` descartados por custo/benefício —
+  fundamentação completa no ADR.
+- Consumidores que agrupam/particionam por partido (API, dashboard,
+  analytics) precisam tratar `sigla_partido IS NULL` explicitamente
+  — verificação de impacto downstream ainda não feita, registrar
+  como item de acompanhamento se surgir quebra.
+
+---
+
 ## Sprint 21 — Batalha mandato x mandato (em andamento)
 
 **Branch:** feat/batalha-periodo-comum → main

@@ -19,6 +19,22 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — `sigla_partido` anulável em `dim_parlamentar` (14/09/2026)
+
+### Alterado
+- **Gold (ADR-052):** removido o teste `not_null` de `sigla_partido`
+  em `dim_parlamentar` (`pipeline/gold/models/emenda/schema.yml`).
+  128 senadores/suplentes (legislatura 57) sem partido em nenhuma
+  fonte da API do Senado (identificação, filiações, mandatos) —
+  partido nulo é estado legítimo da fonte ("S/Partido"), não falha
+  de extração. `sigla_uf` permanece `not_null`.
+
+### Observação
+- Consumidores que agrupam/particionam por partido devem tratar
+  `NULL` explicitamente a partir desta versão.
+
+---
+
 ## Hotfix — StreamlitDuplicateElementKey em Partido/Estado (13/09/2026)
 
 ### Corrigido

@@ -28,8 +28,10 @@ models:
         tests:
           - not_null
       - name: sigla_partido
-        tests:
-          - not_null
+        description: >
+          Partido vigente no snapshot. Anulável na fonte (ADR-052) —
+          suplentes/históricos do Senado sem exercício de mandato podem não
+          ter partido em identificação, filiações ou mandatos ("S/Partido").
       - name: sigla_uf
         tests:
           - not_null
