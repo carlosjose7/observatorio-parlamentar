@@ -2121,25 +2121,27 @@ de pipeline.
 
 ---
 
-## Sprint 23 — Grafana + alertas (aberta, em andamento)
+## Sprint 23 — Grafana + alertas
+
+**Branch:** sprint/23-grafana → main (PR único ao final, padrão Sprint 22)
+
+**Sprint 23 FECHADA em 2026-09-15.**
 
 > Escopo aprovado: Grafana COM alertas (ADR-053). Workflow como na
 > Sprint 22: checkpoints locais, PR único p/ `main` ao final de todas
 > as ondas. Inclui o fechamento formal da Sprint 22 (commit 5926427)
 > na mesma branch para PR único.
 
-**Branch:** sprint/23-grafana → main
-
 - [x] Fechamento Sprint 22 (BACKLOG FECHADA 15/09/2026, CHANGELOG
   datado, ADR-051 com PR #78 — padrão PR #76)
 - [x] Onda 0 — ADR-053 proposto ("Grafana + alertas Prometheus")
-- [ ] Onda 1 — compose `grafana` + `.env`/`.env.example` + provisioning
+- [x] Onda 1 — compose `grafana` + `.env`/`.env.example` + provisioning
   datasource Prometheus
-- [ ] Onda 2 — dashboard como código (latência vs 500ms, freshness vs
+- [x] Onda 2 — dashboard como código (latência vs 500ms, freshness vs
   24h/26h, quarentena vs 2%/5%, DQ por tabela)
-- [ ] Onda 3 — alertas (`infra/observability/alerts.yml` + `rule_files`,
+- [x] Onda 3 — alertas (`infra/observability/alerts.yml` + `rule_files`,
   sem Alertmanager)
-- [ ] Onda 4 — testes + docs (BACKLOG, CHANGELOG, PROJECT_CONTEXT
+- [x] Onda 4 — testes + docs (BACKLOG, CHANGELOG, PROJECT_CONTEXT
   §1.3) + auditoria + `docker compose config`
 - Pendentes p/ sprints futuras: logs, traces, roteamento de alertas
   (Alertmanager/email/webhook), minio cluster metrics (ADR-008),

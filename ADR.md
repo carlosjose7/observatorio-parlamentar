@@ -3137,7 +3137,7 @@ ADR-053
 Título: Grafana + alertas Prometheus (Sprint 23, Fase 2)
 
 Status:
-Proposto — Sprint 23, branch sprint/23-grafana (revisão antes do merge)
+Aceito — Sprint 23, Ondas 0–4 (branch sprint/23-grafana)
 
 Contexto:
 Sprint 22 FECHADA (PR #78, ADR-051 Aceito): métricas Fase 0+1 no

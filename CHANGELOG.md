@@ -8,6 +8,18 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 23 — Grafana + alertas (15/09/2026)
+
+### Adicionado
+- **Grafana (ADR-053, Fase 2):** serviço `grafana`
+  (`grafana/grafana:11`, UI em `127.0.0.1:3000`, sem Nginx, admin via
+  `.env`) com provisioning como código (datasource Prometheus +
+  dashboard SLOs: p95 vs 500ms, freshness vs 24h/26h, quarentena vs
+  2%/5%, DQ por tabela).
+- **Alertas:** `infra/observability/alerts.yml` (8 regras espelhando os
+  SLOs de `config/observability.yaml`, `for:` 5m–15m) via `rule_files`
+  no `prometheus.yml`; sem Alertmanager (roteamento p/ sprint futura).
+
 ## Sprint 22 — Observabilidade (15/09/2026)
 
 ### Adicionado
