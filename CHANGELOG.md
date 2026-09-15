@@ -8,6 +8,16 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — Nginx preserva path com DNS dinâmico (15/09/2026)
+
+### Corrigido
+- **Nginx:** o `proxy_pass` com variável da #81 não faz prefix-stripping
+  do location — todo `/api/*` chegava à API como `GET /` (200 com o JSON
+  da raiz), quebrando o contador de visitas, os dados vivos da homepage
+  e o `/docs` (404). `/api/` agora usa `rewrite ^/api/(.*)$ /$1 break`
+  + `proxy_pass` sem URI; `/docs` e `/openapi.json` usam `proxy_pass`
+  sem sufixo (`default.conf` e `bootstrap.conf`). DNS dinâmico mantido.
+
 ## Hotfix — Nginx com DNS dinâmico p/ api/dashboard (15/09/2026)
 
 ### Corrigido
