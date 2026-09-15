@@ -12,7 +12,7 @@ Histórico das alterações, organizado por sprint (ver
 
 ### Adicionado
 - **Grafana (ADR-053, Fase 2):** serviço `grafana`
-  (`grafana/grafana:11`, UI em `127.0.0.1:3000`, sem Nginx, admin via
+  (`grafana/grafana:13.2`, UI em `127.0.0.1:3000`, sem Nginx, admin via
   `.env`) com provisioning como código (datasource Prometheus +
   dashboard SLOs: p95 vs 500ms, freshness vs 24h/26h, quarentena vs
   2%/5%, DQ por tabela).
