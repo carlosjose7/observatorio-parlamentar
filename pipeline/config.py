@@ -571,6 +571,80 @@ def get_dashboard() -> DashboardSettings:
     return load_dashboard_settings()
 
 
+# ── config/observability.yaml ────────────────────────────────────
+
+
+class ObservabilitySlosSettings(_StrictModel):
+    """SLOs da Sprint 22 (ADR-051, Fase 0) — mudam somente por ADR."""
+
+    taxa_sucesso: float = Field(default=0.95, gt=0, le=1)
+    freshness_horas: float = Field(default=24, gt=0)
+    freshness_alerta_horas: float = Field(default=26, gt=0)
+    quarentena_warn_pct: float = Field(default=2.0, ge=0)
+    quarentena_critical_pct: float = Field(default=5.0, ge=0)
+    api_p95_ms: float = Field(default=500, gt=0)
+
+
+class ObservabilityDataQualityRefSettings(_StrictModel):
+    """Ponteiro para o threshold canônico de FK órfã (ADR-051 §3).
+
+    O valor vive em `config/pipeline.yaml:data_quality`
+    e é lido via `get_pipeline()` — este bloco só diz ONDE ler, nunca
+    QUANTO vale (duplicar o número violaria a fonte única, ADR-008).
+    """
+
+    arquivo: str = "config/pipeline.yaml"
+    chave: str = "pipeline.data_quality.fk_orfa_threshold_pct"
+
+
+class ObservabilityExporterSettings(_StrictModel):
+    """Loop do exporter dedicado (batch efêmero — scrape direto impossível)."""
+
+    intervalo_segundos: float = Field(default=60, gt=0)
+    porta: int = Field(default=8001, ge=1, le=65535)
+
+
+class ObservabilityPrometheusSettings(_StrictModel):
+    """Scrape do Prometheus (Fase 1) — bind restrito, nunca via Nginx."""
+
+    porta: int = Field(default=9090, ge=1, le=65535)
+    bind: str = "127.0.0.1"
+    scrape_interval: str = "15s"
+
+
+class ObservabilityNodeExporterSettings(_StrictModel):
+    """Host metrics (imagem arm64)."""
+
+    porta: int = Field(default=9100, ge=1, le=65535)
+
+
+class ObservabilitySettings(_StrictModel):
+    """Configuração de observabilidade (Sprint 22, ADR-051)."""
+
+    slos: ObservabilitySlosSettings = Field(default_factory=ObservabilitySlosSettings)
+    data_quality_ref: ObservabilityDataQualityRefSettings = Field(
+        default_factory=ObservabilityDataQualityRefSettings
+    )
+    exporter: ObservabilityExporterSettings = Field(default_factory=ObservabilityExporterSettings)
+    prometheus: ObservabilityPrometheusSettings = Field(
+        default_factory=ObservabilityPrometheusSettings
+    )
+    node_exporter: ObservabilityNodeExporterSettings = Field(
+        default_factory=ObservabilityNodeExporterSettings
+    )
+
+
+@lru_cache(maxsize=1)
+def load_observability_settings() -> ObservabilitySettings:
+    """Carrega `config/observability.yaml` (schema `observability:`)."""
+    return ObservabilitySettings.model_validate(_load_yaml("observability.yaml")["observability"])
+
+
+def get_observability() -> ObservabilitySettings:
+    """Acesso conveniente a `ObservabilitySettings` (cacheado)."""
+    return load_observability_settings()
+
+
 def get_dbt_vars() -> dict[str, str]:
     """Vars a injetar no dbt Gold via `--vars`, derivadas de `config/`.
 

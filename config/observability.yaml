@@ -1,0 +1,48 @@
+# Observabilidade — métricas Prometheus (Sprint 22, ADR-051, Fase 0 + Fase 1).
+# Fonte única dos SLOs/réguas de scrape (ADR-008): nenhum módulo deve ler
+# este arquivo diretamente — sempre via loader em pipeline/config.py
+# (a introduzir na Onda 2, junto ao exporter) — e nenhum valor aqui é
+# hardcoded no código. Grafana, alertas, logs e traces ficam para sprints
+# futuras (pendentes, não descartados).
+observability:
+  # SLOs da Fase 0 (contrato da sprint — mudam somente por ADR).
+  slos:
+    # Taxa de sucesso do pipeline diário (fração 0-1).
+    taxa_sucesso: 0.95
+    # Frescor máximo do Gold em horas; alerta dispara em alerta_horas.
+    freshness_horas: 24
+    freshness_alerta_horas: 26
+    # Percentuais de quarentena no DQ Report que disparam warn/critical.
+    quarentena_warn_pct: 2.0
+    quarentena_critical_pct: 5.0
+    # Latência p95 da API para consultas simples, em milissegundos.
+    api_p95_ms: 500
+
+  # Threshold de FK órfã: REFERÊNCIA, não duplicação (ADR-051 §3, ADR-008).
+  # O valor canônico vive em config/pipeline.yaml:data_quality
+  # .fk_orfa_threshold_pct e é lido em runtime via
+  # pipeline.config.get_pipeline().data_quality.fk_orfa_threshold_pct.
+  # Declarar o número aqui violaria a fonte única — este bloco só diz ONDE
+  # ler, nunca QUANTO vale.
+  data_quality_ref:
+    arquivo: "config/pipeline.yaml"
+    chave: "pipeline.data_quality.fk_orfa_threshold_pct"
+
+  # Exporter dedicado (pipeline é batch efêmero — scrape direto impossível).
+  exporter:
+    # Intervalo do loop de coleta, em segundos.
+    intervalo_segundos: 60
+    # Porta HTTP do exporter (somente rede interna do compose).
+    porta: 8001
+
+  # Scrape do Prometheus (Fase 1).
+  prometheus:
+    # Porta do Prometheus; bind restrito a 127.0.0.1 no compose
+    # (nunca exposto via Nginx).
+    porta: 9090
+    bind: "127.0.0.1"
+    scrape_interval: "15s"
+
+  # Node-exporter (host metrics, imagem arm64).
+  node_exporter:
+    porta: 9100

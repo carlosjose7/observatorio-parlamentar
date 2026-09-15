@@ -8,6 +8,21 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 22 — Observabilidade (em andamento)
+
+### Adicionado
+- **Métricas (ADR-051, Fase 0+1):** `observability/pipeline_exporter.py`
+  (loop 60s, Gold `read_only`, `run_id` nunca como label) e `GET /metrics`
+  na API (`http_requests_total{rota,status}`, `http_latency_seconds`,
+  `gold_indisponivel_total`, `gold_tabelas_ok`).
+- **Infra:** serviços `pipeline-exporter`, `node-exporter` (arm64),
+  `cadvisor` (arm64), `prometheus` (UI em `127.0.0.1:9090`) e
+  `postgres-exporter` (perfil `pipeline`); scrape a cada 15s
+  (`infra/observability/prometheus.yml`).
+- **Config:** `config/observability.yaml` (SLOs: sucesso 0.95, freshness
+  24h/alerta 26h, quarentena 2%/5%, p95 500ms; `fk_orfa_threshold_pct`
+  referenciado de `config/pipeline.yaml`, não duplicado).
+
 ## Sprint 21 — Batalha mandato x mandato (14/09/2026)
 
 ### Adicionado

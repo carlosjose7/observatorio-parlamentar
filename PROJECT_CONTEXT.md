@@ -58,7 +58,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | **Disponibilidade** | Pipeline diário via GitHub Actions com taxa de sucesso ≥ 95%; dashboard com disponibilidade best-effort (Docker Compose único na VPS Oracle, atrás do Nginx em `/app/`, sem SLA formal) |
 | **Escalabilidade** | Arquitetura deve suportar crescimento incremental de dados (10+ anos de histórico) sem reescrita de camadas Bronze/Silver |
 | **Segurança/LGPD** | Nenhum CPF em texto claro nas camadas consumíveis (Silver/Gold/API) — pseudonimização HMAC-SHA256 na Silver (ADR-004/033); a Bronze mantém o dado bruto equivalente-público sob acesso restrito; apenas dados públicos oficiais |
-| **Observabilidade** | Logging estruturado (`structlog`) em todos os módulos; relatório de qualidade de dados gerado a cada execução |
+| **Observabilidade** | Logging estruturado (`structlog`) em todos os módulos; relatório de qualidade de dados gerado a cada execução; métricas Prometheus Fase 0+1 (Sprint 22, ADR-051): exporter dedicado (`pipeline_last_run_*`, `dq_*`, `gold_*`) + `GET /metrics` na API (`http_*`, `gold_*`), scrape 15s |
 | **Manutenibilidade** | Cobertura de testes ≥ 80% (Pytest); zero hardcode — configuração externa via `config/*.yaml`/`.env` |
 | **Reprodutibilidade** | Qualquer execução anterior deve ser reproduzível a partir de `run_id` e `pipeline_version` |
 | **Custo** | Infraestrutura de deploy deve operar em camada gratuita (Oracle Cloud Free Tier) |

@@ -106,6 +106,75 @@ services:
       - observatorio-net
     restart: unless-stopped
 
+  # ── Observabilidade — métricas (Sprint 22, ADR-051, Fase 0+1) ──
+  # Scrape interno via rede observatorio-net; nada aqui é publicado pelo
+  # Nginx. Única porta no host: 9090 do Prometheus, presa a 127.0.0.1
+  # (mesmo padrão do minio/airflow). Grafana/alertas ficam p/ sprint futura.
+  pipeline-exporter:
+    build:
+      context: .
+      dockerfile: observability/Dockerfile
+    # Mesmo env mínimo da API (.env.api): só precisa do caminho do Gold
+    # read-only (ADR-026); sem segredos de MinIO/CGU/HMAC.
+    env_file: ${API_ENV_FILE:-.env.api}
+    volumes:
+      - ./data:/app/data:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/metrics')"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    platform: linux/arm64
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - /:/host:ro,rslave
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    platform: linux/arm64
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
+  prometheus:
+    # Stateless os sidecars (:latest, sem volume — mesmo precedente do
+    # certbot); o Prometheus tem volume TSDB, por isso pin de major (v3).
+    image: prom/prometheus:v3
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
   # ── Pipeline (Airflow) ──────────────────────────────────────
   postgres:
     image: postgres:16-alpine
@@ -121,6 +190,27 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+    profiles:
+      - pipeline
+
+  # Incluído (não pendente): ~50MB RAM, segredo via environment do .env
+  # (nada em arquivo versionado) e mesmo perfil do postgres que monitora.
+  # Avaliação de RAM da Onda 4: 6,6GB livres em 10,9GB totais com as duas
+  # stacks no ar — folga ampla. Deferidos desta sprint: job do minio
+  # (exigiria credencial admin em prometheus.yml estático — ADR-008) e
+  # statsd-exporter / AIRFLOW__METRICS__STATSD_ON (pendência futura).
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-airflow}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     networks:
@@ -232,6 +322,7 @@ networks:
 volumes:
   minio_data:
   postgres_data:
+  prometheus-data:
   certbot-etc:
   certbot-var:
   certbot-www:
