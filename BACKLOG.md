@@ -2110,8 +2110,9 @@ de pipeline.
 - [x] Onda 1 — config/observability.yaml + prometheus_client
 - [x] Onda 2 — observability/pipeline_exporter.py
 - [x] Onda 3 — GET /metrics na API
-- [ ] Onda 4 — compose + prometheus.yml
-- [ ] Onda 5 — testes + docs (PROJECT_CONTEXT §1.3, CHANGELOG)
+- [x] Onda 4 — compose + prometheus.yml (+postgres-exporter; minio
+  cluster e statsd como pendências futuras)
+- [x] Onda 5 — testes + docs (PROJECT_CONTEXT §1.3, CHANGELOG)
 - Pendentes p/ sprints futuras: Grafana, alertas, logs, traces,
   minio cluster metrics (credencial em arquivo estático — ADR-008),
   AIRFLOW__METRICS__STATSD_ON / statsd-exporter, deps opentelemetry.
