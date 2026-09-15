@@ -2088,3 +2088,30 @@ de pipeline.
   `main`, sources esperam `silver` (dormente — CGU tem dados).
 - ☐ Carregado p/ Sprint 22: mecanismo do silent killer (11–13/09)
   segue em aberto; recorrência é observável via instrumentação #74.
+
+---
+
+## Sprint 22 — Observabilidade (aberta, em andamento)
+
+> Aberta com Sprint 21 formalmente pendente (ADR-049/050 ainda
+> 'Proposto'; PRs #76/#77 de fechamento e run de verificação 03:00
+> ainda não confirmados em 14/09/2026) — decisão consciente do product
+> owner para não bloquear observabilidade. **Complemento (não apagado):
+> Sprint 21 FECHADA em 2026-09-14 via PR #76 (ADR-049/050 Aceitos).**
+> Esta nota permanece como registro histórico da exceção ao processo.
+>
+> Escopo desta sprint: SOMENTE métricas (Fase 0 + Fase 1). Grafana,
+> alertas, logs e traces ficam para sprints seguintes (pendentes, não
+> descartados).
+
+**Branch:** sprint/22-observabilidade → main
+
+- [x] ADR-051 proposto ("Observabilidade — Métricas com Prometheus")
+- [x] Onda 1 — config/observability.yaml + prometheus_client
+- [x] Onda 2 — observability/pipeline_exporter.py
+- [x] Onda 3 — GET /metrics na API
+- [ ] Onda 4 — compose + prometheus.yml
+- [ ] Onda 5 — testes + docs (PROJECT_CONTEXT §1.3, CHANGELOG)
+- Pendentes p/ sprints futuras: Grafana, alertas, logs, traces,
+  minio cluster metrics (credencial em arquivo estático — ADR-008),
+  AIRFLOW__METRICS__STATSD_ON / statsd-exporter, deps opentelemetry.

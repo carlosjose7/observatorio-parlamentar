@@ -1,0 +1,13 @@
+# Deps do pipeline-exporter (Sprint 22, ADR-051, Onda 2).
+# Serviço standalone: cobre os imports transitivos de
+# observability/pipeline_exporter.py via api.repo (duckdb, pydantic,
+# structlog) + pipeline.config (pyyaml, pydantic-settings).
+# REGRA do pin único (ver pyproject.toml, grupo `api`): duckdb com pin
+# exato ==1.5.5 em todos os grupos/imagens — o formato de storage quebra
+# entre minors. Nunca relaxar para >= aqui.
+duckdb==1.5.5
+prometheus-client>=0.20.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+pyyaml>=6.0
+structlog>=24.1.0

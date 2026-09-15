@@ -1,5 +1,10 @@
-from fastapi import FastAPI
+import time
 
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from api.metrics import http_latency_seconds, http_requests_total
 from api.routers.agent import router as router_agent
 from api.routers.agregacoes import router as router_agregacoes
 from api.routers.anomalias import router as router_anomalias
@@ -42,6 +47,30 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.middleware("http")
+async def _observar_http(request: Request, call_next):
+    """Observa toda requisição (menos o próprio scrape) para o Prometheus.
+
+    `rota` usa o template da rota (`/agent/parlamentar/{id}`), nunca o
+    path com ID — cardinalidade limitada (ADR-051 §5). `/metrics` é
+    excluído para o scrape a cada 15s não poluir as séries.
+    """
+    if request.url.path == "/metrics":
+        return await call_next(request)
+    inicio = time.perf_counter()
+    resposta = await call_next(request)
+    rota = getattr(request.scope.get("route"), "path", None) or request.url.path
+    http_requests_total.labels(rota=rota, status=str(resposta.status_code)).inc()
+    http_latency_seconds.observe(time.perf_counter() - inicio)
+    return resposta
+
+
+@app.get("/metrics")
+def metrics():
+    """Séries da API no formato de exposição do Prometheus (scrape interno)."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 app.include_router(router_parlamentares)

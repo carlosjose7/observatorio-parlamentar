@@ -28,6 +28,11 @@ dependencies = [
 api = [
     "fastapi[standard]>=0.110.0",
     "uvicorn[standard]>=0.29.0",
+    # Sprint 22 (ADR-051, Fase 0+1): exposição de métricas — GET /metrics
+    # na API e observability/pipeline_exporter.py (que fixa a mesma lib em
+    # observability/requirements.txt na Onda 2). Somente esta lib nesta
+    # sprint; deps de opentelemetry ficam para sprint futura.
+    "prometheus-client>=0.20.0",
     # REGRA: duckdb com pin exato e ÚNICO em todos os grupos/imagens —
     # o formato de storage quebra entre minors e o scheduler (1.0.0)
     # parou de escrever no Gold gerado como 1.5.5 (Sprint 20/21,

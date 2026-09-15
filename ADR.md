@@ -3040,3 +3040,93 @@ Consequências:
   14/09 co-ocorreram — não isolado se os SKIPs eram fallout do
   teste falho ou puramente data-driven (594 linhas, 0 nulos no
   rebuild). Efeito operacional é o mesmo; mecanismo fica em aberto.
+
+---
+
+ADR-051
+Título: Observabilidade — Métricas com Prometheus (Fase 0 + Fase 1)
+
+Status:
+Proposto — Sprint 22 (aguardando aprovação antes de qualquer código)
+
+Contexto:
+Não confundir com ADR-047 (Sprint 20, janela per-parlamentar de
+`GET /agent/parlamentar/{id}` + média anual na Batalha). Este ADR
+trata somente de exposição de métricas do pipeline batch e da API.
+(Nota de numeração: ADR-052, hotfix `sigla_partido` anulável, foi
+mergeado antes da aprovação deste — a ordem numérica não reflete a
+ordem cronológica de merge.)
+Base verificada em `main` 42c0140 (#75):
+- Pipeline batch efêmero (Airflow `@daily`,
+  `config/pipeline.yaml`, `pipeline.agendamento.cron`); não há
+  processo longa-vida para scrape direto.
+- Fronteira de leitura: API e qualquer leitor consultam APENAS o
+  DuckDB Gold em modo `read_only` (ADR-026,
+  `api/repo.py:_conexao`); Bronze/Silver nunca lidos por
+  consumidores.
+- Fonte única de threshold FK órfã:
+  `config/pipeline.yaml:data_quality.fk_orfa_threshold_pct: 5.0`
+  (ADR-008, ADR-022.3a); dbt recebe via `--vars` gerado por
+  `pipeline.config.get_dbt_vars()`.
+- RNFs vigentes (`PROJECT_CONTEXT.md` §1.3): p95 < 500ms consultas
+  simples, taxa sucesso pipeline ≥ 95%, zero hardcode
+  (`config/*.yaml`/`.env`), custo Oracle Free Tier, compose puro.
+- `api/main.py` hoje só tem `/` e `/health`; sem `/metrics`, sem
+  `prometheus_client` no `pyproject.toml`. Não existem
+  `observability/` nem `infra/observability/` em `main`.
+
+Decisão:
+1. Exporter dedicado em vez de scrape direto no Airflow: criar
+   `observability/pipeline_exporter.py` com loop 60s, DuckDB
+   `read_only=True` (respeita ADR-026), reaproveitando
+   `api/repo.py:listar_execucoes` (`pipeline_runs`) e
+   `listar_relatorio_qualidade` (`data_quality_report`) em vez de
+   reescrever SQL. Motivo: pipeline é batch efêmero — Prometheus não
+   consegue scrapear job que já terminou.
+2. Pushgateway descartado: mesma razão + semântica de último-valor
+   com timestamp é suficiente para batch diário; evita acoplamento
+   push e retenção manual no gateway.
+3. Não duplicar threshold: `config/observability.yaml` referencia
+   `fk_orfa_threshold_pct` de `config/pipeline.yaml` (leitura cruzada
+   em runtime); SLOs próprios desta sprint vivem em
+   `observability.yaml`: `slo_taxa_sucesso=0.95`,
+   `sla_freshness_horas=24` (alerta em 26h),
+   `quarentena_warn_pct=2.0`, `quarentena_critical_pct=5.0`,
+   `api_p95_ms=500`. Zero hardcode (ADR-008).
+4. Portas reservadas: 9090 Prometheus (bind 127.0.0.1 apenas, nunca
+   exposto via Nginx), 9100 node-exporter. API expõe `GET /metrics`
+   sem autenticação interna (Nginx bloqueia externo — não publicar
+   porta).
+5. Cardinalidade sob controle: `run_id` NUNCA como label de série.
+   Labels permitidos somente: `tabela`, `fonte`, `status`, `regra`.
+   Métricas Fase 0+1: `pipeline_last_run_status{status}`,
+   `pipeline_last_run_timestamp_seconds`,
+   `pipeline_runs_total{status}`,
+   `pipeline_watermark_lag_hours{fonte}` (4 fontes: camara, senado,
+   cgu_emenda, cgu_cartao), `dq_total/dq_validos/dq_quarentena/`
+   `dq_dedup{tabela}`, `dq_nulos_ratio{tabela}`,
+   `dq_regras_violadas{tabela,regra}`, `gold_fact_despesa_total`,
+   `gold_file_bytes`, `gold_pipeline_version_info{versao}`,
+   `http_requests_total{rota,status}`, `http_latency_seconds`,
+   `gold_indisponivel_total`, `gold_tabelas_ok`.
+6. Deps mínimas: apenas `prometheus_client` no `pyproject.toml`
+   nesta sprint; opentelemetry fica para sprint futura.
+7. Infra Fase 1: `docker-compose.yml` ganha `pipeline-exporter` +
+   `node-exporter` (arm64) + `cadvisor` (arm64);
+   `infra/observability/prometheus.yml` com jobs `api`,
+   `pipeline-exporter`, `node`, `cadvisor`, `scrape_interval: 15s`.
+   `postgres-exporter`, minio `/minio/v2/metrics/cluster` e
+   `AIRFLOW__METRICS__STATSD_ON` / `statsd-exporter`: avaliar custo
+   RAM na VPS 12GB; se apertar, registrar como pendência, não
+   incluir.
+
+Consequências:
+- Métricas com atraso máximo de 60s + 15s scrape — suficiente para
+  SLA freshness 24h/alerta 26h, insuficiente para alerting em tempo
+  real (fora de escopo por definição).
+- Gold lido 2x (`API` + `exporter`) em `read_only` — sem escrita,
+  sem quebra ADR-026; mount `:ro` do compose da API mantido.
+- Grafana, alertas, logs e traces explicitamente NÃO implementados;
+  registrados em BACKLOG como pendentes (não "descartados").
+- Qualquer mudança nesta decisão durante Ondas 1-5 paralisa a sprint
+  e volta para aprovação antes de prosseguir.

@@ -22,6 +22,7 @@ from pathlib import Path
 import duckdb
 import structlog
 
+from api.metrics import gold_indisponivel_total, gold_tabelas_ok
 from api.schemas.agent import (
     AgentAnomalias,
     AgentContext,
@@ -103,11 +104,13 @@ def _tratar_erro_gold(funcao):
         try:
             return funcao(*args, **kwargs)
         except GoldIndisponivel:
+            gold_indisponivel_total.inc()
             raise
         except (duckdb.Error, OSError) as exc:
             logger.error(
                 "gold_indisponivel", funcao=funcao.__name__, erro=str(exc)
             )
+            gold_indisponivel_total.inc()
             raise GoldIndisponivel(
                 f"Falha ao consultar a camada Gold: {exc}"
             ) from exc
@@ -226,10 +229,12 @@ def _verificar_tabelas_gold(con: duckdb.DuckDBPyConnection) -> None:
     presentes = {r[0] for r in rows}
     faltando = sorted(_TABELAS_GOLD_ESPERADAS - presentes)
     if faltando:
+        gold_tabelas_ok.set(0.0)
         raise RuntimeError(
             f"Tabelas ausentes em gold: {faltando}. "
             "Verifique se o dbt build foi executado (Onda 3)."
         )
+    gold_tabelas_ok.set(1.0)
     _gold_verificado = True
 
 
