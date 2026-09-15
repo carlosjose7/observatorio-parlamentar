@@ -177,9 +177,10 @@ services:
     restart: unless-stopped
 
   grafana:
-    # Fase 2 (Sprint 23, ADR-053): pin major (tem estado sqlite, mesmo
+    # Fase 2 (Sprint 23, ADR-053): pin de minor (tem estado sqlite, mesmo
     # precedente do prom/prometheus:v3); sidecars stateless seguem :latest.
-    image: grafana/grafana:11
+    # (`:11`/`:13` puros não existem no Hub — minor recebe só patches.)
+    image: grafana/grafana:13.2
     environment:
       - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?Defina GF_SECURITY_ADMIN_PASSWORD no .env}

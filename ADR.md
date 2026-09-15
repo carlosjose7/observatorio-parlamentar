@@ -3152,9 +3152,10 @@ Sprint 22 (checkpoint local 5926427). RNFs vigentes: zero hardcode
 Tier (VPS ~10,9GB RAM), nunca expor observabilidade via Nginx.
 
 Decisão:
-1. Serviço `grafana` no compose: imagem `grafana/grafana:11` (pin
-   major — tem estado sqlite, mesmo precedente do `prom/prometheus:v3`;
-   sidecars stateless seguem `:latest`), `127.0.0.1:3000:3000`,
+1. Serviço `grafana` no compose: imagem `grafana/grafana:13.2` (pin
+   de minor — tem estado sqlite, mesmo precedente do `prom/prometheus:v3`;
+   `:11`/`:13` puros não existem no Hub; sidecars stateless seguem
+   `:latest`), `127.0.0.1:3000:3000`,
    sem Nginx, `restart: unless-stopped`, rede `observatorio-net`,
    `no-new-privileges:true`, volume `grafana-data:/var/lib/grafana` +
    mounts `:ro` do provisioning. Admin via `.env`
