@@ -3047,7 +3047,7 @@ ADR-051
 Título: Observabilidade — Métricas com Prometheus (Fase 0 + Fase 1)
 
 Status:
-Aceito — Sprint 22, Ondas 0–5 (branch sprint/22-observabilidade)
+Aceito — Sprint 22, PR #78 mergeado em 2026-09-15 (Ondas 0–5, branch sprint/22-observabilidade)
 
 Contexto:
 Não confundir com ADR-047 (Sprint 20, janela per-parlamentar de

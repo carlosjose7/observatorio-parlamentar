@@ -2091,7 +2091,11 @@ de pipeline.
 
 ---
 
-## Sprint 22 — Observabilidade (aberta, em andamento)
+## Sprint 22 — Observabilidade
+
+**Branch:** sprint/22-observabilidade → main (PR #78, merge 15/09/2026)
+
+**Sprint 22 FECHADA em 2026-09-15.**
 
 > Aberta com Sprint 21 formalmente pendente (ADR-049/050 ainda
 > 'Proposto'; PRs #76/#77 de fechamento e run de verificação 03:00
@@ -2103,8 +2107,6 @@ de pipeline.
 > Escopo desta sprint: SOMENTE métricas (Fase 0 + Fase 1). Grafana,
 > alertas, logs e traces ficam para sprints seguintes (pendentes, não
 > descartados).
-
-**Branch:** sprint/22-observabilidade → main
 
 - [x] ADR-051 proposto ("Observabilidade — Métricas com Prometheus")
 - [x] Onda 1 — config/observability.yaml + prometheus_client

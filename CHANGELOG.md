@@ -8,7 +8,7 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 22 — Observabilidade (em andamento)
+## Sprint 22 — Observabilidade (15/09/2026)
 
 ### Adicionado
 - **Métricas (ADR-051, Fase 0+1):** `observability/pipeline_exporter.py`
