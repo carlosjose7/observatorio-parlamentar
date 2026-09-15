@@ -1,0 +1,13 @@
+# Datasource Prometheus (Sprint 23, ADR-053, Onda 1).
+# Provisionado como código — sem clique-ops. URL usa o nome do serviço
+# do compose (rede interna); nada hardcoded além do contrato.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

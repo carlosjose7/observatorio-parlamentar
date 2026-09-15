@@ -2091,7 +2091,11 @@ de pipeline.
 
 ---
 
-## Sprint 22 — Observabilidade (aberta, em andamento)
+## Sprint 22 — Observabilidade
+
+**Branch:** sprint/22-observabilidade → main (PR #78, merge 15/09/2026)
+
+**Sprint 22 FECHADA em 2026-09-15.**
 
 > Aberta com Sprint 21 formalmente pendente (ADR-049/050 ainda
 > 'Proposto'; PRs #76/#77 de fechamento e run de verificação 03:00
@@ -2104,8 +2108,6 @@ de pipeline.
 > alertas, logs e traces ficam para sprints seguintes (pendentes, não
 > descartados).
 
-**Branch:** sprint/22-observabilidade → main
-
 - [x] ADR-051 proposto ("Observabilidade — Métricas com Prometheus")
 - [x] Onda 1 — config/observability.yaml + prometheus_client
 - [x] Onda 2 — observability/pipeline_exporter.py
@@ -2115,4 +2117,32 @@ de pipeline.
 - [x] Onda 5 — testes + docs (PROJECT_CONTEXT §1.3, CHANGELOG)
 - Pendentes p/ sprints futuras: Grafana, alertas, logs, traces,
   minio cluster metrics (credencial em arquivo estático — ADR-008),
+  AIRFLOW__METRICS__STATSD_ON / statsd-exporter, deps opentelemetry.
+
+---
+
+## Sprint 23 — Grafana + alertas
+
+**Branch:** sprint/23-grafana → main (PR único ao final, padrão Sprint 22)
+
+**Sprint 23 FECHADA em 2026-09-15.**
+
+> Escopo aprovado: Grafana COM alertas (ADR-053). Workflow como na
+> Sprint 22: checkpoints locais, PR único p/ `main` ao final de todas
+> as ondas. Inclui o fechamento formal da Sprint 22 (commit 5926427)
+> na mesma branch para PR único.
+
+- [x] Fechamento Sprint 22 (BACKLOG FECHADA 15/09/2026, CHANGELOG
+  datado, ADR-051 com PR #78 — padrão PR #76)
+- [x] Onda 0 — ADR-053 proposto ("Grafana + alertas Prometheus")
+- [x] Onda 1 — compose `grafana` + `.env`/`.env.example` + provisioning
+  datasource Prometheus
+- [x] Onda 2 — dashboard como código (latência vs 500ms, freshness vs
+  24h/26h, quarentena vs 2%/5%, DQ por tabela)
+- [x] Onda 3 — alertas (`infra/observability/alerts.yml` + `rule_files`,
+  sem Alertmanager)
+- [x] Onda 4 — testes + docs (BACKLOG, CHANGELOG, PROJECT_CONTEXT
+  §1.3) + auditoria + `docker compose config`
+- Pendentes p/ sprints futuras: logs, traces, roteamento de alertas
+  (Alertmanager/email/webhook), minio cluster metrics (ADR-008),
   AIRFLOW__METRICS__STATSD_ON / statsd-exporter, deps opentelemetry.

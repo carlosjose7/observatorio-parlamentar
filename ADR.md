@@ -3047,7 +3047,7 @@ ADR-051
 Título: Observabilidade — Métricas com Prometheus (Fase 0 + Fase 1)
 
 Status:
-Aceito — Sprint 22, Ondas 0–5 (branch sprint/22-observabilidade)
+Aceito — Sprint 22, PR #78 mergeado em 2026-09-15 (Ondas 0–5, branch sprint/22-observabilidade)
 
 Contexto:
 Não confundir com ADR-047 (Sprint 20, janela per-parlamentar de
@@ -3130,3 +3130,72 @@ Consequências:
   registrados em BACKLOG como pendentes (não "descartados").
 - Qualquer mudança nesta decisão durante Ondas 1-5 paralisa a sprint
   e volta para aprovação antes de prosseguir.
+
+---
+
+ADR-053
+Título: Grafana + alertas Prometheus (Sprint 23, Fase 2)
+
+Status:
+Aceito — Sprint 23, Ondas 0–4 (branch sprint/23-grafana)
+
+Contexto:
+Sprint 22 FECHADA (PR #78, ADR-051 Aceito): métricas Fase 0+1 no
+Prometheus (scrape 15s, `infra/observability/prometheus.yml`,
+`evaluation_interval: 15s`), SLOs em `config/observability.yaml`
+(taxa_sucesso 0.95, freshness 24h/alerta 26h, quarentena 2%/5%,
+api_p95_ms 500), UI Prometheus em `127.0.0.1:9090` sem Nginx.
+Falta visualização (operador hoje lê PromQL cru) e regras de alerta
+versionadas. Base verificada em `main` 928cc9e (#78) + fechamento
+Sprint 22 (checkpoint local 5926427). RNFs vigentes: zero hardcode
+(`config/*.yaml`/`.env`, ADR-008), compose puro, custo Oracle Free
+Tier (VPS ~10,9GB RAM), nunca expor observabilidade via Nginx.
+
+Decisão:
+1. Serviço `grafana` no compose: imagem `grafana/grafana:13.2` (pin
+   de minor — tem estado sqlite, mesmo precedente do `prom/prometheus:v3`;
+   `:11`/`:13` puros não existem no Hub; sidecars stateless seguem
+   `:latest`), `127.0.0.1:3000:3000`,
+   sem Nginx, `restart: unless-stopped`, rede `observatorio-net`,
+   `no-new-privileges:true`, volume `grafana-data:/var/lib/grafana` +
+   mounts `:ro` do provisioning. Admin via `.env`
+   (`GF_SECURITY_ADMIN_USER/PASSWORD`, nunca hardcoded;
+   espelhar em `.env.example`).
+2. Provisioning como código (sem clique-ops):
+   `infra/observability/grafana/provisioning/datasources/prometheus.yml`
+   (`url: http://prometheus:9090`, `isDefault: true`) +
+   provider de dashboards + 1 dashboard JSON com 4 painéis,
+   cada um com linha de régua do SLO:
+   latência p95 vs 500ms (`http_latency_seconds`),
+   freshness `pipeline_watermark_lag_hours{fonte}` vs 24h/26h,
+   quarentena vs 2%/5% (`dq_quarentena/dq_total`),
+   DQ por tabela (`dq_regras_violadas{tabela,regra}`,
+   `dq_nulos_ratio{tabela}`).
+3. Alertas inclusos (escopo aprovado "com alertas"):
+   `infra/observability/alerts.yml` + `rule_files` no
+   `prometheus.yml` (reusa `evaluation_interval: 15s`).
+   Regras espelham os SLOs do `config/observability.yaml`
+   (sem duplicar threshold FK — referência a
+   `config/pipeline.yaml`, ADR-051 §3):
+   freshness warn >24h / critical >26h,
+   quarentena warn >2% / critical >5%,
+   `http` p95 >0.5s, `gold_indisponivel_total` em alta,
+   `pipeline_last_run_status` sem sucesso >26h.
+   `for:` 5m–15m (batch diário + loop 60s — evita flapping).
+   Sem Alertmanager nesta sprint: alertas avaliados e visíveis
+   no Prometheus UI/Grafana; roteamento (email/webhook) fica
+   para sprint futura.
+4. Portas reservadas: 3000 Grafana (bind 127.0.0.1 apenas).
+   Cardinalidade: nenhuma label nova (reusa `tabela,fonte,status,
+   regra,rota` do ADR-051; `run_id` segue proibido como label).
+
+Consequências:
+- Operador ganha leitura visual + regras versionadas; atraso de
+  detecção segue 60s loop + 15s scrape + `for` — suficiente para
+  SLAs de 24h, insuficiente para tempo-real (fora de escopo).
+- Custo RAM estimado +100–200MB (Grafana) — cabe nos ~10,9GB;
+  se apertar, registra-se pendência em vez de incluir mais.
+- Logs, traces, roteamento de alertas, minio cluster, statsd e
+  opentelemetry seguem pendentes (não descartados).
+- Qualquer mudança nesta decisão durante Ondas 1-4 paralisa a
+  sprint e volta para aprovação antes de prosseguir.

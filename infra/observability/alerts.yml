@@ -1,0 +1,70 @@
+# Alertas Prometheus (Sprint 23, ADR-053, Onda 3).
+# Réguas espelham os SLOs de config/observability.yaml (0.95/24h/26h/2%/5%/
+# 500ms) — sem Alertmanager nesta sprint: avaliados e visíveis no
+# Prometheus UI/Grafana; roteamento fica para sprint futura.
+groups:
+  - name: observatorio.slos
+    rules:
+      - alert: FreshnessWarn
+        expr: max(pipeline_watermark_lag_hours) > 24
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Watermark defasado além do SLO 24h (alerta em 26h)"
+
+      - alert: FreshnessCritical
+        expr: max(pipeline_watermark_lag_hours) > 26
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Watermark defasado além de 26h — Gold desatualizado"
+
+      - alert: PipelineFailed
+        expr: pipeline_last_run_status{status="failed"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Última execução do pipeline falhou"
+
+      - alert: PipelineStale
+        expr: time() - pipeline_last_run_timestamp_seconds > 26 * 3600
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Sem execução do pipeline há mais de 26h"
+
+      - alert: QuarentenaWarn
+        expr: sum(dq_quarentena) / sum(dq_total) > 0.02
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Quarentena acima de 2% (SLO warn)"
+
+      - alert: QuarentenaCritical
+        expr: sum(dq_quarentena) / sum(dq_total) > 0.05
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Quarentena acima de 5% (SLO critical)"
+
+      - alert: ApiLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(http_latency_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "p95 da API acima de 500ms"
+
+      - alert: GoldIndisponivel
+        expr: increase(gold_indisponivel_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Falhas de acesso ao Gold nos últimos 15m"

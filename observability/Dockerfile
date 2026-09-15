@@ -5,6 +5,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# `python observability/pipeline_exporter.py` põe `observability/` no
+# sys.path — sem isto `from api.repo import ...` falha (crash-loop visto
+# em prod 15/09/2026). Mesmo precedente do pipeline/Dockerfile.
+ENV PYTHONPATH=/app:$PYTHONPATH
+
 COPY . .
 
 RUN pip install --no-cache-dir -r observability/requirements.txt \
