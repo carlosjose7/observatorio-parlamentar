@@ -1,0 +1,12 @@
+# Provider de dashboards (Sprint 23, ADR-053, Onda 1).
+# Os JSONs vivem em ../dashboards (Onda 2); este arquivo só aponta o path.
+apiVersion: 1
+
+providers:
+  - name: observatorio
+    folder: Observatório
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /etc/grafana/provisioning/dashboards
