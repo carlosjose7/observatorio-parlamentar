@@ -8,6 +8,15 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — Nginx com DNS dinâmico p/ api/dashboard (15/09/2026)
+
+### Corrigido
+- **Nginx:** `upstream` estático resolvia `api`/`dashboard` uma vez no
+  start — após cada recreate (deploy) os IPs mudavam e o proxy seguia
+  discando os velhos (502 recorrente, 2x em 15/09/2026). Trocado por
+  `resolver 127.0.0.11 valid=10s` + `proxy_pass` via variável
+  (`default.conf` e `bootstrap.conf`); Nginx re-resolve a cada TTL.
+
 ## Sprint 23 — Grafana + alertas (15/09/2026)
 
 ### Adicionado
