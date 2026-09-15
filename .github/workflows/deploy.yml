@@ -30,6 +30,11 @@ jobs:
           set -e
           cd /home/opc/observatorio-parlamentar
           git fetch origin main
+          # O reset abaixo move o branch ATUAL — garantir que estamos em
+          # main antes (em 14/09/2026 ele reapontou uma feature branch
+          # porque o host estava fora de main). -f mantém a semântica
+          # destrutiva já assumida pelo reset; untracked files intactos.
+          git checkout -f main
           git reset --hard origin/main
 
       - name: Restore data layers
