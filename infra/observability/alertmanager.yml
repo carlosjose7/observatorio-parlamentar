@@ -32,11 +32,9 @@ receivers:
         # normal e a falha de envio aparece no log (gap auto-evidente).
         bot_token_file: '/run/secrets/telegram_bot_token'
         # chat_id NÃO é segredo (id numérico do grupo/canal) — versionado.
-        # OPERADOR: trocar pelo id real (via @getmyid_bot após adicionar
-        # o bot ao grupo) antes de considerar o canal ativo. `0` é
-        # rejeitado no load ("missing chat_id") — placeholder não-zero
-        # carrega limpo e só falha na entrega (com log) até a troca.
-        chat_id: 123456789
+        # Grupo "Alertas Observatório" (supergroup). `0` é rejeitado no
+        # load ("missing chat_id") — achado empírico documentado no ADR-057.
+        chat_id: -1004395225912
         send_resolved: true
 
 # ── Template Slack (desativado — ver cabeçalho) ──────────────
