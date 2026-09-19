@@ -3299,6 +3299,15 @@ Decisão:
    lag real — calibrar contra dado ainda errado está fora de escopo
    desta sprint.
 
+Adendo 19/09 (Onda 2 — auditoria pediu e aprovou): o cartão em
+backfill (desde 01/2013, ETA ~5 meses) teria lag absoluto gigante e
+correto durante todo o catch-up — threshold único 24h/26h gritaria
+sem parar, mesmo progredindo. Mesmo padrão do ADR-054 (quarentena
+por tabela): freshness por fonte. Cartão medido por PROGRESSO
+(`deriv(lag)[48h] >= 0` por 1h → warn `FreshnessCartaoStalled`;
+sem 48h de série a regra não avalia — startup conservador, sem
+falso-positivo); demais fontes mantêm 24h/26h absolutos.
+
 Consequências:
 - Câmara e cartão voltam a ser observáveis; Freshness passa a medir
   atraso real em vez de artefato de parsing.

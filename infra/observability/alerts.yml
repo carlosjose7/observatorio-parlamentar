@@ -9,20 +9,31 @@ groups:
   - name: observatorio.slos
     rules:
       - alert: FreshnessWarn
-        expr: max(pipeline_watermark_lag_hours) > 24
+        expr: max(pipeline_watermark_lag_hours{fonte!="cgu_cartao"}) > 24
         for: 15m
         labels:
           severity: warn
         annotations:
-          summary: "Watermark defasado além do SLO 24h (alerta em 26h)"
+          summary: "Watermark defasado além do SLO 24h (alerta em 26h, exceto cartão)"
 
       - alert: FreshnessCritical
-        expr: max(pipeline_watermark_lag_hours) > 26
+        expr: max(pipeline_watermark_lag_hours{fonte!="cgu_cartao"}) > 26
         for: 15m
         labels:
           severity: critical
         annotations:
-          summary: "Watermark defasado além de 26h — Gold desatualizado"
+          summary: "Watermark defasado além de 26h (exceto cartão)"
+
+      # Cartão em backfill por desenho (desde 01/2013, +1 mês/dia):
+      # lag absoluto é gigante e correto — o sinal que importa é o
+      # PROGRESSO (lag diminuindo). Parado há 48h = warn (ADR-055).
+      - alert: FreshnessCartaoStalled
+        expr: deriv(pipeline_watermark_lag_hours{fonte="cgu_cartao"}[48h]) >= 0
+        for: 1h
+        labels:
+          severity: warn
+        annotations:
+          summary: "Backfill do cartão sem progresso há 48h"
 
       - alert: PipelineFailed
         expr: pipeline_last_run_status{status="failed"} == 1
