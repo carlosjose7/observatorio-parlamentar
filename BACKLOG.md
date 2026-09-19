@@ -2196,3 +2196,51 @@ de pipeline.
 - [x] Onda 2 — recalibração por fonte: cartão por progresso
   (`deriv(lag)[48h] >= 0`, adendo ADR-055 padrão ADR-054); demais 24h/26h
 - [x] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria
+
+---
+
+## Sprint 26 — Observabilidade em ondas (framework 5 níveis)
+
+**Branch:** sprint/26-observabilidade-ondas → main (PR único ao final)
+
+**Sprint 26 FECHADA em 2026-09-19.**
+
+> Consolida em ondas o roadmap de 3 sprints do framework de
+> observabilidade que faltava (decisão explícita do PO: tudo numa
+> sprint só). Processo: ADR-056 aprovado antes de qualquer código;
+> durante a execução, o PO trocou "commit local + checkpoint por onda,
+> auditoria por onda" por **commit único ao final + validação única
+> pós-Onda 8** (adendo no ADR-056). Fora de escopo por decisão:
+> anomalias estatísticas (volume esperado×obtido, mudança de
+> distribuição) — sobreposição candidata com `analytics/anomalies`,
+> não implementadas.
+
+- [x] Onda 0 — ADR-056 proposto e aprovado (8 decisões, uma por onda)
+- [x] Onda 1 — `status_detalhado` (coluna nova, legado intocado) +
+  `pipeline_task_runs` (instrumentação própria `medir_task`, model dbt
+  incremental, `_garantir_status_detalhado`, ramo Jinja/`DESCRIBE` p/
+  glob legado) + exporter `pipeline_task_duration_seconds{task}` +
+  `pipeline_task_last_run_status{task,status}`
+- [x] Onda 2 — `pipeline_mttr_seconds`/`pipeline_mtbf_seconds`
+  (últimos 30 runs, `partial` fora, omitido quando indefinido)
+- [x] Onda 3 — `pipeline_execucoes_planejadas_total`/
+  `pipeline_execucoes_nao_realizadas_total` (+ `pipeline_cobertura_ratio`,
+  janela móvel 7d, 1/dia de calendário)
+- [x] Onda 4 — `pipeline_health_index` (40/30/20/10) +
+  `pipeline_health_status{classe}` (`saudavel/atencao/alerta/critico`);
+  thresholds do cartão (20%/25%) em `config/observability.yaml`
+- [x] Onda 5 — dashboard v2: timeline de status, heatmap de duração,
+  stat do Health, duração+P95 7d, MTTR/MTBF (exprs validadas no
+  Prometheus local)
+- [x] Onda 6 — Alertmanager (`prom/alertmanager:v0.28.0`,
+  `127.0.0.1:9093`, destino default `blackhole` + template Slack
+  desativado) + 3 regras novas (14 no total); `docker compose config`
+  + boot do binário exato validados
+- [x] Onda 7 — `pipeline_dq_score_{pass,warn,fail}_total` (agrega o DQ
+  existente, fronteira estrita `>`)
+- [x] Onda 8 — 31 testes de borda + docs (este BACKLOG FECHADA,
+  CHANGELOG, PROJECT_CONTEXT §1.3, ADR-056 Aceito)
+- Pendentes p/ sprints futuras: webhook Slack (pergunta ao PO —
+  sem ele, `blackhole` + estrutura pronta); anomalias estatísticas
+  (overlap `analytics/anomalies`); logs, traces, minio cluster metrics,
+  statsd, opentelemetry (pendências herdadas).

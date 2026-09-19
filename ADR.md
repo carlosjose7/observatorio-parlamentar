@@ -3315,3 +3315,115 @@ Consequências:
   watermark entra sem caso de teste.
 - Qualquer mudança nesta decisão durante as ondas paralisa a sprint
   e volta para aprovação antes de prosseguir.
+
+---
+
+ADR-056
+Título: Observabilidade em ondas — status granular, duração por task,
+MTTR/MTBF, Cobertura, Health Index, heatmap, Alertmanager, score DQ agregado
+
+Status:
+Aceito — Sprint 26, Ondas 1–8 (branch sprint/26-observabilidade-ondas)
+
+Contexto:
+Sprint 22 FECHADA (ADR-051, Fase 0+1: exporter + `/metrics` + Prometheus
+15s), Sprint 23 FECHADA (ADR-053, Fase 2: Grafana + 8 regras, sem
+Alertmanager), Sprint 24 FECHADA (ADR-054: quarentena do cartão com régua
+própria 20%/25% + TTL) e Sprint 25 FECHADA (ADR-055: parser `%m/%Y` +
+freshness por progresso para o cartão). Faltava o roadmap de 3 sprints do
+framework de 5 níveis (KPIs executivos, execução, performance, qualidade,
+confiabilidade/SRE): status granular, duração por task, MTTR/MTBF,
+Cobertura, Health Index, heatmap, Alertmanager e score de qualidade
+agregado. Decisão explícita do PO: tudo numa sprint só, em ondas.
+Base verificada em `main` 3f17eb1 (#84): `status` =
+`Literal["success","failed","partial"]` (`pipeline/runs.py`), DAG real com
+5 tasks (`executar_bronze/silver/gold_core/analytics/gold_analytics`),
+exporter `read_only` com `run_id` nunca label, 11 regras de alerta
+(8 ADR-053 + 2 cartão ADR-054 + 1 stalled ADR-055 — o "8" do escopo era
+atalho; a contagem real é 11), nenhuma das 8 métricas novas existia.
+Fora de escopo por decisão explícita: anomalias estatísticas (volume
+esperado×obtido, mudança de distribuição) — candidatas a sobreposição com
+`analytics/anomalies`; registradas como pendência, não implementadas.
+
+Decisão:
+1. (Onda 1) Status granular = coluna NOVA nullable `status_detalhado`
+   (vocabulário de 7: 3 legados + warning/running/cancelled/timeout);
+   `status` legado intocado (histórico + 11 regras de alerta preservados).
+   Duração = instrumentação PRÓPRIA (`medir_task`, Parquet
+   `controle/pipeline_task_runs/`, grão `(run_id,task)`, model dbt
+   incremental `gold.pipeline_task_runs` chaveado por `task_run_id`),
+   NÃO `task_instance` do Airflow (exporter só lê Gold `read_only`;
+   Airflow DB é efêmero, perfil `pipeline`). Labels `task` = 5 task_ids
+   reais + sub-spans por fonte — sem reestruturar o DAG (risco
+   `schedule=None`/ADR-034). Exporter: `pipeline_task_duration_seconds
+   {task}` + `pipeline_task_last_run_status{task,status}` (heatmap precisa
+   de status por task); `pipeline_last_run_status{status}` já tolera
+   valores novos. As-built: `_garantir_status_detalhado()` (DDL
+   idempotente pré-build, precedente `_garantir_*`) + ramo
+   Jinja/`DESCRIBE` no `pipeline_runs.sql` (glob 100% legado → NULL, sem
+   `Binder Error` — verificado empiricamente); `status_detalhado` e
+   `status` do span SEM `accepted_values` (valor novo nunca quebra build);
+   `pipeline_task_runs` fora do smoke-check `_TABELAS_GOLD_ESPERADAS`
+   (API segue servindo Gold pré-Onda 1).
+2. (Onda 2) MTTR/MTBF no exporter, em memória, últimos 30 runs:
+   MTTR = média (primeiro `success` após cada `failed` − `failed`);
+   MTBF = média (intervalos entre `failed` consecutivos). `partial`
+   entra em nenhum dos dois. Indefinido → série omitida, nunca zerada.
+   Matemática sobre o `status` LEGADO (estável pré/pós-migração).
+3. (Onda 3) Cobertura sobre dias de calendário, janela móvel 7d:
+   planejadas = nº de dias; realizadas = runs com ts na janela;
+   `nao_realizadas = max(0, planejadas − realizadas)`; `ratio`
+   conveniência. Séries `pipeline_execucoes_planejadas_total`,
+   `pipeline_execucoes_nao_realizadas_total` (+ `pipeline_cobertura_ratio`).
+   Backfill parado conta como falta.
+4. (Onda 4) Health 0–100 = 40·Cobertura + 30·Sucesso (`success`=1,
+   `partial`=0.5, últimos 30 runs) + 20·Qualidade (`100·(1−max(
+   r_outras/0.05, r_cartao/0.25))`, cada grupo no próprio critical
+   ADR-054, pior vence) + 10·Performance (média entre tasks de
+   `100·clamp(mediana_30/ultima)`). Classes/labels ASCII: `saudavel`
+   90–100, `atencao` 70–89, `alerta` 50–69, `critico` 0–49. Séries
+   `pipeline_health_index` + `pipeline_health_status{classe}`.
+   Qualquer componente ausente → omitido, nunca 0. Thresholds do cartão
+   (20%/25%) entram em `config/observability.yaml` como fonte única
+   (`alerts.yml` espelha literais — precedente das réguas globais).
+5. (Onda 5) Estender `observatorio.json` (1 dashboard, v2): timeline de
+   status por task (`state-timeline` sobre `... == 1`), heatmap de
+   duração, stat do Health com thresholds nas cores das classes,
+   duração+P95 7d por task, MTTR/MTBF. Provisioning como código;
+   exprs validadas no Prometheus local (HTTP 200).
+6. (Onda 6) Alertmanager `prom/alertmanager:v0.28.0` no compose
+   (`127.0.0.1:9093`, sem Nginx, `--cluster.listen-address=` vazio);
+   `prometheus.yml` ganha `alerting.alertmanagers`; 3 regras novas
+   (`PipelineHealthCritical`, `DQScoreFail`, `TaskFalhou`) somando 14;
+   destino default `blackhole` + receiver `slack` como ESTRUTURA PRONTA
+   desativada (template comentado; webhook via `.env`
+   `SLACK_WEBHOOK_URL`, nunca hardcode). Config validado subindo o
+   binário exato (listening, sem erro). Pendente do PO: existe webhook
+   Slack? Sem ele, blackhole + estrutura pronta (saída aceita no escopo).
+7. (Onda 7) Score agregado do DQ EXISTENTE (nada recriado): por tabela
+   do último snapshot — FAIL se ratio > critical (5%/25% cartão), WARN
+   se > warn (2%/20%), senão PASS; fronteira estrita (`>` promove, `==`
+   não). Séries `pipeline_dq_score_{pass,warn,fail}_total` (nº de tabelas).
+8. (Onda 8) Testes de borda (0 runs, 100% sucesso, falha sem recovery,
+   janela parcial, fronteiras de classe/régua, clamp) + docs
+   (PROJECT_CONTEXT §1.3, BACKLOG FECHADA, CHANGELOG, este ADR Aceito).
+
+Adendo — commit único (decisão do PO durante a execução, substitui o
+"commit local + checkpoint por onda" do plano): validação única pós-Onda
+8, sem auditorias intermediárias e sem commits até o fim; tudo acumula
+na branch. O `main` recebe 1 commit de qualquer forma (squash do PR
+único) — os checkpoints intermediários eram seguro de graça, dispensado
+conscientemente. Risco aceito: sem ponto de retorno intermediário e sem
+backup além da worktree até o fechamento.
+
+Consequências:
+- Operador ganha duração por task, MTTR/MTBF, cobertura, Health com
+  classe visual, heatmap e roteador de alertas — atraso de detecção
+  segue 60s loop + 15s scrape + `for` (suficiente para SLAs de 24h).
+- Série omitida ≠ série zerada em MTTR/MTBF/Health: dashboards e runbooks
+  devem tratar ausência como "sem dado", nunca como "zero/Crítico".
+- As novas séries só existem no Prometheus após o deploy desta sprint
+  (exporter novo); regras novas avaliam no-data até lá (sem falso-positivo).
+- Anomalias estatísticas seguem pendentes (possível sobreposição com
+  `analytics/anomalies`) — não implementadas por decisão de escopo.
+- Qualquer mudança nestas decisões volta para aprovação antes de prosseguir.

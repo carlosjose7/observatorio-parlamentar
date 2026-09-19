@@ -28,6 +28,10 @@ vars:
   # overrida via `--vars` para o S3 do MinIO (s3://bronze/controle/...)
   # quando `MINIO_ENDPOINT` está configurado — ver ADR-019.
   bronze_pipeline_runs_dir: "data/bronze/controle/pipeline_runs/*.parquet"
+  # Spans de duração por task (ADR-056 D1, Onda 1) — mesmo contrato do
+  # `pipeline_runs` acima: glob local no dev, override S3 em produção/HML
+  # via `get_dbt_vars()` (pipeline/config.py).
+  bronze_pipeline_task_runs_dir: "data/bronze/controle/pipeline_task_runs/*.parquet"
   # Discriminador primário de autoria colegiada (ADR-017.3.a). Valores reais
   # do enum da fonte a confirmar no catálogo — item de seguimento no BACKLOG.
   # Padrão é o observado na captura real: "Emenda de Bancada" / "Emenda de Comissão"

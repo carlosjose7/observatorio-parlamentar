@@ -8,6 +8,39 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 26 — Observabilidade em ondas (19/09/2026)
+
+### Adicionado
+- **Status granular (ADR-056 D1):** coluna nova `status_detalhado`
+  (7 valores; legado `success/partial/failed` intocado) do Bronze ao
+  Gold (`pipeline_runs`) e à API (`/pipeline/status`).
+- **Duração por task (ADR-056 D1):** instrumentação própria
+  (`medir_task`), controle `pipeline_task_runs` (grão `run_id×task`) e
+  exporter `pipeline_task_duration_seconds{task}` +
+  `pipeline_task_last_run_status{task,status}`.
+- **MTTR/MTBF (D2):** `pipeline_mttr_seconds`/`pipeline_mtbf_seconds`
+  (últimos 30 runs; omitidas quando indefinidas, nunca zeradas).
+- **Cobertura (D3):** `pipeline_execucoes_planejadas_total`/
+  `pipeline_execucoes_nao_realizadas_total` (+ `pipeline_cobertura_ratio`,
+  1 execução/dia, janela móvel 7d).
+- **Health Index (D4):** `pipeline_health_index` (40/30/20/10) +
+  `pipeline_health_status{classe}` (`saudavel/atencao/alerta/critico`);
+  régua do cartão (20%/25%) em `config/observability.yaml`.
+- **Grafana (D5):** dashboard v2 — timeline de status, heatmap de
+  duração, stat do Health, duração+P95 7d, MTTR/MTBF.
+- **Alertmanager (D6):** serviço `prom/alertmanager:v0.28.0`
+  (`127.0.0.1:9093`, destino default `blackhole` + template Slack
+  desativado via `.env`) + 3 regras novas (14 no total).
+- **Score DQ agregado (D7):**
+  `pipeline_dq_score_{pass,warn,fail}_total` por tabela.
+
+### Decisão
+- **ADR-056 (processo):** commit único ao final + validação única
+  pós-Onda 8 (decisão do PO durante a execução, em adendo).
+- **Fora de escopo:** anomalias estatísticas (overlap candidata com
+  `analytics/anomalies`) — pendência registrada, não implementada.
+- **Pendente do PO:** webhook Slack (sem ele, `blackhole` + estrutura pronta).
+
 ## Sprint 25 — Freshness real (19/09/2026)
 
 ### Corrigido

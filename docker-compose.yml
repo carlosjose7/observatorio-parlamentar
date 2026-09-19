@@ -176,6 +176,28 @@ services:
       - observatorio-net
     restart: unless-stopped
 
+  alertmanager:
+    # Sprint 26, Onda 6 (ADR-056 D6): roteador das 14 regras de alerts.yml.
+    # Pin de minor com estado (mesmo precedente do grafana:13.2); UI em
+    # 127.0.0.1:9093, sem Nginx. Destino default `blackhole`
+    # (infra/observability/alertmanager.yml) — Slack só via .env quando o
+    # PO confirmar o webhook (ver .env.example: SLACK_WEBHOOK_URL).
+    image: prom/alertmanager:v0.28.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--cluster.listen-address="
+    volumes:
+      - ./infra/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
   grafana:
     # Fase 2 (Sprint 23, ADR-053): pin de minor (tem estado sqlite, mesmo
     # precedente do prom/prometheus:v3); sidecars stateless seguem :latest.
@@ -346,6 +368,7 @@ volumes:
   postgres_data:
   prometheus-data:
   grafana-data:
+  alertmanager-data:
   certbot-etc:
   certbot-var:
   certbot-www:

@@ -15,6 +15,13 @@ observability:
     # Percentuais de quarentena no DQ Report que disparam warn/critical.
     quarentena_warn_pct: 2.0
     quarentena_critical_pct: 5.0
+    # Régua própria de `silver_cartao` (ADR-054 — quarentena crônica ~17–20%
+    # por lacuna declarada da fonte, "Sem informação"): o 2%/5% global
+    # gritaria permanentemente. Fonte única para o exporter (Health Onda 4,
+    # score DQ Onda 7); `alerts.yml` espelha os mesmos literais (precedente
+    # das réguas globais — alerta versionado, não fonte de threshold).
+    quarentena_cartao_warn_pct: 20.0
+    quarentena_cartao_critical_pct: 25.0
     # Latência p95 da API para consultas simples, em milissegundos.
     api_p95_ms: 500
 

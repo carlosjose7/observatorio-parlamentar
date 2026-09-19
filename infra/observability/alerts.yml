@@ -98,3 +98,30 @@ groups:
           severity: warn
         annotations:
           summary: "Falhas de acesso ao Gold nos últimos 15m"
+
+      # ── Sprint 26 (ADR-056, Onda 6) ──────────────────────────
+      # Roteadas pelo Alertmanager (roteador desta sprint); destino default
+      # `blackhole` até o PO confirmar o webhook Slack (ver alertmanager.yml).
+      - alert: PipelineHealthCritical
+        expr: pipeline_health_index < 50
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health Index abaixo de 50 (Crítico, ADR-056 D4)"
+
+      - alert: DQScoreFail
+        expr: pipeline_dq_score_fail_total > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tabela(s) com DQ FAIL no snapshot mais recente (ADR-056 D7)"
+
+      - alert: TaskFalhou
+        expr: pipeline_task_last_run_status{status="success"} == 0
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Último span da task não é success (ver heatmap task×dia)"

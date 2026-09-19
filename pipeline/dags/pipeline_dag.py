@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from uuid import UUID
 
 import structlog
 from airflow import DAG
@@ -11,6 +12,8 @@ from pipeline.camara.transform import (
 from pipeline.camara.transform import (
     carregar_silver_parlamentar as silver_parlamentar,
 )
+from pipeline.config import get_pipeline_version
+from pipeline.runs import _gravar_span_seguro, medir_task
 from pipeline.senado.transform import carregar_silver_despesa as silver_senado
 from pipeline.senado.transform import (
     carregar_silver_parlamentar as silver_parlamentar_senado,
@@ -33,6 +36,33 @@ default_args = {
 }
 
 
+def _com_span_externo(storage, run_id_str, task, bloco):
+    """Roda `bloco()` com span externo da task (ADR-056 D1, Onda 1).
+
+    Sem `run_id` válido (disparo manual sem Bronze) roda sem medição —
+    loga e segue; observabilidade nunca quebra a execução observada.
+    """
+    try:
+        run_id = UUID(str(run_id_str)) if run_id_str else None
+    except ValueError:
+        run_id = None
+    if run_id is None:
+        logger.warning("span_sem_run_id", task=task)
+        return bloco()
+    with medir_task(
+        storage,
+        run_id=run_id,
+        task=task,
+        pipeline_version=get_pipeline_version(),
+    ):
+        return bloco()
+
+
+def _executar_com_span(storage, run_id_str, task, chamavel):
+    """Executa `chamavel()` medindo o span `task` (sub-span por fonte)."""
+    return _com_span_externo(storage, run_id_str, task, chamavel)
+
+
 def _executar_bronze(**context):
     """Executa o pipeline Bronze end-to-end usando o storage de produção.
 
@@ -40,9 +70,25 @@ def _executar_bronze(**context):
     watermark fica em Airflow Variable (versionamento.md §2.1). O retorno é o
     `run_id` para rastreabilidade no XCom.
     """
+    import time
+
+    storage = criar_storage()
+    inicio = time.perf_counter()
     run = run_pipeline(
-        storage=criar_storage(),
+        storage=storage,
         store=AirflowVariableStore(),
+    )
+    # Span da task (ADR-056 D1): o `run_id` só existe APÓS o `run_pipeline`
+    # gerá-lo — por isso medição manual aqui (não `medir_task`), com o
+    # `status` consolidado da execução como status do span.
+    _gravar_span_seguro(
+        storage,
+        run_id=run.run_id,
+        task="executar_bronze",
+        status=run.status,
+        duration_seconds=time.perf_counter() - inicio,
+        pipeline_version=run.pipeline_version,
+        execution_timestamp=run.execution_timestamp,
     )
     return str(run.run_id)
 
@@ -56,22 +102,36 @@ def _executar_silver(**context):
     """
     run_id = context["ti"].xcom_pull(task_ids="executar_bronze")
     storage = criar_storage()
-    resultados = {
-        "camara": silver_camara(storage=storage, run_id=run_id),
-        "camara_parlamentares": silver_parlamentar(
-            storage=storage, run_id=run_id
-        ),
-        "senado": silver_senado(storage=storage, run_id=run_id),
-        "senado_parlamentares": silver_parlamentar_senado(
-            storage=storage, run_id=run_id
-        ),
-        "transparencia_cartoes": carregar_silver_cartao(
-            storage=storage, run_id=run_id
-        ),
-        "transparencia_emendas": carregar_silver_emenda(
-            storage=storage, run_id=run_id
-        ),
-    }
+
+    def _cargas():
+        return {
+            "camara": _executar_com_span(
+                storage, run_id, "silver_camara",
+                lambda: silver_camara(storage=storage, run_id=run_id),
+            ),
+            "camara_parlamentares": _executar_com_span(
+                storage, run_id, "silver_parlamentares",
+                lambda: silver_parlamentar(storage=storage, run_id=run_id),
+            ),
+            "senado": _executar_com_span(
+                storage, run_id, "silver_senado",
+                lambda: silver_senado(storage=storage, run_id=run_id),
+            ),
+            "senado_parlamentares": _executar_com_span(
+                storage, run_id, "silver_parlamentares",
+                lambda: silver_parlamentar_senado(storage=storage, run_id=run_id),
+            ),
+            "transparencia_cartoes": _executar_com_span(
+                storage, run_id, "silver_cartao",
+                lambda: carregar_silver_cartao(storage=storage, run_id=run_id),
+            ),
+            "transparencia_emendas": _executar_com_span(
+                storage, run_id, "silver_emenda",
+                lambda: carregar_silver_emenda(storage=storage, run_id=run_id),
+            ),
+        }
+
+    resultados = _com_span_externo(storage, run_id, "executar_silver", _cargas)
     return {
         fonte: None if resultado is None else len(resultado.aceitos)
         for fonte, resultado in resultados.items()
@@ -155,7 +215,13 @@ def _executar_gold_core(**context):
 
     _garantir_ml_staging_vazio()
     _garantir_silver_cgu_vazio()
-    return _rodar_dbt(None, " ".join(MODELS_ANALYTICS), "gold_core")
+    _garantir_status_detalhado()
+    run_id = context["ti"].xcom_pull(task_ids="executar_bronze")
+    storage = criar_storage()
+    return _com_span_externo(
+        storage, run_id, "gold_core",
+        lambda: _rodar_dbt(None, " ".join(MODELS_ANALYTICS), "gold_core"),
+    )
 
 
 def _executar_analytics(**context):
@@ -167,8 +233,11 @@ def _executar_analytics(**context):
     from pipeline.analytics_stage import executar_etapa_analytics
 
     run_id = context["ti"].xcom_pull(task_ids="executar_bronze")
-    resumo = executar_etapa_analytics(run_id)
-    return resumo
+    storage = criar_storage()
+    return _com_span_externo(
+        storage, run_id, "analytics",
+        lambda: executar_etapa_analytics(run_id),
+    )
 
 
 def _executar_gold_analytics(**context):
@@ -185,9 +254,50 @@ def _executar_gold_analytics(**context):
         alertar_analytics_vazio,
     )
 
-    resultado = _rodar_dbt(" ".join(MODELS_ANALYTICS), None, "gold_analytics")
-    alertar_analytics_vazio(MODELS_ANALYTICS)
-    return resultado
+    run_id = context["ti"].xcom_pull(task_ids="executar_bronze")
+    storage = criar_storage()
+
+    def _build():
+        resultado = _rodar_dbt(" ".join(MODELS_ANALYTICS), None, "gold_analytics")
+        alertar_analytics_vazio(MODELS_ANALYTICS)
+        return resultado
+
+    return _com_span_externo(storage, run_id, "gold_analytics", _build)
+
+
+def _garantir_status_detalhado() -> None:
+    """Adiciona `status_detalhado` a `gold.pipeline_runs` quando ausente (ADR-056 D1).
+
+    O model incremental passa a selecionar a coluna (Onda 1); tabelas Gold
+    construídas pré-Sprint 26 não a têm. Mesmo precedente dos `_garantir_*`
+    (BUG-004/BUG-009): DDL idempotente pré-build via `information_schema`
+    (sem sintaxe dependente de versão), nunca erro — tabela ausente
+    (primeiro build) significa que o próprio dbt a criará.
+    """
+    import os
+
+    import duckdb
+
+    caminho = os.environ["DUCKDB_DATABASE_PATH"]
+    con = duckdb.connect(caminho)
+    try:
+        existe = con.execute(
+            "select count(*) from information_schema.tables"
+            " where table_schema = 'gold' and table_name = 'pipeline_runs'"
+        ).fetchone()[0]
+        if not existe:
+            logger.info("status_detalhado_sem_tabela")
+            return
+        tem_coluna = con.execute(
+            "select count(*) from information_schema.columns"
+            " where table_schema = 'gold' and table_name = 'pipeline_runs'"
+            " and column_name = 'status_detalhado'"
+        ).fetchone()[0]
+        if not tem_coluna:
+            con.execute("alter table gold.pipeline_runs add column status_detalhado varchar")
+        logger.info("status_detalhado_garantido")
+    finally:
+        con.close()
 
 
 def _garantir_ml_staging_vazio() -> None:

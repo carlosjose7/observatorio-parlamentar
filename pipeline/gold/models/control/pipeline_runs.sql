@@ -16,6 +16,22 @@
         "select count(*) as total from glob('" ~ var('bronze_pipeline_runs_dir') ~ "')"
     ) %}
     {% set arquivos_total = pg.rows[0][0] %}
+    {# `status_detalhado` (ADR-056 D1) só existe nos Parquet escritos a partir
+    da Sprint 26 — referenciá-lo incondicionalmente quebraria o build com
+    `Binder Error` enquanto o glob só tiver arquivos legados (todos sem a
+    coluna), mesmo com `union_by_name`. Introspecção de schema em tempo de
+    build (mesmo mecanismo do `run_query` acima): com a coluna, lê o valor;
+    sem ela, NULL — o Gold antigo e o novo convergem para o mesmo schema. #}
+    {% if arquivos_total | int > 0 %}
+        {% set esquema = run_query(
+            "describe select * from read_parquet('"
+            ~ var('bronze_pipeline_runs_dir') ~ "', union_by_name = true)"
+        ) %}
+        {% set colunas_parquet = [] %}
+        {% for linha in esquema.rows %}
+            {% do colunas_parquet.append(linha[0]) %}
+        {% endfor %}
+    {% endif %}
 {% endif %}
 
 {% if execute and arquivos_total | int > 0 %}
@@ -24,6 +40,11 @@
         pipeline_version,
         try_cast(execution_timestamp as timestamp) as execution_timestamp,
         status,
+        {% if 'status_detalhado' in colunas_parquet %}
+        status_detalhado,
+        {% else %}
+        cast(null as varchar) as status_detalhado,
+        {% endif %}
         cast(fontes_com_erro as varchar[]) as fontes_com_erro,
         watermark_camara,
         watermark_senado,
@@ -42,6 +63,7 @@
         cast(null as varchar) as pipeline_version,
         cast(null as timestamp) as execution_timestamp,
         cast(null as varchar) as status,
+        cast(null as varchar) as status_detalhado,
         cast(null as varchar[]) as fontes_com_erro,
         cast(null as varchar) as watermark_camara,
         cast(null as varchar) as watermark_senado,

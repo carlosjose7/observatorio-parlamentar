@@ -12,10 +12,50 @@ models:
           - unique
           - not_null
       - name: status
+        description: >
+          Status consolidado legado (Sprint 2): `success`, `failed` ou
+          `partial`. Contrato original preservado — histórico e as 11
+          regras de alerta (`PipelineFailed`, `PipelineStale`) ligam
+          nesta coluna (ADR-053/054/055).
         tests:
           - not_null
           - accepted_values:
               values: ['success', 'failed', 'partial']
+      - name: status_detalhado
+        description: >
+          Status granular (ADR-056 D1, Onda 1): espelha `status` nas
+          execuções concluídas; `warning`, `running`, `cancelled` e
+          `timeout` ficam expressáveis para o orquestrador futuro. Nullable
+          por desenho (execuções pré-Sprint 26) — SEM teste `not_null` e
+          SEM `accepted_values` (valor novo nunca pode quebrar o build).
+  - name: pipeline_task_runs
+    description: >
+      Spans de duração por task (ADR-056 D1, Onda 1) — grão
+      `(run_id, task)`, chave de merge `task_run_id` (`run_id__task`).
+      Fonte do heatmap task×dia e dos painéis de duração (Onda 5) e do
+      componente Performance do Health Index (Onda 4).
+    columns:
+      - name: task_run_id
+        tests:
+          - unique
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: task
+        tests:
+          - not_null
+      - name: status
+        description: >
+          Status do span (`success`/`failed` no caminho instrumentado;
+          vocabulário granular expressável). SEM `accepted_values` —
+          valor novo nunca quebra o build (mesmo contrato do
+          `status_detalhado`).
+        tests:
+          - not_null
+      - name: duration_seconds
+        tests:
+          - not_null
   - name: data_quality_report
     description: >
       Data Quality Report da Silver (ADR-015) promovido à Gold (ADR-031) —
