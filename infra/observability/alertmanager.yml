@@ -1,15 +1,13 @@
-# Alertmanager — roteamento das regras (Sprint 26, Onda 6, ADR-056 D6).
-# Cobre as 14 regras de `alerts.yml` (11 das Sprints 23–25 + 3 desta
-# sprint): árvore única por `severity`, destino default `blackhole`
-# (SEM destino real — sem Alertmanager antes, os alertas ao menos passam
-# a ter roteador versionado; nada se perde em silêncio).
+# Alertmanager — roteamento das regras (Sprint 26, Onda 6, ADR-056 D6;
+# Telegram, ADR-057). Cobre as 14 regras de `alerts.yml` (11 das
+# Sprints 23–25 + 3 da Sprint 26): `critical` → Telegram, demais →
+# `blackhole` (visíveis só no Prometheus UI/Grafana — pager discipline:
+# `warn` no celular vira fadiga; promover `warn` depois é um adendo).
 #
-# Receiver `slack` abaixo = ESTRUTURA PRONTA, desativada (comentada):
-# para ativar, des-comentar o receiver + a rota, e prover o webhook via
-# `.env` (`SLACK_WEBHOOK_URL`, ver `.env.example`) — NUNCA hardcode nem
-# valor real versionado. Pendente de confirmação do PO (existe webhook?).
-# Enquanto desativado, este arquivo valida com `amtool check-config` /
-# `alertmanager --check-config` (só o bloco ativo é avaliado).
+# Receiver `slack` ao final = ESTRUTURA PRONTA, desativada (comentada):
+# soma como segundo destino quando o PO confirmar o webhook via `.env`
+# (`SLACK_WEBHOOK_URL`, ver `.env.example`) — NUNCA hardcode nem valor
+# real versionado (decisão: soma, não substitui — ADR-057).
 global:
   resolve_timeout: 5m
 
@@ -22,10 +20,24 @@ route:
   routes:
     - matchers:
         - severity = critical
-      receiver: blackhole
+      receiver: telegram
 
 receivers:
   - name: blackhole
+  - name: telegram
+    telegram_configs:
+      - # Token FORA do repo (ADR-008): arquivo local gitignored
+        # `secrets/telegram_bot_token` (chmod 600), montado em
+        # `/run/secrets/` via compose. Sem o arquivo, o boot segue
+        # normal e a falha de envio aparece no log (gap auto-evidente).
+        bot_token_file: '/run/secrets/telegram_bot_token'
+        # chat_id NÃO é segredo (id numérico do grupo/canal) — versionado.
+        # OPERADOR: trocar pelo id real (via @getmyid_bot após adicionar
+        # o bot ao grupo) antes de considerar o canal ativo. `0` é
+        # rejeitado no load ("missing chat_id") — placeholder não-zero
+        # carrega limpo e só falha na entrega (com log) até a troca.
+        chat_id: 123456789
+        send_resolved: true
 
 # ── Template Slack (desativado — ver cabeçalho) ──────────────
 #  - name: slack

@@ -8,6 +8,24 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — Canal Telegram no Alertmanager (19/09/2026)
+
+### Adicionado
+- **Telegram (ADR-057):** receiver `telegram_configs` com rota ativa
+  para `severity = critical` (pager discipline — `warn` segue UI-only);
+  token via `bot_token_file` (`secrets/`, gitignored, mount `:ro`),
+  `chat_id` versionado (placeholder até o operador trocar pelo real).
+  Slack mantido como template desativado (soma, não substitui).
+- **Contrato:** `test_alertmanager_telegram_sem_segredo_versionado`
+  (sem `bot_token` inline, rota critical→telegram, mount no compose).
+
+### Decisão
+- **WhatsApp descartado como primário:** sem receiver nativo; via
+  oficial exige Business + templates, gateways não-oficiais têm risco
+  de ban — inadequados para alerta de produção.
+- **Pendente do operador:** criar o bot (BotFather), `chat_id`,
+  `secrets/telegram_bot_token` (chmod 600) e restart do serviço.
+
 ## Sprint 26 — Observabilidade em ondas (19/09/2026)
 
 ### Adicionado

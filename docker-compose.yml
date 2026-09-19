@@ -189,6 +189,7 @@ services:
       - "--cluster.listen-address="
     volumes:
       - ./infra/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./secrets/telegram_bot_token:/run/secrets/telegram_bot_token:ro
       - alertmanager-data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
