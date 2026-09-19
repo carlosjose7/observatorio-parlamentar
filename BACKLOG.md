@@ -2244,3 +2244,19 @@ de pipeline.
   sem ele, `blackhole` + estrutura pronta); anomalias estatísticas
   (overlap `analytics/anomalies`); logs, traces, minio cluster metrics,
   statsd, opentelemetry (pendências herdadas).
+
+---
+
+## Hotfix — Canal Telegram no Alertmanager (ADR-057)
+
+**Branch:** feat/telegram-alertmanager-adr057 → main (PR único)
+
+- [x] Receiver `telegram_configs` + rota ativa `critical` → telegram
+  (pager discipline; `warn` UI-only, promovível por adendo)
+- [x] Segredo via `bot_token_file` (`secrets/`, gitignored); `chat_id`
+  versionado; contrato anti-hardcode no selo de provisioning
+- [x] Slack mantido como template (soma, não substitui); WhatsApp
+  descartado como primário (sem receiver nativo / risco de ban)
+- [x] Docs (ADR-057 Aceito, CHANGELOG, PROJECT_CONTEXT §1.3)
+- Pendente do operador: bot (BotFather), `chat_id` real,
+  `secrets/telegram_bot_token` (chmod 600), restart do serviço

@@ -143,3 +143,34 @@ def test_compose_grafana_somente_localhost_sem_nginx():
     nginx = doc["services"].get("nginx", {})
     nginx_txt = json.dumps(nginx.get("ports", []))
     assert "3000" not in nginx_txt
+
+
+def test_alertmanager_telegram_sem_segredo_versionado():
+    """Rota Telegram ativa sem segredo no repo (ADR-057).
+
+    Token via `bot_token_file` (arquivo gitignored `secrets/`, montado
+    pelo compose) — nenhum `bot_token` inline; `chat_id` versionado (não
+    é segredo); rota `critical` → telegram; compose monta o arquivo.
+    """
+    am = yaml.safe_load(
+        (_REPO / "infra" / "observability" / "alertmanager.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    texto = (_REPO / "infra" / "observability" / "alertmanager.yml").read_text(
+        encoding="utf-8"
+    )
+    rotas = am["route"]["routes"]
+    assert any(
+        r.get("receiver") == "telegram"
+        and r.get("matchers") == ["severity = critical"]
+        for r in rotas
+    )
+    receivers = {r["name"]: r for r in am["receivers"]}
+    tg = receivers["telegram"]["telegram_configs"][0]
+    assert tg["bot_token_file"] == "/run/secrets/telegram_bot_token"
+    assert "bot_token" not in tg
+    assert isinstance(tg["chat_id"], int) and tg["chat_id"] != 0
+    assert "hooks.slack.com/services/" not in texto  # Slack segue template
+    compose = (_REPO / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "./secrets/telegram_bot_token:/run/secrets/telegram_bot_token:ro" in compose

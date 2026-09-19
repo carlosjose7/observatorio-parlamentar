@@ -3427,3 +3427,58 @@ Consequências:
 - Anomalias estatísticas seguem pendentes (possível sobreposição com
   `analytics/anomalies`) — não implementadas por decisão de escopo.
 - Qualquer mudança nestas decisões volta para aprovação antes de prosseguir.
+
+---
+
+ADR-057
+Título: Canal Telegram no Alertmanager (soma com o Slack, critical-only)
+
+Status:
+Aceito — branch feat/telegram-alertmanager-adr057
+
+Contexto:
+ADR-056 D6 entregou o Alertmanager com destino default `blackhole` e o
+Slack como estrutura pronta desativada, pendente de webhook do PO. Sem
+webhook, o roteador existe mas nada chega ao operador. WhatsApp foi
+avaliado e descartado como canal primário: sem receiver nativo, a via
+oficial (Meta Business Cloud via `webhook_configs`) exige conta
+Business + templates pré-aprovados, e gateways não-oficiais trazem
+risco de ban — inadequados para alerta de produção. Telegram tem
+receiver nativo (`telegram_configs`) e ativação trivial (BotFather +
+`chat_id`), sem infra extra e sem dependência de workspace.
+
+Decisão:
+1. Soma, não substitui: o template Slack comentado permanece (custo de
+   manutenção zero; roteamento multi-canal com ativação incremental é a
+   narrativa arquitetural — se o projeto virar equipe, o Slack ativa sem
+   reengenharia).
+2. Telegram recebe só `severity = critical` (pager discipline): `warn`
+   no celular vira fadiga — com o cartão rondando os 20% do
+   `QuarentenaCartaoWarn`, o risco de flap é real. `warn` segue visível
+   no Prometheus UI/Grafana; nada se perde. Promover `warn` depois é um
+   adendo de uma linha. Críticos cobertos: `PipelineFailed/Stale`,
+   `FreshnessCritical`, `QuarentenaCritical`, `QuarentenaCartaoCritical`,
+   `PipelineHealthCritical`, `DQScoreFail`.
+3. Segredo fora do repo (ADR-008):    `bot_token_file` =
+   `/run/secrets/telegram_bot_token` (arquivo local gitignored
+   `secrets/`, chmod 600, montado `:ro` pelo compose) — verificado
+   empiricamente que a v0.28.0 aceita o campo (boot limpo, sem
+   `envsubst`/shell na imagem, sem imagem custom). `chat_id` é
+   versionado (id numérico, não é segredo); placeholder não-zero
+   (`0` é rejeitado no load como ausente — achado empírico) até o
+   operador trocar pelo real. Contrato trava: nenhum `bot_token`
+   inline, rota critical→telegram, mount no compose
+   (`test_alertmanager_telegram_sem_segredo_versionado`).
+4. Passos de operador (fora do repo, runbook): criar o bot no
+   BotFather → adicionar ao grupo → obter `chat_id` (ex: @getmyid_bot)
+   → gravar o token em `secrets/telegram_bot_token` → trocar `chat_id`
+   no `alertmanager.yml` → restart do serviço. Sem o arquivo, o boot
+   segue normal e a falha de envio aparece no log (gap auto-evidente).
+
+Consequências:
+- Até o operador concluir o item 4, críticos tentam entrega e falham
+  com log (visível) — `warn` segue UI-only; nenhum alerta some em
+  silêncio além do já documentado `blackhole` para não-críticos.
+- Nenhuma mudança em testes/compose (além do mount)/dashboard/exporter:
+  é só roteamento — o diff prova o escopo cirúrgico.
+- Qualquer mudança nesta decisão volta para aprovação antes de prosseguir.
