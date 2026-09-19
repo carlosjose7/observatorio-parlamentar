@@ -91,12 +91,17 @@ def test_alertas_somente_series_do_contrato():
     )
     rules = alerts["groups"][0]["rules"]
     assert len(rules) >= 8
+    nomes = set()
     for rule in rules:
+        nomes.add(rule["alert"])
         assert rule["labels"]["severity"] in {"warn", "critical"}
         desconhecidas = (
-            _metricas(rule["expr"]) - _SERIES_CONTRATO - {"status"}
+            _metricas(rule["expr"]) - _SERIES_CONTRATO
+            - {"tabela", "fonte", "status", "regra", "rota", "versao"}
         )
         assert not desconhecidas, f"{rule['alert']}: {desconhecidas}"
+    # ADR-054: régua própria do cartão (20%/25%), demais tabelas no 2%/5%.
+    assert {"QuarentenaCartaoWarn", "QuarentenaCartaoCritical"} <= nomes
 
 
 def test_compose_grafana_somente_localhost_sem_nginx():
