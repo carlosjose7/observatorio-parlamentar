@@ -1,9 +1,10 @@
-"""Provisioning Grafana + alertas (Sprint 23, ADR-053, Onda 4).
+"""Provisioning Grafana + alertas (Sprint 23, ADR-053, Onda 4; Sprint 26, ADR-056).
 
 Prova o contrato da Fase 2 sem subir containers: datasource aponta para
-o Prometheus interno, dashboard tem os 4 painéis com réguas dos SLOs de
-`config/observability.yaml`, alertas referenciam só séries Fase 0+1
-(ADR-051 §5) e o compose expõe Grafana só em 127.0.0.1:3000.
+o Prometheus interno, dashboard tem os painéis com réguas dos SLOs de
+`config/observability.yaml` (4 da Fase 2 + 5 da Sprint 26), alertas
+referenciam só séries do contrato (Fase 0+1, ADR-051 §5, + 12 séries da
+Sprint 26, ADR-056) e o compose expõe Grafana só em 127.0.0.1:3000.
 """
 
 from __future__ import annotations
@@ -35,6 +36,28 @@ _SERIES_CONTRATO = {
     "http_latency_seconds",
     "gold_indisponivel_total",
     "gold_tabelas_ok",
+    # Sprint 26 (ADR-056, Ondas 1–4/7): status granular e duração por task,
+    # MTTR/MTBF, cobertura, Health Index e score DQ agregado.
+    "pipeline_task_duration_seconds",
+    "pipeline_task_last_run_status",
+    "pipeline_mttr_seconds",
+    "pipeline_mtbf_seconds",
+    "pipeline_execucoes_planejadas_total",
+    "pipeline_execucoes_nao_realizadas_total",
+    "pipeline_cobertura_ratio",
+    "pipeline_health_index",
+    "pipeline_health_status",
+    "pipeline_dq_score_pass_total",
+    "pipeline_dq_score_warn_total",
+    "pipeline_dq_score_fail_total",
+}
+
+_PAINEIS_SPRINT26 = {
+    "Tasks: status (Sprint 26)",
+    "Tasks: duracao (heatmap, Sprint 26)",
+    "Health Index (0-100, Sprint 26)",
+    "Duracao por task + P95 7d (Sprint 26)",
+    "MTTR / MTBF (Sprint 26)",
 }
 
 _METRIC_RE = re.compile(r"[a-z_][a-z0-9_]*")
@@ -48,7 +71,7 @@ def _metricas(expr: str) -> set[str]:
     return {
         t
         for t in norm
-        if t not in {"sum", "rate", "max", "time", "increase", "histogram_quantile", "deriv"}
+        if t not in {"sum", "rate", "max", "time", "increase", "histogram_quantile", "deriv", "quantile_over_time"}
         and len(t) > 1
     }
 
@@ -62,14 +85,16 @@ def test_datasource_aponta_prometheus_interno():
     assert ds["editable"] is False
 
 
-def test_dashboard_tem_4_paineis_com_regras_dos_slos():
+def test_dashboard_tem_9_paineis_com_regras_dos_slos():
     slos = yaml.safe_load(
         (_REPO / "config" / "observability.yaml").read_text(encoding="utf-8")
     )["observability"]["slos"]
     dash = json.loads(
         (_PROV / "dashboards" / "observatorio.json").read_text(encoding="utf-8")
     )
-    assert len(dash["panels"]) == 4
+    assert len(dash["panels"]) == 9
+    titulos = {p["title"] for p in dash["panels"]}
+    assert _PAINEIS_SPRINT26 <= titulos
     exprs = [
         t["expr"] for p in dash["panels"] for t in p.get("targets", [])
     ]
@@ -102,8 +127,10 @@ def test_alertas_somente_series_do_contrato():
         assert not desconhecidas, f"{rule['alert']}: {desconhecidas}"
     # ADR-054: régua própria do cartão (20%/25%), demais tabelas no 2%/5%.
     # ADR-055: freshness por fonte (cartão por progresso, demais absoluto).
+    # ADR-056: Health crítico, DQ FAIL e último span da task (Sprint 26).
     assert {"QuarentenaCartaoWarn", "QuarentenaCartaoCritical"} <= nomes
     assert "FreshnessCartaoStalled" in nomes
+    assert {"PipelineHealthCritical", "DQScoreFail", "TaskFalhou"} <= nomes
 
 
 def test_compose_grafana_somente_localhost_sem_nginx():
