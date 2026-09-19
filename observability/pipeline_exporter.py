@@ -54,7 +54,7 @@ _FONTES = (
 # execução é sempre incluído mesmo que seja um valor novo.
 _STATUS_CONHECIDOS = ("success", "failed", "partial")
 
-_FORMATOS_WATERMARK = ("%Y-%m-%d", "%Y-%m", "%Y", "%d/%m/%Y")
+_FORMATOS_WATERMARK = ("%Y-%m-%d", "%Y-%m", "%Y", "%d/%m/%Y", "%m/%Y")
 
 g_last_run_status = Gauge(
     "pipeline_last_run_status",

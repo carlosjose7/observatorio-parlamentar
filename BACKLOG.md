@@ -2177,3 +2177,22 @@ de pipeline.
 - Nota: a entrada standalone "purga/retenção" do Backlog Futuro
   (branch `docs/backlog-quarentena-retencao`, nunca commitada) foi
   absorvida por esta sprint — branch e stash descartados no merge.
+
+---
+
+## Sprint 25 — Freshness real
+
+**Branch:** sprint/25-freshness-parser → main (PR único ao final)
+
+**Sprint 25 FECHADA em 2026-09-19.**
+
+> Diagnóstico 19/09: pipeline verde legítimo, instrumento cego —
+> parser sem `%m/%Y` invisibiliza camara/cartão; granularidade anual
+> infla lag em ~260d. Escopo: parser + âncora + recalibração.
+
+- [x] Onda 0 — ADR-055 proposto (parser %m/%Y + âncora conservadora)
+- [x] Onda 1 — fix `_FORMATOS_WATERMARK` + teste parametrizado
+  (9 casos, valores reais das fontes)
+- [x] Onda 2 — recalibração por fonte: cartão por progresso
+  (`deriv(lag)[48h] >= 0`, adendo ADR-055 padrão ADR-054); demais 24h/26h
+- [x] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria

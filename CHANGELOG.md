@@ -8,6 +8,17 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 25 — Freshness real (19/09/2026)
+
+### Corrigido
+- **Parser de watermark (ADR-055):** `%m/%Y` adicionado a
+  `_FORMATOS_WATERMARK` — camara (`09/2026`) e cartão (`06/2014`)
+  voltam a ser observáveis; teste parametrizado com 9 casos reais
+  trava a regressão (gap nomeado: parser nunca testado até a 22).
+- **Freshness por fonte:** cartão em backfill medido por progresso
+  (`FreshnessCartaoStalled`, `deriv[48h] >= 0`); demais fontes mantêm
+  24h/26h absolutos. Âncora conservadora (dia 1º).
+
 ## Sprint 24 — Quarentena do cartão (18/09/2026)
 
 ### Adicionado

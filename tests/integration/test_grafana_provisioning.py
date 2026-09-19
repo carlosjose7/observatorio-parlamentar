@@ -48,7 +48,7 @@ def _metricas(expr: str) -> set[str]:
     return {
         t
         for t in norm
-        if t not in {"sum", "rate", "max", "time", "increase", "histogram_quantile"}
+        if t not in {"sum", "rate", "max", "time", "increase", "histogram_quantile", "deriv"}
         and len(t) > 1
     }
 
@@ -101,7 +101,9 @@ def test_alertas_somente_series_do_contrato():
         )
         assert not desconhecidas, f"{rule['alert']}: {desconhecidas}"
     # ADR-054: régua própria do cartão (20%/25%), demais tabelas no 2%/5%.
+    # ADR-055: freshness por fonte (cartão por progresso, demais absoluto).
     assert {"QuarentenaCartaoWarn", "QuarentenaCartaoCritical"} <= nomes
+    assert "FreshnessCartaoStalled" in nomes
 
 
 def test_compose_grafana_somente_localhost_sem_nginx():

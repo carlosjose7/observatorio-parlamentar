@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import socket
 import urllib.request
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -146,3 +147,23 @@ def test_exporter_gold_indisponivel_nao_quebra_o_http(monkeypatch):
     exporter.coletar()  # não deve lançar
     status, _ = _corpo_metrics()
     assert status == 200
+
+
+@pytest.mark.parametrize(
+    ("bruto", "esperado"),
+    [
+        # Formatos reais das fontes (Sprint 25, ADR-055 — regressão do
+        # ponto cego: %m/%Y de camara/cartão nunca foi exercitado).
+        ("09/2026", datetime(2026, 9, 1, tzinfo=UTC)),
+        ("06/2014", datetime(2014, 6, 1, tzinfo=UTC)),
+        ("2026", datetime(2026, 1, 1, tzinfo=UTC)),
+        ("2026-09-15", datetime(2026, 9, 15, tzinfo=UTC)),
+        ("15/09/2026", datetime(2026, 9, 15, tzinfo=UTC)),
+        ("Sem informação", None),
+        ("n/a", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_watermark_formatos_reais(bruto, esperado):
+    assert exporter._parse_watermark(bruto) == esperado
