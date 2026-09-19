@@ -8,6 +8,21 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 24 — Quarentena do cartão (18/09/2026)
+
+### Adicionado
+- **Alertas por tabela (ADR-054):** `silver_cartao` com régua própria
+  (warn 20%/critical 25% — quarentena crônica ~17–20% por lacuna
+  declarada da fonte); demais tabelas mantêm 2%/5%.
+- **Retenção da quarentena:** `purgar_quarentena_antiga()` em
+  `pipeline/silver.py` (TTL por `run_id`, N=15 alinhado à retenção
+  default do Prometheus 15d; purga nunca derruba carga).
+
+### Decisão
+- **ADR-054 (lacuna aceita):** POC 59/59 com `"Sem informação"` literal
+  da CGU (2023–2026) — `not_nullable` em `data_transacao` mantido,
+  sem mudança em extrator/transform.
+
 ## Hotfix — Nginx preserva path com DNS dinâmico (15/09/2026)
 
 ### Corrigido

@@ -3206,7 +3206,7 @@ ADR-054
 Título: Quarentena silver_cartao — lacuna declarada da fonte + alerta por tabela
 
 Status:
-Proposto — Sprint 24, branch sprint/24-quarentena-adr (revisão antes de prosseguir)
+Aceito — Sprint 24, Ondas 0–3 (branch sprint/24-quarentena-adr)
 
 Contexto:
 POC empírica de 16/09/2026 (relatório fora do repo,

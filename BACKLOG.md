@@ -2149,7 +2149,7 @@ de pipeline.
 
 ---
 
-## Sprint 24 — Quarentena do cartão (aberta, em andamento)
+## Sprint 24 — Quarentena do cartão
 
 > POC empírica concluída antes do ADR (59/59 "Sem informação" na
 > Bronze, crônico 2023–2026; relatório fora do repo em
@@ -2157,11 +2157,23 @@ de pipeline.
 > limitação via ADR + calibrar alerta por tabela + retenção da
 > quarentena. Sem mudança em extrator/transform (nada a corrigir).
 
-**Branch:** sprint/24-quarentena-adr → main
+**Sprint 24 FECHADA em 2026-09-18.**
+
+> POC empírica concluída antes do ADR (59/59 "Sem informação" na
+> Bronze, crônico 2023–2026; relatório fora do repo em
+> /tmp/opencode/relatorio_poc_quarentena_cartao.md). Escopo: aceitar a
+> limitação via ADR + calibrar alerta por tabela + retenção da
+> quarentena. Sem mudança em extrator/transform (nada a corrigir).
+
+**Branch:** sprint/24-quarentena-adr → main (PR único ao final)
 
 - [x] Onda 0 — POC Bronze + ADR-054 proposto (lacuna aceita + alerta
   por tabela + TTL quarantine_*)
-- [ ] Onda 1 — `alerts.yml`: régua silver_cartao 20%/25%, demais 2%/5%
-- [ ] Onda 2 — retenção quarantine_* (TTL por run_id) + remoção da
-  entrada standalone do Backlog Futuro
-- [ ] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria
+- [x] Onda 1 — `alerts.yml`: régua silver_cartao 20%/25%, demais 2%/5%
+- [x] Onda 2 — retenção quarantine_* (TTL por run_id, N=15 alinhado à
+  retenção default do Prometheus 15d) + entrada standalone do Backlog
+  Futuro absorvida (ver nota)
+- [x] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria
+- Nota: a entrada standalone "purga/retenção" do Backlog Futuro
+  (branch `docs/backlog-quarentena-retencao`, nunca commitada) foi
+  absorvida por esta sprint — branch e stash descartados no merge.
