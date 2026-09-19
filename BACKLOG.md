@@ -2146,3 +2146,22 @@ de pipeline.
 - Pendentes p/ sprints futuras: logs, traces, roteamento de alertas
   (Alertmanager/email/webhook), minio cluster metrics (ADR-008),
   AIRFLOW__METRICS__STATSD_ON / statsd-exporter, deps opentelemetry.
+
+---
+
+## Sprint 24 — Quarentena do cartão (aberta, em andamento)
+
+> POC empírica concluída antes do ADR (59/59 "Sem informação" na
+> Bronze, crônico 2023–2026; relatório fora do repo em
+> /tmp/opencode/relatorio_poc_quarentena_cartao.md). Escopo: aceitar a
+> limitação via ADR + calibrar alerta por tabela + retenção da
+> quarentena. Sem mudança em extrator/transform (nada a corrigir).
+
+**Branch:** sprint/24-quarentena-adr → main
+
+- [x] Onda 0 — POC Bronze + ADR-054 proposto (lacuna aceita + alerta
+  por tabela + TTL quarantine_*)
+- [ ] Onda 1 — `alerts.yml`: régua silver_cartao 20%/25%, demais 2%/5%
+- [ ] Onda 2 — retenção quarantine_* (TTL por run_id) + remoção da
+  entrada standalone do Backlog Futuro
+- [ ] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria

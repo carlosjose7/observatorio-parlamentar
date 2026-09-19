@@ -3199,3 +3199,58 @@ Consequências:
   opentelemetry seguem pendentes (não descartados).
 - Qualquer mudança nesta decisão durante Ondas 1-4 paralisa a
   sprint e volta para aprovação antes de prosseguir.
+
+---
+
+ADR-054
+Título: Quarentena silver_cartao — lacuna declarada da fonte + alerta por tabela
+
+Status:
+Proposto — Sprint 24, branch sprint/24-quarentena-adr (revisão antes de prosseguir)
+
+Contexto:
+POC empírica de 16/09/2026 (relatório fora do repo,
+/tmp/opencode/relatorio_poc_quarentena_cartao.md): `silver_cartao`
+tem ~19,7% em quarentena (`not_nullable` em `data_transacao`),
+puxando o ratio global para ~17% e mantendo `QuarentenaCritical`
+(5% global, ADR-053) permanentemente disparado. Amostra de 59 ids
+(10 por competência, 12/2023–06/2026) confrontada com a Bronze bruta
+(`bucket bronze/transparencia_cartoes/...`, coluna `data_transacao`)
+com o parser real (`parse_date_multi_format`): 59/59 com o literal
+`"Sem informação"` — a própria CGU declara esses lançamentos CPGF
+como sem data. Crônico em todas as competências: não é regressão de
+parsing (hipótese b refutada) nem data em outro campo (hipótese c
+refutada — só `mes_extrato`/`execution_timestamp`, que não são data
+da transação). Cadeia: `dataTransacao` vazia/imparseável → `None`
+(ADR-016, nunca lança) → `NaT` → viola `nullable=False`
+(`quality.py:schema_silver_cartao`, NOT NULLs de `fact_cartao_cpgf`,
+ADR-010/012).
+
+Decisão:
+1. Aceitar como limitação da fonte (NÃO relaxar `not_nullable`):
+   ao contrário do `sigla_partido` (ADR-052, estado legítimo
+   documentado), pagamento sem data não tem âncora analítica — o
+   fato é chaveado por `dim_data`. A quarentena permanece; nada muda
+   no extrator/transform (não há bug a corrigir).
+2. Alerta por tabela em vez de global único: o 5% global sempre
+   gritará por causa do cartão. Manter 2%/5% para as demais tabelas
+   e adotar régua própria para `silver_cartao` — warn 20%,
+   critical 25% (acima do patamar crônico ~17–20%, captura
+   degradação real). Implementação em `infra/observability/alerts.yml`
+   (expr com `on(tabela)` / regras separadas) fica para a onda de
+   implementação após o aceite deste ADR — nenhum YAML muda nesta onda.
+3. Retenção das tabelas `quarantine_*`: crescimento ilimitado
+   (`quarantine_silver_cartao` com 4M linhas desde o rebuild de
+   22/08). Adotar TTL por `run_id` (manter últimos N runs;
+   N a definir na onda de implementação). Isto absorve o item
+   "purga/retenção" registrado no Backlog Futuro (branch
+   `docs/backlog-quarentena-retencao`) — a entrada standalone será
+   removida ao mergear esta sprint.
+
+Consequências:
+- `QuarentenaCritical` global deixa de ser ruído permanente; degradação
+  real no cartão (>25%) ou nas demais tabelas (>5%) continua alertada.
+- Quarentena segue como destino legítimo (não erro): dashboards e
+  runbooks devem tratá-la assim.
+- Qualquer mudança nesta decisão durante as ondas paralisa a sprint
+  e volta para aprovação antes de prosseguir.
