@@ -72,7 +72,7 @@ from api.schemas.parlamentares import (
     PerfilParlamentar,
     RedeParlamentar,
 )
-from api.schemas.pipeline import ExecucaoPipeline, PipelineStatus
+from api.schemas.pipeline import ExecucaoPipeline, ListaTaskRuns, PipelineStatus, TaskRun
 from api.schemas.qualidade import LinhaQualidade, RelatorioQualidade
 from api.schemas.rede import (
     ArestaFornecedor,
@@ -960,7 +960,7 @@ def listar_execucoes(*, limite: int) -> PipelineStatus:
     with _conexao() as con:
         linhas = con.execute(
             "select run_id, pipeline_version, execution_timestamp, status,"
-            " fontes_com_erro, watermark_camara, watermark_senado,"
+            " status_detalhado, fontes_com_erro, watermark_camara, watermark_senado,"
             " watermark_cgu_emenda, watermark_cgu_cartao"
             " from pipeline_runs order by execution_timestamp desc limit ?",
             [limite],
@@ -968,7 +968,7 @@ def listar_execucoes(*, limite: int) -> PipelineStatus:
 
     colunas = [
         "run_id", "pipeline_version", "execution_timestamp", "status",
-        "fontes_com_erro", "watermark_camara", "watermark_senado",
+        "status_detalhado", "fontes_com_erro", "watermark_camara", "watermark_senado",
         "watermark_cgu_emenda", "watermark_cgu_cartao",
     ]
     itens = []
@@ -981,6 +981,38 @@ def listar_execucoes(*, limite: int) -> PipelineStatus:
         )
         itens.append(ExecucaoPipeline.model_validate(bruto))
     return PipelineStatus(total=len(itens), itens=itens)
+
+
+@_tratar_erro_gold
+def listar_task_runs(*, limite: int) -> ListaTaskRuns:
+    """Spans de duração por task (`pipeline_task_runs`, ADR-056 D1), mais recentes primeiro.
+
+    Tabela de controle nova na Sprint 26: Gold construído pré-Onda 1 não a
+    tem — falha degrada como `GoldIndisponivel` (503 na API, bloco pulado no
+    exporter), nunca como 500 (mesmo contrato do `_tratar_erro_gold`).
+    """
+    with _conexao() as con:
+        linhas = con.execute(
+            "select task_run_id, run_id, task, status, duration_seconds,"
+            " pipeline_version, execution_timestamp"
+            " from pipeline_task_runs order by execution_timestamp desc limit ?",
+            [limite],
+        ).fetchall()
+
+    colunas = [
+        "task_run_id", "run_id", "task", "status", "duration_seconds",
+        "pipeline_version", "execution_timestamp",
+    ]
+    itens = []
+    for linha in linhas:
+        bruto = dict(zip(colunas, linha))
+        bruto["execution_timestamp"] = (
+            bruto["execution_timestamp"].isoformat()
+            if bruto["execution_timestamp"] is not None
+            else None
+        )
+        itens.append(TaskRun.model_validate(bruto))
+    return ListaTaskRuns(total=len(itens), itens=itens)
 
 
 # ── Onda 4: agent-ready (ADR-032) ───────────────────────────────

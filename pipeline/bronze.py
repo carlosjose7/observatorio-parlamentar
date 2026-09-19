@@ -32,7 +32,7 @@ from pipeline.config import (
 )
 from pipeline.contracts import ExtractResult, LoadMetadata
 from pipeline.logging_config import configure_logging
-from pipeline.runs import PipelineRun, write_pipeline_run
+from pipeline.runs import PipelineRun, medir_task, write_pipeline_run
 from pipeline.senado import extract as senado_extract
 from pipeline.storage import Storage, criar_storage
 from pipeline.transparencia import extract as transparencia_extract
@@ -373,6 +373,19 @@ def _extrair_e_persistir_parlamentares(
     return None, None
 
 
+SPAN_BRONZE_POR_FONTE = {
+    "camara": "bronze_camara",
+    "senado": "bronze_senado",
+    "transparencia_emendas": "bronze_cgu_emenda",
+    "transparencia_cartoes": "bronze_cgu_cartao",
+}
+
+
+def _span_bronze(fonte: str) -> str:
+    """Nome do span de duração da fonte Bronze (ADR-056 D1, Onda 1)."""
+    return SPAN_BRONZE_POR_FONTE[fonte]
+
+
 def run_pipeline(
     storage: Storage | None = None,
     store: WatermarkStore | None = None,
@@ -414,7 +427,18 @@ def run_pipeline(
     watermarks: dict[str, str | None] = {}
     fontes_com_erro: list[str] = []
     for fonte in FONTES:
-        novo, erro = _extrair_e_persistir(fonte, client, store, storage, run_meta, retry_settings)
+        # Span por fonte (ADR-056 D1, Onda 1): duração observável por task
+        # no Gold (`pipeline_task_runs`) — instrumentação própria, não o
+        # metadata do Airflow. Falha de persistência grava `failed` e
+        # propaga (comportamento pré-existente, sem máscara).
+        with medir_task(
+            storage,
+            run_id=run_meta.run_id,
+            task=_span_bronze(fonte),
+            pipeline_version=run_meta.pipeline_version,
+            execution_timestamp=run_meta.execution_timestamp,
+        ):
+            novo, erro = _extrair_e_persistir(fonte, client, store, storage, run_meta, retry_settings)
         if erro is not None:
             fontes_com_erro.append(fonte)
         else:
@@ -423,7 +447,14 @@ def run_pipeline(
     # Onda 2: snapshot de dados mestres de parlamentares (Câmara + Senado,
     # dim_parlamentar SCD2). Não integra PipelineRun/pipeline_runs nesta
     # sprint — apenas loga.
-    _extrair_e_persistir_parlamentares(client, storage, run_meta, retry_settings)
+    with medir_task(
+        storage,
+        run_id=run_meta.run_id,
+        task="bronze_parlamentares",
+        pipeline_version=run_meta.pipeline_version,
+        execution_timestamp=run_meta.execution_timestamp,
+    ):
+        _extrair_e_persistir_parlamentares(client, storage, run_meta, retry_settings)
 
     status = "success"
     if fontes_com_erro:
@@ -434,6 +465,10 @@ def run_pipeline(
         pipeline_version=run_meta.pipeline_version,
         execution_timestamp=run_meta.execution_timestamp,
         status=status,
+        # Status granular (ADR-056 D1): espelha o legado na conclusão; o
+        # vocabulário estendido (warning/running/cancelled/timeout) fica
+        # expressável para o orquestrador futuro sem reescrever histórico.
+        status_detalhado=status,
         fontes_com_erro=fontes_com_erro,
         watermark_camara=watermarks.get("camara"),
         watermark_senado=watermarks.get("senado"),

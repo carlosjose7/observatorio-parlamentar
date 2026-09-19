@@ -1,0 +1,41 @@
+# Alertmanager — roteamento das regras (Sprint 26, Onda 6, ADR-056 D6).
+# Cobre as 14 regras de `alerts.yml` (11 das Sprints 23–25 + 3 desta
+# sprint): árvore única por `severity`, destino default `blackhole`
+# (SEM destino real — sem Alertmanager antes, os alertas ao menos passam
+# a ter roteador versionado; nada se perde em silêncio).
+#
+# Receiver `slack` abaixo = ESTRUTURA PRONTA, desativada (comentada):
+# para ativar, des-comentar o receiver + a rota, e prover o webhook via
+# `.env` (`SLACK_WEBHOOK_URL`, ver `.env.example`) — NUNCA hardcode nem
+# valor real versionado. Pendente de confirmação do PO (existe webhook?).
+# Enquanto desativado, este arquivo valida com `amtool check-config` /
+# `alertmanager --check-config` (só o bloco ativo é avaliado).
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: blackhole
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: blackhole
+
+receivers:
+  - name: blackhole
+
+# ── Template Slack (desativado — ver cabeçalho) ──────────────
+#  - name: slack
+#    slack_configs:
+#      - channel: "#observatorio-alertas"
+#        send_resolved: true
+#        # Preenchido pelo operador a partir de ${SLACK_WEBHOOK_URL} (.env):
+#        webhook_url: "REPLACE-ME"
+# Rota correspondente (desativada — dentro de `route.routes` acima):
+#    - matchers:
+#        - severity =~ "critical|warn"
+#      receiver: slack
+#      continue: true

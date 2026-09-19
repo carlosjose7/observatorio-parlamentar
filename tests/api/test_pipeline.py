@@ -19,9 +19,17 @@ def test_status_lista_execucoes_recentes_primeiro(_cliente):
     assert run_ids == ["run-2026-01-10", "run-2026-01-05", "run-2025-12-01"]
     mais_recente = corpo["itens"][0]
     assert mais_recente["status"] == "success"
+    assert mais_recente["status_detalhado"] == "success"
     assert mais_recente["pipeline_version"] == "0.1.0"
     assert mais_recente["fontes_com_erro"] is None
     assert mais_recente["watermark_camara"] == "2026-01-09"
+
+
+def test_status_detalhado_granular_e_legado_nulo(_cliente):
+    """`status_detalhado` granular (ADR-056 D1): valor novo + nulo legado."""
+    corpo = _cliente.get("/pipeline/status").json()
+    assert corpo["itens"][1]["status_detalhado"] == "warning"
+    assert corpo["itens"][2]["status_detalhado"] is None
 
 
 def test_status_parcial_e_falha(_cliente):

@@ -582,6 +582,10 @@ class ObservabilitySlosSettings(_StrictModel):
     freshness_alerta_horas: float = Field(default=26, gt=0)
     quarentena_warn_pct: float = Field(default=2.0, ge=0)
     quarentena_critical_pct: float = Field(default=5.0, ge=0)
+    # Régua própria de `silver_cartao` (ADR-054, Onda 4/7): mesma semântica
+    # dos globais, patamar crônico da fonte.
+    quarentena_cartao_warn_pct: float = Field(default=20.0, ge=0)
+    quarentena_cartao_critical_pct: float = Field(default=25.0, ge=0)
     api_p95_ms: float = Field(default=500, gt=0)
 
 
@@ -671,6 +675,10 @@ def get_dbt_vars() -> dict[str, str]:
         vars_["bronze_pipeline_runs_dir"] = (
             f"s3://{pipeline.armazenamento.bronze.bucket_minio}/"
             "controle/pipeline_runs/*.parquet"
+        )
+        vars_["bronze_pipeline_task_runs_dir"] = (
+            f"s3://{pipeline.armazenamento.bronze.bucket_minio}/"
+            "controle/pipeline_task_runs/*.parquet"
         )
     return vars_
 
