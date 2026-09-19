@@ -3254,3 +3254,55 @@ Consequências:
   runbooks devem tratá-la assim.
 - Qualquer mudança nesta decisão durante as ondas paralisa a sprint
   e volta para aprovação antes de prosseguir.
+
+---
+
+ADR-055
+Título: Freshness real — parser %m/%Y, âncora conservadora, recalibração
+
+Status:
+Proposto — Sprint 25, branch sprint/25-freshness-parser (revisão antes de prosseguir)
+
+Contexto:
+Diagnóstico de 19/09/2026 sobre `pipeline_watermark_lag_hours`:
+runs diários `success` com 3 watermarks correntes
+(camara `09/2026`, senado/cgu_emenda `2026`) e cartão em backfill
+por desenho (`mes_inicio 01/2013`, +1 mês/dia) — mas o Prometheus
+mostrava só 2 fontes com lag de ~260 dias. Duas causas no instrumento,
+não no pipeline:
+1. Ponto cego: `_FORMATOS_WATERMARK`
+   (`observability/pipeline_exporter.py:57`) não cobre `%m/%Y` —
+   camara e cartão (exatamente esse formato) são pulados em silêncio
+   (`_parse_watermark` retorna `None`, sem log). Metade das fontes
+   invisível: o alerta que não dispara quando devia.
+2. Granularidade: `2026` parseia como 1º/jan → lag inflado em ~260
+   dias; os alertas Freshness pendentes são meio falsos-positivos.
+Gap de teste nomeado: `tests/integration/test_observability_exporter.py`
+cobre o contrato das séries (nomes, `run_id` nunca label), mas
+**nenhum teste cobre `_parse_watermark`** — o formato real das fontes
+(`%m/%Y`, usado por camara e cartão) nunca foi exercitado. É por isso
+que o ponto cego sobreviveu à Sprint 22.
+
+Decisão:
+1. Fix pequeno e real: adicionar `%m/%Y` a `_FORMATOS_WATERMARK` +
+   teste unitário parametrizado com os valores reais observados
+   (`09/2026`, `06/2014`, `2026`, `2026-09-15`, `15/09/2026`) —
+   incluindo caso ilegível → `None`.
+2. Âncora conservadora: `%m/%Y` ancora no dia 1º (`2026` já ancora
+   em 1º/jan — mesmo critério). Tratar o dado como o mais
+   desatualizado possível dentro da granularidade declarada: para
+   freshness, superestimar o lag (falso-positivo ocasional) é mais
+   seguro que subestimar (ponto cego). Fim do ano seria otimista
+   demais — descartado.
+3. Recalibração só depois de (1)+(2) implementados e com as 4 séries
+   visíveis por ≥24h: reavaliar thresholds Freshness (24h/26h) contra
+   lag real — calibrar contra dado ainda errado está fora de escopo
+   desta sprint.
+
+Consequências:
+- Câmara e cartão voltam a ser observáveis; Freshness passa a medir
+  atraso real em vez de artefato de parsing.
+- O teste parametrizado trava a regressão: nenhum formato novo de
+  watermark entra sem caso de teste.
+- Qualquer mudança nesta decisão durante as ondas paralisa a sprint
+  e volta para aprovação antes de prosseguir.
