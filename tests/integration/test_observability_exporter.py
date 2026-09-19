@@ -223,6 +223,71 @@ def test_exporter_mttr_mtbf(_gold_fake):
     assert REGISTRY.get_sample_value("pipeline_mtbf_seconds", {}) == 172800.0
 
 
+def test_exporter_mttr_mtbf_nan_quando_indefinido(monkeypatch, tmp_path):
+    """Sem falhas no histórico: NaN, nunca 0.0 (hotfix pós-Sprint 26).
+
+    O `prometheus_client` expõe Gauge nunca-atualizado como 0.0 — o
+    `coletar` escreve NaN explícito para preservar o "omitido" do ADR.
+    """
+    import math
+
+    arquivo = tmp_path / "observatorio.duckdb"
+    arquivo.write_bytes(b"\x00" * 1024)
+    tudo_ok = SimpleNamespace(
+        itens=[
+            SimpleNamespace(
+                run_id="run-ok",
+                status="success",
+                status_detalhado="success",
+                execution_timestamp="2026-09-14T03:00:00",
+                watermark_camara="2026-09-13",
+                watermark_senado="2026-09",
+                watermark_cgu_emenda="2026",
+                watermark_cgu_cartao=None,
+            ),
+        ]
+    )
+    monkeypatch.setattr(exporter, "listar_execucoes", lambda *, limite: tudo_ok)
+    monkeypatch.setattr(exporter, "listar_relatorio_qualidade", _qualidade)
+    monkeypatch.setattr(exporter, "listar_task_runs", _task_runs)
+    monkeypatch.setattr(exporter, "caminho_do_gold", lambda: arquivo)
+    monkeypatch.setattr(exporter, "duckdb", _DuckDBFake())
+    monkeypatch.setattr(exporter, "get_pipeline_version", lambda: "0.1.0")
+
+    exporter.coletar()
+    from prometheus_client import REGISTRY
+
+    assert math.isnan(REGISTRY.get_sample_value("pipeline_mttr_seconds", {}))
+    assert math.isnan(REGISTRY.get_sample_value("pipeline_mtbf_seconds", {}))
+
+
+def test_exporter_health_nan_e_sem_classe_obsoleta(monkeypatch, tmp_path):
+    """Sem spans (Gold pré-Onda 1): índice NaN e classes removidas."""
+    import math
+
+    arquivo = tmp_path / "observatorio.duckdb"
+    arquivo.write_bytes(b"\x00" * 1024)
+    monkeypatch.setattr(exporter, "listar_execucoes", _execucoes)
+    monkeypatch.setattr(exporter, "listar_relatorio_qualidade", _qualidade)
+
+    def _sem_tabela(**kwargs):
+        raise GoldIndisponivel("pipeline_task_runs ausente")
+
+    monkeypatch.setattr(exporter, "listar_task_runs", _sem_tabela)
+    monkeypatch.setattr(exporter, "caminho_do_gold", lambda: arquivo)
+    monkeypatch.setattr(exporter, "duckdb", _DuckDBFake())
+    monkeypatch.setattr(exporter, "get_pipeline_version", lambda: "0.1.0")
+
+    exporter.coletar()
+    from prometheus_client import REGISTRY
+
+    assert math.isnan(REGISTRY.get_sample_value("pipeline_health_index", {}))
+    for classe in ("saudavel", "atencao", "alerta", "critico"):
+        assert REGISTRY.get_sample_value(
+            "pipeline_health_status", {"classe": classe}
+        ) is None
+
+
 def test_calcular_health_composicao_40_30_20_10():
     """Health = 40% cobertura + 30% sucesso + 20% qualidade + 10% performance.
 

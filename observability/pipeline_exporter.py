@@ -524,14 +524,14 @@ def coletar(agora: datetime | None = None) -> None:
     # DQ (Onda 7) e no Health (Onda 4) abaixo.
     slos = get_observability().slos
 
-    # Confiabilidade (ADR-056 D2, Onda 2): indefinido vira série omitida,
-    # nunca zero — o gauge simplesmente não é atualizado no ciclo.
+    # Confiabilidade (ADR-056 D2, Onda 2): indefinido vira NaN — o
+    # prometheus_client expõe Gauge nunca-atualizado como 0.0, o que
+    # derrotaria o "omitido, nunca zerado". NaN propaga como ausência
+    # no PromQL/Grafana (painel "sem dado", alerta não dispara).
     mttr = calcular_mttr(execucoes.itens)
-    if mttr is not None:
-        g_mttr.set(mttr)
+    g_mttr.set(mttr if mttr is not None else float("nan"))
     mtbf = calcular_mtbf(execucoes.itens)
-    if mtbf is not None:
-        g_mtbf.set(mtbf)
+    g_mtbf.set(mtbf if mtbf is not None else float("nan"))
 
     # Cobertura operacional (ADR-056 D3, Onda 3).
     planejadas, nao_realizadas, ratio = calcular_cobertura(execucoes.itens, agora=momento)
@@ -556,6 +556,16 @@ def coletar(agora: datetime | None = None) -> None:
             g_health_status.labels(classe=candidata).set(
                 1.0 if candidata == classe else 0.0
             )
+    else:
+        # Mesmo motivo do NaN acima: sem componentes, o índice exporia
+        # 0.0 (= Crítico falso). As classes vigentes anteriores são
+        # removidas para não vazar estado obsoleto.
+        g_health_index.set(float("nan"))
+        for candidata in _CLASSES_HEALTH:
+            try:
+                g_health_status.remove(candidata)
+            except KeyError:
+                pass
 
     # DQ: primeira ocorrência por tabela vence (ordem desc = mais recente).
     vistos: set[str] = set()
