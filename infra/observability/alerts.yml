@@ -1,7 +1,10 @@
-# Alertas Prometheus (Sprint 23, ADR-053, Onda 3).
+# Alertas Prometheus (Sprint 23, ADR-053, Onda 3; Sprint 24, ADR-054).
 # Réguas espelham os SLOs de config/observability.yaml (0.95/24h/26h/2%/5%/
-# 500ms) — sem Alertmanager nesta sprint: avaliados e visíveis no
+# 500ms) — sem Alertmanager: avaliados e visíveis no
 # Prometheus UI/Grafana; roteamento fica para sprint futura.
+# Exceção ADR-054: silver_cartao tem quarentena crônica ~17–20%
+# (lacuna declarada da fonte, "Sem informação") — régua própria 20%/25%;
+# o 2%/5% global vale para as demais tabelas (seletor !=).
 groups:
   - name: observatorio.slos
     rules:
@@ -38,20 +41,36 @@ groups:
           summary: "Sem execução do pipeline há mais de 26h"
 
       - alert: QuarentenaWarn
-        expr: sum(dq_quarentena) / sum(dq_total) > 0.02
+        expr: sum(dq_quarentena{tabela!="silver_cartao"}) / sum(dq_total{tabela!="silver_cartao"}) > 0.02
         for: 15m
         labels:
           severity: warn
         annotations:
-          summary: "Quarentena acima de 2% (SLO warn)"
+          summary: "Quarentena acima de 2% (SLO warn, exceto cartão)"
 
       - alert: QuarentenaCritical
-        expr: sum(dq_quarentena) / sum(dq_total) > 0.05
+        expr: sum(dq_quarentena{tabela!="silver_cartao"}) / sum(dq_total{tabela!="silver_cartao"}) > 0.05
         for: 15m
         labels:
           severity: critical
         annotations:
-          summary: "Quarentena acima de 5% (SLO critical)"
+          summary: "Quarentena acima de 5% (SLO critical, exceto cartão)"
+
+      - alert: QuarentenaCartaoWarn
+        expr: dq_quarentena{tabela="silver_cartao"} / dq_total{tabela="silver_cartao"} > 0.20
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Quarentena do cartão acima de 20% (régua ADR-054)"
+
+      - alert: QuarentenaCartaoCritical
+        expr: dq_quarentena{tabela="silver_cartao"} / dq_total{tabela="silver_cartao"} > 0.25
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Quarentena do cartão acima de 25% (régua ADR-054)"
 
       - alert: ApiLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(http_latency_seconds_bucket[5m]))) > 0.5

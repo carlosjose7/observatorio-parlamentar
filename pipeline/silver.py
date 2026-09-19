@@ -333,6 +333,77 @@ def escrever_quarentena_duckdb(df: pd.DataFrame, tabela: str) -> str | None:
     return str(DIRETORIO_QUARENTENA / f"{tabela}.parquet")
 
 
+# Retenção da quarentena (Sprint 24, ADR-054): N alinhado à retenção
+# default do Prometheus (15d) com runs diários — mesmo horizonte
+# observável das métricas; volume em disco fica limitado em vez de
+# crescer sem fim (4M linhas só desde o rebuild de 22/08/2026).
+RETENCAO_QUARENTENA_RUNS = 15
+
+
+def purgar_quarentena_antiga(
+    *,
+    manter_ultimos_n_runs: int = RETENCAO_QUARENTENA_RUNS,
+    caminho: Path | None = None,
+) -> int:
+    """Remove linhas de `quarantine_*` de runs além dos N mais recentes.
+
+    Mantém os run_ids dos N `execution_timestamp` distintos mais novos
+    (global — cada run carrega todas as tabelas juntas). Tabelas sem as
+    colunas `run_id`/`execution_timestamp` são ignoradas. Nunca lança:
+    erro de purga é logado e retorna 0 — purga nunca derruba carga
+    (ADR-013). Retorna o total de linhas removidas.
+    """
+    import duckdb
+
+    db = Path(caminho) if caminho is not None else Path(get_env().duckdb_database_path)
+    try:
+        con = duckdb.connect(str(db))
+        tabelas = [
+            r[0]
+            for r in con.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'silver' "
+                "AND table_name LIKE 'quarantine!_%' ESCAPE '!'"
+            ).fetchall()
+        ]
+        removidas = 0
+        for tabela in tabelas:
+            colunas = {
+                r[0]
+                for r in con.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = ?",
+                    [tabela],
+                ).fetchall()
+            }
+            if not {"run_id", "execution_timestamp"} <= colunas:
+                logger.warning("silver_purga_quarentena_sem_run_id", tabela=tabela)
+                continue
+            mantidos = (
+                " SELECT run_id FROM ("
+                " SELECT run_id, max(execution_timestamp) AS mx"
+                f" FROM silver.{tabela} GROUP BY run_id"
+                " ORDER BY mx DESC"
+                f" LIMIT {int(manter_ultimos_n_runs)}"
+                " )"
+            )
+            condenadas = con.execute(
+                f"SELECT count(*) FROM silver.{tabela} WHERE run_id NOT IN ({mantidos})"
+            ).fetchone()[0]
+            if condenadas:
+                con.execute(
+                    f"DELETE FROM silver.{tabela} WHERE run_id NOT IN ({mantidos})"
+                )
+                removidas += int(condenadas)
+        con.close()
+    except Exception as exc:
+        logger.error("silver_purga_quarentena_falhou", erro=str(exc))
+        return 0
+    if removidas:
+        logger.info("silver_purga_quarentena", removidas=removidas)
+    return removidas
+
+
 def escrever_dedup_removidas_duckdb(df: pd.DataFrame, tabela: str) -> None:
     """Grava as linhas removidas pela dedup independente em DuckDB.
 
@@ -455,6 +526,9 @@ def carregar_tabela_silver(
     escrever_quarentena_duckdb(quarentena, tabela)
     escrever_dedup_removidas_duckdb(removidas, tabela)
     persistir_qualidade_report(linha)
+    # TTL da quarentena (ADR-054): seguro chamar toda carga — com menos
+    # de N runs na tabela nada é removido; purga nunca lança.
+    purgar_quarentena_antiga()
 
     return ResultadoCargaSilver(
         tabela=tabela,
