@@ -3261,7 +3261,7 @@ ADR-055
 Título: Freshness real — parser %m/%Y, âncora conservadora, recalibração
 
 Status:
-Proposto — Sprint 25, branch sprint/25-freshness-parser (revisão antes de prosseguir)
+Aceito — Sprint 25, Ondas 0–3 (branch sprint/25-freshness-parser)
 
 Contexto:
 Diagnóstico de 19/09/2026 sobre `pipeline_watermark_lag_hours`:

@@ -2180,15 +2180,19 @@ de pipeline.
 
 ---
 
-## Sprint 25 — Freshness real (aberta, em andamento)
+## Sprint 25 — Freshness real
+
+**Branch:** sprint/25-freshness-parser → main (PR único ao final)
+
+**Sprint 25 FECHADA em 2026-09-19.**
 
 > Diagnóstico 19/09: pipeline verde legítimo, instrumento cego —
 > parser sem `%m/%Y` invisibiliza camara/cartão; granularidade anual
 > infla lag em ~260d. Escopo: parser + âncora + recalibração.
 
-**Branch:** sprint/25-freshness-parser → main
-
 - [x] Onda 0 — ADR-055 proposto (parser %m/%Y + âncora conservadora)
-- [ ] Onda 1 — fix `_FORMATOS_WATERMARK` + teste parametrizado
-- [ ] Onda 2 — recalibração Freshness com 4 séries visíveis ≥24h
-- [ ] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria
+- [x] Onda 1 — fix `_FORMATOS_WATERMARK` + teste parametrizado
+  (9 casos, valores reais das fontes)
+- [x] Onda 2 — recalibração por fonte: cartão por progresso
+  (`deriv(lag)[48h] >= 0`, adendo ADR-055 padrão ADR-054); demais 24h/26h
+- [x] Onda 3 — testes + docs (CHANGELOG, BACKLOG FECHADA) + auditoria
