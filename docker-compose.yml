@@ -164,6 +164,11 @@ services:
     image: prom/prometheus:v3
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+      # Links de alerta ("Source") usáveis fora do container (ADR-057,
+      # hotfix external-url): sem isso apontam p/ o hostname interno
+      # (id do container). Default localhost (túnel SSH); override via
+      # .env quando o acesso for por outro host.
+      - "--web.external-url=${PROMETHEUS_EXTERNAL_URL:-http://localhost:9090}"
     volumes:
       - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -187,6 +192,8 @@ services:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
       - "--cluster.listen-address="
+      # Mesmo motivo do Prometheus acima (links de silêncio/notificação).
+      - "--web.external-url=${ALERTMANAGER_EXTERNAL_URL:-http://localhost:9093}"
     volumes:
       - ./infra/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ./secrets/telegram_bot_token:/run/secrets/telegram_bot_token:ro

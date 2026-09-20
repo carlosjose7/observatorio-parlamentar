@@ -2366,3 +2366,16 @@ decisão registrada aqui, não assumida.
 - [x] Docs sincronizados **no mesmo diff**: `PROJECT_CONTEXT.md §5/6/7`,
   `docs/data/data_dictionary.md`, `docs/architecture/arch_er.md:268`,
   este BACKLOG e `CHANGELOG.md` (todos com `control`, grep confirma)
+
+---
+
+## Pós-Sprint 26 — pendências SRE (trabalho futuro)
+
+- ☐ **Recalibração do Freshness (dívida do ADR-055):** `senado` e
+  `cgu_emenda` versionam watermark por ano (âncora conservadora em
+  1º/jan → ~261d de "lag") contra threshold único de 24h/26h —
+  `FreshnessWarn/Critical` vivem disparados sem incidente real.
+  Condição de recalibração já cumprida (4 fontes visíveis há >24h).
+  Escopo: régua por granularidade da fonte (ex: tolerância anual p/
+  fontes anuais) em vez de threshold único; atualizar `alerts.yml`,
+  contrato e HEALTH se impactado. Não é desta sprint por decisão.
