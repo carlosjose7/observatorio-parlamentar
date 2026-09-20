@@ -23,6 +23,7 @@ import httpx
 import structlog
 
 from pipeline.camara import extract as camara_extract
+from pipeline.camara import votacao_extract as camara_votacao_extract
 from pipeline.config import (
     DeduplicacaoSettings,
     RetryDefaultSettings,
@@ -373,6 +374,82 @@ def _extrair_e_persistir_parlamentares(
     return None, None
 
 
+# Domínio votação da Câmara (Onda 1, ADR-058) — mesmo padrão dos snapshots de
+# parlamentares: fora de FONTES (não é fato financeiro, não integra
+# PipelineRun/pipeline_runs), um arquivo por data de execução por diretório
+# (append-only; a dedup por chave de negócio vive na Silver, ADR-014).
+# Watermark próprio = teto da janela extraída (ISO AAAA-MM-DD); sem watermark,
+# bootstrap rolante dos últimos 90 dias (backfill histórico = tarefa explícita
+# do operador, com anos parametrizáveis — ver ADR-058 Decisão 7).
+CHAVE_WATERMARK_VOTACAO = "watermark_camara_votacao"
+JANELA_BOOTSTRAP_VOTACAO_DIAS = 90
+
+DIRETORIOS_VOTACAO = {
+    "eventos": Path("camara_eventos"),
+    "presenca": Path("camara_presenca"),
+    "votacoes": Path("camara_votacoes"),
+    "votos": Path("camara_votos"),
+    "orientacoes": Path("camara_orientacoes"),
+}
+
+_ENDPOINTS_VOTACAO = (
+    "eventos",
+    "votacoes_por_evento",
+    "votos_por_votacao",
+    "orientacoes_por_votacao",
+    "presenca_arquivo_ano",
+)
+
+
+def _extrair_e_persistir_votacao(
+    client: httpx.Client,
+    store: WatermarkStore,
+    storage: Storage,
+    run_meta: LoadMetadata,
+    retry_settings: RetryDefaultSettings | None,
+) -> tuple[str | None, str | None]:
+    """Extrai a janela do domínio votação e persiste (append-only por data).
+
+    Degradação segura: sem endpoints configurados (ex: testes com fontes
+    sintéticas) ou em falha de rede, loga e segue — nunca derruba a execução
+    (mesmo isolamento dos parlamentares; fora de FONTES/PipelineRun).
+    """
+    from datetime import timedelta
+
+    cfg = get_sources().camara
+    ausentes = [nome for nome in _ENDPOINTS_VOTACAO if nome not in cfg.endpoints]
+    if ausentes:
+        logger.warning("votacao_endpoints_ausentes", ausentes=ausentes)
+        return None, None
+    try:
+        estado = store.get(CHAVE_WATERMARK_VOTACAO)
+        hoje = run_meta.execution_timestamp.date()
+        if estado.last_watermark:
+            data_inicio = estado.last_watermark
+        else:
+            data_inicio = (hoje - timedelta(days=JANELA_BOOTSTRAP_VOTACAO_DIAS)).isoformat()
+        data_fim = hoje.isoformat()
+        resultados = camara_votacao_extract.extrair_janela(
+            cfg, client, run_meta, retry_settings, data_inicio, data_fim
+        )
+        for dominio, diretorio in DIRETORIOS_VOTACAO.items():
+            registros = resultados[dominio].records
+            if not registros:
+                logger.warning("votacao_bronze_vazio", dominio=dominio)
+                continue
+            df = records_to_dataframe(registros)
+            storage.write_file(diretorio, df, f"{hoje.isoformat()}.parquet")
+            logger.info("votacao_bronze_salvo", dominio=dominio, registros=len(registros))
+        store.set(
+            CHAVE_WATERMARK_VOTACAO,
+            WatermarkState(last_watermark=data_fim, run_id=run_meta.run_id),
+        )
+        return data_fim, None
+    except Exception as exc:  # noqa: BLE001 — falha isolada não derruba a execução
+        logger.error("falha_extracao_votacao", erro=str(exc))
+        return None, str(exc)
+
+
 SPAN_BRONZE_POR_FONTE = {
     "camara": "bronze_camara",
     "senado": "bronze_senado",
@@ -455,6 +532,17 @@ def run_pipeline(
         execution_timestamp=run_meta.execution_timestamp,
     ):
         _extrair_e_persistir_parlamentares(client, storage, run_meta, retry_settings)
+
+    # Onda 1 (ADR-058): domínio votação da Câmara — mesmo isolamento dos
+    # parlamentares (span próprio, log-only, fora de FONTES/PipelineRun).
+    with medir_task(
+        storage,
+        run_id=run_meta.run_id,
+        task="bronze_votacao",
+        pipeline_version=run_meta.pipeline_version,
+        execution_timestamp=run_meta.execution_timestamp,
+    ):
+        _extrair_e_persistir_votacao(client, store, storage, run_meta, retry_settings)
 
     status = "success"
     if fontes_com_erro:

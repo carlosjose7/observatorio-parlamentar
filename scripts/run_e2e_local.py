@@ -111,6 +111,13 @@ def _rodar_silver(run_id: str) -> dict[str, int | None]:
     from pipeline.camara.transform import (
         carregar_silver_parlamentar as silver_camara_parlamentar,
     )
+    from pipeline.camara.votacao_transform import (
+        carregar_silver_evento,
+        carregar_silver_orientacao,
+        carregar_silver_presenca,
+        carregar_silver_votacao,
+        carregar_silver_voto,
+    )
     from pipeline.senado.transform import (
         carregar_silver_despesa as silver_senado,
     )
@@ -131,6 +138,11 @@ def _rodar_silver(run_id: str) -> dict[str, int | None]:
         "silver_parlamentar_senado": silver_senado_parlamentar(storage=storage, run_id=run_id),
         "silver_cartao": carregar_silver_cartao(storage=storage, run_id=run_id),
         "silver_emenda": carregar_silver_emenda(storage=storage, run_id=run_id),
+        "silver_evento": carregar_silver_evento(storage=storage, run_id=run_id),
+        "silver_presenca": carregar_silver_presenca(storage=storage, run_id=run_id),
+        "silver_votacao": carregar_silver_votacao(storage=storage, run_id=run_id),
+        "silver_voto": carregar_silver_voto(storage=storage, run_id=run_id),
+        "silver_orientacao": carregar_silver_orientacao(storage=storage, run_id=run_id),
     }
     resumo = {
         nome: None if res is None else len(res.aceitos)
@@ -259,15 +271,15 @@ def _resumo_final() -> None:
     con = duckdb.connect(caminho, read_only=True)
     try:
         tabelas = con.execute(
-            "select table_name from information_schema.tables"
-            " where table_schema = 'main' order by table_name"
+            "select table_schema, table_name from information_schema.tables"
+            " where table_schema in ('control', 'main') order by 1, 2"
         ).fetchall()
-        for (tabela,) in tabelas:
+        for (esquema, tabela) in tabelas:
             try:
-                n = con.execute(f'select count(*) from "{tabela}"').fetchone()[0]
+                n = con.execute(f'select count(*) from "{esquema}"."{tabela}"').fetchone()[0]
             except Exception:  # noqa: BLE001 — tabela sem acesso simples, segue
                 n = "?"
-            print(f"  {tabela}: {n} linhas", flush=True)
+            print(f"  {esquema}.{tabela}: {n} linhas", flush=True)
     finally:
         con.close()
 

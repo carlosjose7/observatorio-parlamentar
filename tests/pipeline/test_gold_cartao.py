@@ -118,6 +118,36 @@ def _seed(db: Path) -> None:
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
+        # Silver do domínio votação VAZIAS (ADR-058): os testes de FK de
+        # fact_presenca/fact_votacao são agendados junto com qualquer build
+        # que selecione as dimensões compartilhadas.
+        con.execute(
+            "create table silver.silver_evento (id_evento bigint,"
+            " data_inicio timestamp, data_fim timestamp, descricao_tipo varchar,"
+            " situacao_bruta varchar, situacao_normalizada varchar, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp, source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_presenca (id_evento bigint, id_deputado bigint,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_votacao (id_votacao bigint, id_evento bigint,"
+            " descricao varchar, aprovacao varchar, data_registro timestamp,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_voto (id_votacao bigint, id_deputado bigint,"
+            " tipo_voto_bruto varchar, voto_normalizado varchar, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp, source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_orientacao (id_votacao bigint, sigla_bancada varchar,"
+            " orientacao_bruta varchar, run_id varchar, pipeline_version varchar,"
+            " execution_timestamp timestamp, source_version varchar)"
+        )
         con.executemany(
             "insert into silver.silver_cartao values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
@@ -226,6 +256,7 @@ _SELECAO_FATO = (
     " +supplier_concentration +supplier_growth +expense_outliers"
     " +network_edges +network_nodes +politician_similarity"
     " +risk_scores"
+    " +fact_presenca +fact_presenca_quarantine +fact_votacao +fact_votacao_quarantine"
 )
 
 

@@ -258,8 +258,92 @@ def schema_silver_parlamentar() -> pa.DataFrameSchema:
     )
 
 
-# ── Linha do Data Quality Report (ADR-015) ───────────────────────
+SITUACOES_EVENTO_VALIDAS = ("encerrada", "em_andamento", "convocada", "nao_mapeado")
+VOTOS_NORMALIZADOS_VALIDOS = ("sim", "nao", "abstencao", "artigo17", "obstrucao", "nao_mapeado")
 
+
+def schema_silver_evento() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_evento` (Câmara, ADR-058).
+
+    Um evento por `id_evento`; datas plausíveis (não antes de 2015, não
+    futuras); `situacao_normalizada` no enum canônico (valores fora do
+    de-para viram `nao_mapeado`, nunca NULL silencioso). O gate "só
+    Encerrada conta" vive no Gold — a Silver preserva todas as situações.
+    """
+    return pa.DataFrameSchema(
+        columns={
+            "id_evento": pa.Column("int64", nullable=False),
+            "data_inicio": pa.Column(
+                "datetime64[ns]",
+                nullable=False,
+                checks=[_nao_anterior_a(2015), _nao_futura()],
+            ),
+            "data_fim": pa.Column(
+                "datetime64[ns]",
+                nullable=True,
+                checks=[_nao_anterior_a(2015), _nao_futura()],
+            ),
+            "situacao_normalizada": pa.Column(
+                str, nullable=False, checks=pa.Check.isin(list(SITUACOES_EVENTO_VALIDAS))
+            ),
+        },
+        checks=[_chave_negocio_unica_check(["id_evento"])],
+    )
+
+
+def schema_silver_presenca() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_presenca` (lote só-presença, ADR-058)."""
+    return pa.DataFrameSchema(
+        columns={
+            "id_evento": pa.Column("int64", nullable=False),
+            "id_deputado": pa.Column("int64", nullable=False),
+        },
+        checks=[_chave_negocio_unica_check(["id_evento", "id_deputado"])],
+    )
+
+
+def schema_silver_votacao() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_votacao` (nominais por evento, ADR-058)."""
+    return pa.DataFrameSchema(
+        columns={
+            "id_votacao": pa.Column("int64", nullable=False),
+            "id_evento": pa.Column("int64", nullable=False),
+            "data_registro": pa.Column(
+                "datetime64[ns]",
+                nullable=True,
+                checks=[_nao_anterior_a(2015), _nao_futura()],
+            ),
+        },
+        checks=[_chave_negocio_unica_check(["id_votacao"])],
+    )
+
+
+def schema_silver_voto() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_voto` (1 linha por (votação, deputado), ADR-058)."""
+    return pa.DataFrameSchema(
+        columns={
+            "id_votacao": pa.Column("int64", nullable=False),
+            "id_deputado": pa.Column("int64", nullable=False),
+            "voto_normalizado": pa.Column(
+                str, nullable=False, checks=pa.Check.isin(list(VOTOS_NORMALIZADOS_VALIDOS))
+            ),
+        },
+        checks=[_chave_negocio_unica_check(["id_votacao", "id_deputado"])],
+    )
+
+
+def schema_silver_orientacao() -> pa.DataFrameSchema:
+    """Schema Silver para `silver_orientacao` (1 linha por (votação, bancada), ADR-058)."""
+    return pa.DataFrameSchema(
+        columns={
+            "id_votacao": pa.Column("int64", nullable=False),
+            "sigla_bancada": pa.Column(str, nullable=False),
+        },
+        checks=[_chave_negocio_unica_check(["id_votacao", "sigla_bancada"])],
+    )
+
+
+# ── Linha do Data Quality Report (ADR-015) ───────────────────────
 
 @dataclass
 class LinhaQualidadeReport:

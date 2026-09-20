@@ -115,12 +115,73 @@ SCHEMA_SILVER_EMENDA: dict[str, tuple[str, str]] = {
     "source_version": ("VARCHAR", "Versão da fonte/dados na extração (RF-12)."),
 }
 
+# ── Presença/votação da Câmara (ADR-058, Sprint 27 Onda 1) ──────
+SCHEMA_SILVER_EVENTO: dict[str, tuple[str, str]] = {
+    "id_evento": ("BIGINT", "Identificador do evento/sessão na Câmara."),
+    "data_inicio": ("TIMESTAMP_NS", "Início do evento (gate 'só Encerrada conta' no Gold)."),
+    "data_fim": ("TIMESTAMP_NS", "Fim do evento (pode ausentar)."),
+    "descricao_tipo": ("VARCHAR", "Tipo do evento (ex: Sessão Deliberativa)."),
+    "situacao_bruta": ("VARCHAR", "Situação original informada pela fonte."),
+    "situacao_normalizada": ("VARCHAR", "Situação na taxonomia canônica (ADR-058)."),
+    "run_id": ("VARCHAR", "Identificador da execução do pipeline (RF-12)."),
+    "pipeline_version": ("VARCHAR", "Versão do pipeline que gerou o registro (RF-12)."),
+    "execution_timestamp": ("VARCHAR", "Timestamp da execução (RF-12)."),
+    "source_version": ("VARCHAR", "Versão da fonte/dados na extração (RF-12)."),
+}
+
+SCHEMA_SILVER_PRESENCA: dict[str, tuple[str, str]] = {
+    "id_evento": ("BIGINT", "Evento da presença."),
+    "id_deputado": ("BIGINT", "Deputado presente (semântica só-presença: a linha significa PRESENTE)."),
+    "run_id": ("VARCHAR", "Identificador da execução do pipeline (RF-12)."),
+    "pipeline_version": ("VARCHAR", "Versão do pipeline que gerou o registro (RF-12)."),
+    "execution_timestamp": ("VARCHAR", "Timestamp da execução (RF-12)."),
+    "source_version": ("VARCHAR", "Versão da fonte/dados na extração (RF-12)."),
+}
+
+SCHEMA_SILVER_VOTACAO: dict[str, tuple[str, str]] = {
+    "id_votacao": ("BIGINT", "Identificador da votação nominal."),
+    "id_evento": ("BIGINT", "Evento de origem da votação."),
+    "descricao": ("VARCHAR", "Descrição/resultado registrado da votação."),
+    "aprovacao": ("VARCHAR", "Resultado de aprovação registrado."),
+    "data_registro": ("TIMESTAMP_NS", "Registro da votação."),
+    "run_id": ("VARCHAR", "Identificador da execução do pipeline (RF-12)."),
+    "pipeline_version": ("VARCHAR", "Versão do pipeline que gerou o registro (RF-12)."),
+    "execution_timestamp": ("VARCHAR", "Timestamp da execução (RF-12)."),
+    "source_version": ("VARCHAR", "Versão da fonte/dados na extração (RF-12)."),
+}
+
+SCHEMA_SILVER_VOTO: dict[str, tuple[str, str]] = {
+    "id_votacao": ("BIGINT", "Votação do voto."),
+    "id_deputado": ("BIGINT", "Deputado votante."),
+    "tipo_voto_bruto": ("VARCHAR", "Voto original informado pela fonte."),
+    "voto_normalizado": ("VARCHAR", "Voto na taxonomia canônica (ADR-058)."),
+    "run_id": ("VARCHAR", "Identificador da execução do pipeline (RF-12)."),
+    "pipeline_version": ("VARCHAR", "Versão do pipeline que gerou o registro (RF-12)."),
+    "execution_timestamp": ("VARCHAR", "Timestamp da execução (RF-12)."),
+    "source_version": ("VARCHAR", "Versão da fonte/dados na extração (RF-12)."),
+}
+
+SCHEMA_SILVER_ORIENTACAO: dict[str, tuple[str, str]] = {
+    "id_votacao": ("BIGINT", "Votação da orientação."),
+    "sigla_bancada": ("VARCHAR", "Bancada orientadora (partido, bloco, Governo...)."),
+    "orientacao_bruta": ("VARCHAR", "Orientação original informada pela fonte."),
+    "run_id": ("VARCHAR", "Identificador da execução do pipeline (RF-12)."),
+    "pipeline_version": ("VARCHAR", "Versão do pipeline que gerou o registro (RF-12)."),
+    "execution_timestamp": ("VARCHAR", "Timestamp da execução (RF-12)."),
+    "source_version": ("VARCHAR", "Versão da fonte/dados na extração (RF-12)."),
+}
+
 # ── Catálogo: nome da tabela → schema declarativo ───────────────
 SCHEMAS_SILVER: dict[str, dict[str, tuple[str, str]]] = {
     "silver_despesa": SCHEMA_SILVER_DESPESA,
     "silver_parlamentar": SCHEMA_SILVER_PARLAMENTAR,
     "silver_cartao": SCHEMA_SILVER_CARTAO,
     "silver_emenda": SCHEMA_SILVER_EMENDA,
+    "silver_evento": SCHEMA_SILVER_EVENTO,
+    "silver_presenca": SCHEMA_SILVER_PRESENCA,
+    "silver_votacao": SCHEMA_SILVER_VOTACAO,
+    "silver_voto": SCHEMA_SILVER_VOTO,
+    "silver_orientacao": SCHEMA_SILVER_ORIENTACAO,
 }
 
 # Descrição (comentário) de cada tabela principal.
@@ -142,6 +203,26 @@ DESCRICOES_TABELAS: dict[str, str] = {
     "silver_emenda": (
         "Emendas parlamentares do Portal da Transparência (CGU) — dedup por "
         "(ano, codigo_emenda); marcador 'S/I' isolado em quarentena (ADR-017)."
+    ),
+    "silver_evento": (
+        "Eventos/sessões da Câmara — 1 linha por evento, com situação bruta "
+        "e normalizada; gate 'só Encerrada conta' aplicado no Gold (ADR-058)."
+    ),
+    "silver_presenca": (
+        "Presença em eventos da Câmara (arquivo em lote, semântica "
+        "só-presença) — 1 linha por (evento, deputado) PRESENTE (ADR-058)."
+    ),
+    "silver_votacao": (
+        "Votações nominais da Câmara — 1 linha por votação, ligada ao evento "
+        "de origem (ADR-058)."
+    ),
+    "silver_voto": (
+        "Votos nominais — 1 linha por (votação, deputado), com voto bruto "
+        "e normalizado (ADR-058)."
+    ),
+    "silver_orientacao": (
+        "Orientações de bancada por votação — insumo do `seguiu_partido` "
+        "no Gold (ADR-058)."
     ),
 }
 

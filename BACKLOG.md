@@ -2260,3 +2260,109 @@ de pipeline.
 - [x] Docs (ADR-057 Aceito, CHANGELOG, PROJECT_CONTEXT §1.3)
 - Pendente do operador: bot (BotFather), `chat_id` real,
   `secrets/telegram_bot_token` (chmod 600), restart do serviço
+
+---
+
+## Sprint 27 — Pauta (batch + POC) + saneamento `main→control` (ABERTA)
+
+**Branch:** sprint/27-pauta-controle → main (base: `68f7b76`, 19/09/2026)
+**Processo:** checkpoint por onda com auditoria independente por wave
+(nenhuma wave fecha sem auditoria via `git clone`); sem PR único cobrindo
+temas não relacionados.
+
+**Numeração ADR (verificada contra o repo em 20/09/2026):**
+ADR-054/055/056/057 já Aceitos (Sprints 24–26 + Telegram); **058**
+reservado para `fact_presenca/votacao` (draft em
+`/tmp/opencode/adr058_fact_presenca_votacao_draft.md`); **059** reservado
+para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
+**ADR-060**. Nenhuma onda reivindica número já ocupado.
+
+- [ ] Onda 0 — POC pauta streaming — veredito POSITIVO/NEGATIVO
+  (arquivos em `/tmp/opencode/poc_pauta_*`); gate do ADR-059
+  - Tentativa 20/09 (dom, fora dos dias úteis): 0 eventos no dia;
+    14–21/09 com 22 `Convocada` + 2 `Encerrada`, 0 `Em Andamento` →
+    INCONCLUSIVO, janela segue aberta (tentativas úteis: 3/5).
+    ADR-059 segue fechado (= nunca aberto); Onda 1 sem dependência do
+    veredito. Próxima tentativa: terça-feira (dia útil com sessão).
+  - **Streaming com Redpanda (ESBOÇO CONDICIONAL — NÃO é decisão):**
+    se e somente se a Onda 0 voltar POSITIVO, o desenho candidato é:
+    sidecar de polling em `/eventos/{id}/pauta` durante sessão ativa
+    (a Câmara não tem streaming nativo — só REST; polling vira stream
+    via diff, mesma lógica do script do POC) → tópico Redpanda
+    (Kafka-compatible, mais leve que Kafka puro p/ 2 OCPU/12GB) →
+    consumer grava "Bronze Live" paralela (Airflow/ADR-009 intocados)
+    → visão ao vivo/alertas; `fact_presenca`/`fact_votacao` (ADR-058)
+    seguem fonte histórica. Nada existe (sem código, schema de tópico
+    ou consumer group) — só vira concreto dentro do ADR-059, e só
+    após POSITIVO. Sem detalhar mais até terça confirmar a necessidade.
+- [x] Onda 1 — ADR-058 `fact_presenca`/`fact_votacao` batch (draft existente)
+  - ADR-058 Aceito (grão, gate Encerrada, normalização, seguiu_partido,
+    quarentenas, Bronze incremental Decisão 7); Bronze/Silver/Gold + 3
+    suítes de teste verdes; `normalize.py` +%H:%M; `garantir_tabela_silver`
+- [x] Onda 2 — Limpeza `main` (Fase 1, sem mudança de contrato):
+  DROP dinâmico das 23 tabelas stale via `duckdb_tables() WHERE
+  schema_name='main' AND table_name != 'data_quality_report'`
+  (lista gerada, nunca manual; zero views de usuário em `main`
+  confirmado via `duckdb_views()` — só 14 views de sistema);
+  preserva `main.data_quality_report`. Executado em 20/09 contra
+  `data/silver/observatorio.duckdb` com backup prévio
+  (`data/backups/observatorio_pre_sprint27_onda2_20260920.duckdb`);
+  `main` restante = só `data_quality_report` (93 linhas, paridade
+  com `gold`); `gold.fact_despesa` intacto (958.298).
+  Guardrail `gold/tests/main_sem_residuos.sql` (ESTADO 1: permite
+  `data_quality_report`; verificado falha-com-resíduo/passa-limpo).; backup `cp` prévio obrigatório
+- [x] Onda 3 — ADR-060 `main→control` (Fase 2): `CREATE SCHEMA control` +
+  `CREATE TABLE control.data_quality_report AS SELECT * FROM
+  main.data_quality_report` + validação de contagem/colunas (93/93) +
+  `DROP TABLE main.data_quality_report` (**não usar `RENAME TO` entre
+  schemas — POC DuckDB 1.4.5: Parser Error; `SET SCHEMA` → Not
+  implemented**). Executado em 20/09 com backup prévio
+  (`data/backups/observatorio_pre_sprint27_onda3_20260920.duckdb`);
+  `main` vazio, `control` = só `data_quality_report`.
+  Código: `silver.py` (`control.*` + schema garantido na conexão),
+  `sources.yml` (`schema: control`), `data_quality_report.sql`,
+  `profiles.yml` dev (`schema: gold`), `_garantir_silver_cgu_vazio`
+  (silver-qualificado — era poluente ativo de `main`),
+  `run_e2e_local` (resumo `control`), seed do contrato de integração
+  (`control.*`), guardrail ESTADO 2 (conjunto vazio).
+  ADR-060 Aceito; docs sincronizados no mesmo diff
+  (PROJECT_CONTEXT §5/§6, data_dictionary §2, arch_er, BACKLOG, CHANGELOG).
+
+**Correção 1 — guardrail com dois estados (Revisor Técnico):**
+guardrail parametrizado por `EXPECTED_MAIN_TABLES`, não condição única:
+- Onda 2: permitido = `{'data_quality_report'}` — falha se
+  `duckdb_tables() WHERE schema_name='main'` tiver qualquer outra tabela
+  de usuário (evita quebrar a CI antes da Onda 3 existir).
+- Onda 3: permitido = `{}` (vazio) — falha se qualquer tabela de usuário
+  em `main`.
+Transição Onda 2→3 atualiza a constante no mesmo diff do rename.
+
+**Correção 2 — conflito `sources.yml` Onda 1 × Onda 3:**
+draft 058 não declara `source()` novos nem cita `sources.yml`, mas fatos
+novas (`fact_presenca`/`fact_votacao`) inevitavelmente exigirão sources
+Silver — conflito real nesse arquivo com a Onda 3 (`schema: main` →
+`control`, linha 27). Por isso **checkpoint por onda com auditoria
+independente** (não PR único): PR único para POC + fato batch + limpeza
+de schema impediria revert pontual por onda. Se na Onda 1 se confirmar
+que 058 não toca `sources.yml`, PR único volta a ser aceitável —
+decisão registrada aqui, não assumida.
+
+**Aceite Onda 3 (técnico + documental, drift = defeito bloqueante) — verificado em 20/09:**
+- [x] `main` vazio (só objetos de sistema); `control.data_quality_report`
+  = `gold.data_quality_report` = 93 linhas (query direta no banco vivo;
+  81 era a contagem da cópia de inspeção de 17/09 — 3 runs diários × 4
+  tabelas desde então; fonte única: banco vivo em 20/09)
+- [x] `dbt build` PASS=213/ERROR=0 (core, `--exclude` analytics, em cópia
+  do banco vivo pós-cargas Silver votação); `SET search_path='gold'`
+  inalterado; `GET /qualidade/relatorio` e `GET /pipeline/status` 200
+  (total=93, run e314a9ac)
+- [x] Nenhum `grep "main\."` restante fora de comentário histórico
+  (2 menções históricas intencionais: `data_quality_report.sql:2`,
+  `analytics_stage.py:59`; 1 stale corrigido: `test_gold_risk.py:18`
+  `main.risk_scores` → `gold.risk_scores`)
+- [x] Rebuild limpo não recria tabelas em `main` (guardrail
+  `main_sem_residuos` ESTADO 2 PASS na cópia pós-build; `_garantir_*`
+  silver-qualificado)
+- [x] Docs sincronizados **no mesmo diff**: `PROJECT_CONTEXT.md §5/6/7`,
+  `docs/data/data_dictionary.md`, `docs/architecture/arch_er.md:268`,
+  este BACKLOG e `CHANGELOG.md` (todos com `control`, grep confirma)

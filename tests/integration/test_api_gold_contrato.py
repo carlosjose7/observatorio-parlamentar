@@ -88,16 +88,18 @@ def _seed(db: Path) -> None:
             " pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
-        # data_quality_report (Silver, ADR-015/031) — promovido à Gold pelo dbt
+        # data_quality_report (Silver, ADR-015/031/060) — promovido à Gold pelo dbt;
+        # vive no schema `control` (nunca no default `main`).
+        con.execute("create schema if not exists control")
         con.execute(
-            "create table data_quality_report (run_id varchar, tabela varchar,"
+            "create table control.data_quality_report (run_id varchar, tabela varchar,"
             " total_registros bigint, registros_validos bigint,"
             " registros_quarentena bigint, registros_deduplicados bigint,"
             " regras_violadas varchar, percentual_nulos_criticos double,"
             " execution_timestamp varchar)"
         )
         con.executemany(
-            "insert into data_quality_report values (?,?,?,?,?,?,?,?,?)",
+            "insert into control.data_quality_report values (?,?,?,?,?,?,?,?,?)",
             [
                 ("run-integ-2026", "silver_despesa", 100, 98, 2, 0,
                  '["regra_violada_integ"]', 0.25, "2026-02-01 05:00:00"),
@@ -111,6 +113,36 @@ def _seed(db: Path) -> None:
             " unidade_gestora_codigo varchar, unidade_gestora_nome varchar,"
             " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
+        )
+        # Silver do domínio votação VAZIAS (ADR-058): os testes de FK de
+        # fact_presenca/fact_votacao são agendados junto com qualquer build
+        # que selecione as dimensões compartilhadas.
+        con.execute(
+            "create table silver.silver_evento (id_evento bigint,"
+            " data_inicio timestamp, data_fim timestamp, descricao_tipo varchar,"
+            " situacao_bruta varchar, situacao_normalizada varchar, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp, source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_presenca (id_evento bigint, id_deputado bigint,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_votacao (id_votacao bigint, id_evento bigint,"
+            " descricao varchar, aprovacao varchar, data_registro timestamp,"
+            " run_id varchar, pipeline_version varchar, execution_timestamp timestamp,"
+            " source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_voto (id_votacao bigint, id_deputado bigint,"
+            " tipo_voto_bruto varchar, voto_normalizado varchar, run_id varchar,"
+            " pipeline_version varchar, execution_timestamp timestamp, source_version varchar)"
+        )
+        con.execute(
+            "create table silver.silver_orientacao (id_votacao bigint, sigla_bancada varchar,"
+            " orientacao_bruta varchar, run_id varchar, pipeline_version varchar,"
+            " execution_timestamp timestamp, source_version varchar)"
         )
         con.executemany(
             "insert into silver.silver_parlamentar values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -198,6 +230,7 @@ _SELECAO_FATO = (
     " +network_edges +network_nodes +politician_similarity"
     " +risk_scores"
     " +data_quality_report +pipeline_runs"
+    " +fact_presenca +fact_presenca_quarantine +fact_votacao +fact_votacao_quarantine"
 )
 
 

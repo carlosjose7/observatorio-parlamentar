@@ -199,6 +199,54 @@ class FactCartaoCpgf(BaseModel):
     source_version: str
 
 
+class FactPresenca(BaseModel):
+    """Fato de presença parlamentar por sessão — grão: (id_parlamentar, id_evento) (ADR-058).
+
+    `resultado` ∈ {presente, ausente}; `ausente` é derivado (vigente sem
+    linha no lote só-presença). `is_ausencia_injustificada` sempre NULL —
+    a fonte não distingue falta justificada.
+    """
+
+    id_presenca: int
+    id_parlamentar: int = Field(..., description="NOT NULL — identidade do evento")
+    surrogate_key: int = Field(..., description="Versão exata de dim_parlamentar casada (auditoria)")
+    id_evento: int
+    id_orgao: int = Field(..., description="NOT NULL — ADR-010")
+    data_sk: int
+    resultado: str = Field(..., description="'presente' ou 'ausente'")
+    is_ausencia_injustificada: bool | None = Field(
+        default=None, description="Sempre NULL — fonte sem justificativa (ADR-058)"
+    )
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str
+
+
+class FactVotacao(BaseModel):
+    """Fato de voto parlamentar por votação nominal — grão: (id_parlamentar, id_votacao) (ADR-058).
+
+    `seguiu_partido` NULL quando não comparável (sem orientação, Liberado
+    ou voto não-binário — ADR-058 Decisão 4).
+    """
+
+    id_voto: int
+    id_parlamentar: int = Field(..., description="NOT NULL — identidade do evento")
+    surrogate_key: int = Field(..., description="Versão exata de dim_parlamentar casada (auditoria)")
+    id_votacao: int
+    id_evento: int
+    id_orgao: int = Field(..., description="NOT NULL — ADR-010")
+    data_sk: int
+    voto: str = Field(..., description="Voto normalizado (ADR-058)")
+    seguiu_partido: bool | None = Field(default=None, description="NULL quando não comparável")
+
+    run_id: str
+    pipeline_version: str
+    execution_timestamp: str
+    source_version: str
+
+
 class SupplierConcentration(BaseModel):
     """Agregado analítico puro (ADR-021) — concentração de gasto do parlamentar.
 

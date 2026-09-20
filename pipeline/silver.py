@@ -35,7 +35,12 @@ from pipeline.quality import (
     schema_silver_cartao,
     schema_silver_despesa,
     schema_silver_emenda,
+    schema_silver_evento,
+    schema_silver_orientacao,
     schema_silver_parlamentar,
+    schema_silver_presenca,
+    schema_silver_votacao,
+    schema_silver_voto,
 )
 
 logger = structlog.get_logger()
@@ -148,18 +153,50 @@ def _conectar_duckdb():
     caminho.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(caminho))
     con.execute("CREATE SCHEMA IF NOT EXISTS silver")
+    con.execute("CREATE SCHEMA IF NOT EXISTS control")
     return con
 
 
+def garantir_tabela_silver(tabela: str) -> None:
+    """Cria a tabela Silver vazia a partir do schema declarativo, se ausente.
+
+    Cobre o caso de fonte sem dados na janela (ex: domínio novo ainda sem
+    Bronze): `escrever_validos_duckdb` retorna cedo com df vazio e a tabela
+    nunca nasceria — o `dbt build` completo falharia com "table does not
+    exist". Nunca destrutivo (`CREATE TABLE IF NOT EXISTS`).
+    """
+
+    from pipeline.schemas_silver import descricao_para_tabela, schema_para_tabela
+
+    esquema = schema_para_tabela(tabela)
+    if esquema is None:
+        raise ValueError(f"Schema declarativo não registrado para a tabela Silver: {tabela}")
+    con = _conectar_duckdb()
+    try:
+        tabela_full = _tabela_com_schema(tabela)
+        cols_ddl = ", ".join(f'"{col}" {tipo}' for col, (tipo, _desc) in esquema.items())
+        con.execute(f"CREATE TABLE IF NOT EXISTS {tabela_full} ({cols_ddl})")
+        descricao = descricao_para_tabela(tabela)
+        if descricao:
+            con.execute(
+                f"COMMENT ON TABLE {tabela_full} IS "
+                f"'{descricao.replace(chr(39), chr(39) * 2)}'"
+            )
+    finally:
+        con.close()
+
+
 def _tabela_com_schema(tabela: str, schema: str = "silver") -> str:
-    """Qualifica o nome da tabela com o schema (ADR-042).
+    """Qualifica o nome da tabela com o schema (ADR-042, ADR-060).
 
     Tabelas Silver ficam em `silver.*`, quarantine e dedup também.
-    Tabelas de controle (`data_quality_report`) ficam em `main` —
-    a API já lê de lá e a mudança de schema é tema separado.
+    Tabelas de controle (`data_quality_report`) ficam em `control` —
+    schema de domínio próprio (ADR-060); `main` (default do DuckDB)
+    permanece vazio por construção, guardado pelo teste
+    `gold/tests/main_sem_residuos.sql`.
     """
     if tabela == "data_quality_report":
-        return f"main.{tabela}"
+        return f"control.{tabela}"
     return f"{schema}.{tabela}"
 
 
@@ -465,7 +502,9 @@ def _schema_para(tabela: str):
     """Retorna o schema Pandera da tabela Silver (ADR-013).
 
     Schemas declarados: `silver_despesa`, `silver_cartao`,
-    `silver_emenda` e `silver_parlamentar`; novas tabelas são adicionadas
+    `silver_emenda`, `silver_parlamentar` e o domínio votação
+    (`silver_evento`, `silver_presenca`, `silver_votacao`, `silver_voto`,
+    `silver_orientacao` — ADR-058); novas tabelas são adicionadas
     à medida que os transform.py por fonte forem integrados.
     """
     if tabela == "silver_despesa":
@@ -476,6 +515,16 @@ def _schema_para(tabela: str):
         return schema_silver_emenda()
     if tabela == "silver_parlamentar":
         return schema_silver_parlamentar()
+    if tabela == "silver_evento":
+        return schema_silver_evento()
+    if tabela == "silver_presenca":
+        return schema_silver_presenca()
+    if tabela == "silver_votacao":
+        return schema_silver_votacao()
+    if tabela == "silver_voto":
+        return schema_silver_voto()
+    if tabela == "silver_orientacao":
+        return schema_silver_orientacao()
     raise ValueError(f"Schema Pandera não registrado para a tabela Silver: {tabela}")
 
 

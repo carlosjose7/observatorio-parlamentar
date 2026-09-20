@@ -12,6 +12,13 @@ from pipeline.camara.transform import (
 from pipeline.camara.transform import (
     carregar_silver_parlamentar as silver_parlamentar,
 )
+from pipeline.camara.votacao_transform import (
+    carregar_silver_evento,
+    carregar_silver_orientacao,
+    carregar_silver_presenca,
+    carregar_silver_votacao,
+    carregar_silver_voto,
+)
 from pipeline.config import get_pipeline_version
 from pipeline.runs import _gravar_span_seguro, medir_task
 from pipeline.senado.transform import carregar_silver_despesa as silver_senado
@@ -128,6 +135,28 @@ def _executar_silver(**context):
             "transparencia_emendas": _executar_com_span(
                 storage, run_id, "silver_emenda",
                 lambda: carregar_silver_emenda(storage=storage, run_id=run_id),
+            ),
+            # Onda 1 (ADR-058): domínio votação — tabelas sempre garantidas
+            # (mesmo com Bronze vazio), uma carga isolada por tabela.
+            "votacao_evento": _executar_com_span(
+                storage, run_id, "silver_votacao_evento",
+                lambda: carregar_silver_evento(storage=storage, run_id=run_id),
+            ),
+            "votacao_presenca": _executar_com_span(
+                storage, run_id, "silver_votacao_presenca",
+                lambda: carregar_silver_presenca(storage=storage, run_id=run_id),
+            ),
+            "votacao_votacao": _executar_com_span(
+                storage, run_id, "silver_votacao_votacao",
+                lambda: carregar_silver_votacao(storage=storage, run_id=run_id),
+            ),
+            "votacao_voto": _executar_com_span(
+                storage, run_id, "silver_votacao_voto",
+                lambda: carregar_silver_voto(storage=storage, run_id=run_id),
+            ),
+            "votacao_orientacao": _executar_com_span(
+                storage, run_id, "silver_votacao_orientacao",
+                lambda: carregar_silver_orientacao(storage=storage, run_id=run_id),
             ),
         }
 
@@ -374,7 +403,8 @@ def _garantir_silver_cgu_vazio() -> None:
     Silver então não cria as tabelas, e o `dbt build` completo falha no Gold
     com "table silver_cartao/silver_emenda does not exist" — mesmo sintoma do
     `ml_staging` (ADR-026). Schema declarativo de `pipeline/schemas_silver.py`
-    (fonte única): cria a tabela no schema `main` do DuckDB da Silver/Gold.
+    (fonte única): cria a tabela no schema `silver` (ADR-042/ADR-060 —
+    nunca no default `main`, que permanece vazio por construção).
     """
     import os
 
@@ -386,12 +416,13 @@ def _garantir_silver_cgu_vazio() -> None:
     caminho = os.environ["DUCKDB_DATABASE_PATH"]
     con = duckdb.connect(caminho)
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         for tabela in alvos:
             existentes = {
                 r[0]
                 for r in con.execute(
                     "select table_name from information_schema.tables"
-                    " where table_schema = 'main'"
+                    " where table_schema = 'silver'"
                 ).fetchall()
             }
             if tabela in existentes:
@@ -399,7 +430,7 @@ def _garantir_silver_cgu_vazio() -> None:
             colunas = ", ".join(
                 f'"{nome}" {tipo}' for nome, (tipo, _) in SCHEMAS_SILVER[tabela].items()
             )
-            con.execute(f'create table "{tabela}" ({colunas})')
+            con.execute(f'create table silver."{tabela}" ({colunas})')
         logger.info("silver_cgu_garantido", tabelas=list(alvos))
     finally:
         con.close()

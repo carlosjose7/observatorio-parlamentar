@@ -184,6 +184,9 @@ def test_run_pipeline_emite_spans_e_espelha_status_detalhado(tmp_path, monkeypat
     monkeypatch.setattr(
         bronze, "_extrair_e_persistir_parlamentares", lambda *a, **k: (None, None)
     )
+    monkeypatch.setattr(
+        bronze, "_extrair_e_persistir_votacao", lambda *a, **k: (None, None)
+    )
     storage = LocalParquetStorage(tmp_path / "bronze")
     run = run_pipeline(storage=storage, store=_StoreMemoria(), client=None)
 
@@ -200,6 +203,7 @@ def test_run_pipeline_emite_spans_e_espelha_status_detalhado(tmp_path, monkeypat
             "bronze_cgu_emenda",
             "bronze_cgu_cartao",
             "bronze_parlamentares",
+            "bronze_votacao",
         )
     )
 
@@ -223,3 +227,77 @@ def test_run_pipeline_parcial_mantem_spans_success(tmp_path, monkeypatch):
     assert run.status == "partial"
     assert run.status_detalhado == "partial"
     assert run.fontes_com_erro == ["senado"]
+
+
+# ── Bronze votação (Onda 1, ADR-058): isolamento fora de FONTES ──────
+
+
+def _fontes_sem_votacao():
+    """Cópia das fontes reais sem os endpoints do domínio votação."""
+    from pipeline.config import get_sources
+
+    fontes = get_sources().model_copy(deep=True)
+    for nome in (
+        "eventos",
+        "votacoes_por_evento",
+        "votos_por_votacao",
+        "orientacoes_por_votacao",
+        "presenca_arquivo_ano",
+    ):
+        fontes.camara.endpoints.pop(nome, None)
+    return fontes
+
+
+def test_votacao_sem_endpoints_degrada_sem_erro(tmp_path, monkeypatch):
+    """Sem endpoints configurados (ex: fontes sintéticas): skip log-only."""
+    import pipeline.bronze as bronze
+
+    monkeypatch.setattr(bronze, "get_sources", _fontes_sem_votacao)
+    storage = LocalParquetStorage(tmp_path / "bronze")
+    run_meta = bronze._novo_run_meta(datetime(2026, 9, 20, 3, 0, tzinfo=UTC))
+
+    novo, erro = bronze._extrair_e_persistir_votacao(
+        None, _StoreMemoria(), storage, run_meta, None
+    )
+    assert (novo, erro) == (None, None)
+    assert list((tmp_path / "bronze").rglob("*.parquet")) == []
+
+
+def test_votacao_persiste_janela_e_avanca_watermark(tmp_path, monkeypatch):
+    """Caminho feliz com extração mockada: persiste por domínio + watermark."""
+    import pipeline.bronze as bronze
+    from pipeline.camara.votacao_schemas import CamaraBronzeEvento
+    from pipeline.contracts import ExtractResult, LoadMetadata
+
+    meta = LoadMetadata(
+        run_id=uuid.uuid4(),
+        pipeline_version="teste",
+        execution_timestamp=datetime(2026, 9, 20, 3, 0, tzinfo=UTC),
+        source_version="",
+    )
+    evento = CamaraBronzeEvento.model_validate(
+        {"id": 10, "dataHoraInicio": "2024-05-15T14:00", "metadata": meta.model_dump()}
+    )
+    janela = {
+        "eventos": ExtractResult(records=[evento], new_watermark="2024-05-15"),
+        "presenca": ExtractResult(),
+        "votacoes": ExtractResult(),
+        "votos": ExtractResult(),
+        "orientacoes": ExtractResult(),
+    }
+    monkeypatch.setattr(
+        bronze.camara_votacao_extract, "extrair_janela", lambda *a, **k: janela
+    )
+    storage = LocalParquetStorage(tmp_path / "bronze")
+    store = _StoreMemoria()
+    run_meta = bronze._novo_run_meta(datetime(2026, 9, 20, 3, 0, tzinfo=UTC))
+
+    novo, erro = bronze._extrair_e_persistir_votacao(
+        None, store, storage, run_meta, None
+    )
+    assert erro is None
+    assert novo == "2026-09-20"
+    assert store.estado[bronze.CHAVE_WATERMARK_VOTACAO].last_watermark == "2026-09-20"
+    df = storage.read_dir(bronze.DIRETORIOS_VOTACAO["eventos"])
+    assert len(df) == 1
+    assert int(df["id_evento"].iloc[0]) == 10

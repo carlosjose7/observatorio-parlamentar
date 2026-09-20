@@ -8,6 +8,41 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 27 — Onda 1: presença/votação (ADR-058) (20/09/2026, sprint ABERTA)
+
+### Adicionado
+- **ADR-058 (Aceito):** `fact_presenca` (grão parlamentar/evento, `presente`/
+  `ausente` derivado, `is_ausencia_injustificada` sempre NULL) e `fact_votacao`
+  (grão parlamentar/votação, `seguiu_partido` NULL quando não comparável);
+  regra "só Encerrada conta", normalização `nao_mapeado` (padrão ADR-024),
+  pontes efêmeras de classificação + quarentenas por construção (ADR-018).
+- **Bronze/Silver (Câmara):** extractors (`eventos`, presença em lote,
+  `votacoes`/`votos`/`orientacoes` em cascata com isolamento por evento),
+  5 Silver (`silver_evento`, `silver_presenca`, `silver_votacao`,
+  `silver_voto`, `silver_orientacao`) com gate Pandera; watermark próprio
+  `watermark_camara_votacao` fora de FONTES/PipelineRun (precedente
+  parlamentares); `garantir_tabela_silver` (tabela nasce mesmo sem dados).
+- **`normalize.py`:** formato `%Y-%m-%dT%H:%M` (eventos omitem segundos).
+- **Testes:** `test_votacao_extract` (HTTP mockado), `test_transform_votacao`
+  (de-para + carga), `test_gold_presenca_votacao` (dbt de verdade).
+- **Docs:** `data_dictionary.md` §§2.9–2.10, BACKLOG Onda 1.
+
+### Onda 2 — limpeza `main` (Fase 1, sem mudança de contrato)
+- DROP das 23 tabelas stale em `main` (lista dinâmica, preserva
+  `main.data_quality_report`); backup
+  `data/backups/observatorio_pre_sprint27_onda2_20260920.duckdb`.
+- Guardrail `gold/tests/main_sem_residuos.sql` (ESTADO 1).
+
+### Onda 3 — rename `main→control` (ADR-060)
+- `control.data_quality_report` (COPY+DROP validado, 93 linhas);
+  `main` vazio por construção (guardrail ESTADO 2).
+- Código: Silver escreve `control.*`, source `control`, profile dev
+  `schema: gold`, `_garantir_silver_cgu_vazio` silver-qualificado
+  (era poluente ativo de `main`).
+- Docs sincronizados: PROJECT_CONTEXT §5/§6, data_dictionary §2, arch_er.
+
+---
+
 ## Hotfix — Canal Telegram no Alertmanager (19/09/2026)
 
 ### Adicionado

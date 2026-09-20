@@ -23,6 +23,24 @@ sources:
         path: "/deputados/{id_deputado}"
       despesas_por_deputado:
         path: "/deputados/{id_deputado}/despesas"
+      # Presença/votação da Câmara (ADR-058, Sprint 27 Onda 1). Descoberta de
+      # eventos por intervalo (dataInicio/dataFim são aceitos aqui, ao
+      # contrário das despesas); votação/votos/orientações em cascata por
+      # evento/votação; presença via arquivo anual em lote (semântica
+      # só-presença — sem linha de falta na fonte).
+      eventos:
+        path: "/eventos"
+      votacoes_por_evento:
+        path: "/eventos/{id_evento}/votacoes"
+      votos_por_votacao:
+        path: "/votacoes/{id_votacao}/votos"
+      orientacoes_por_votacao:
+        path: "/votacoes/{id_votacao}/orientacoes"
+      # Template do arquivo anual de presença (ano via {ano}). URL a
+      # confirmar contra a fonte no primeiro backfill — externalizada aqui
+      # (ADR-008) para ajuste sem mudança de código.
+      presenca_arquivo_ano:
+        path: "https://dadosabertos.camara.leg.br/arquivos/eventosPresencaDeputados/json/eventosPresencaDeputados-{ano}.json"
     watermark:
       despesas_por_deputado:
         # A API NÃO aceita dataInicio/dataFim (400); o único filtro temporal
