@@ -2287,12 +2287,18 @@ para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
   - ADR-058 Aceito (grão, gate Encerrada, normalização, seguiu_partido,
     quarentenas, Bronze incremental Decisão 7); Bronze/Silver/Gold + 3
     suítes de teste verdes; `normalize.py` +%H:%M; `garantir_tabela_silver`
-- [ ] Onda 2 — Limpeza `main` (Fase 1, sem mudança de contrato):
+- [x] Onda 2 — Limpeza `main` (Fase 1, sem mudança de contrato):
   DROP dinâmico das 23 tabelas stale via `duckdb_tables() WHERE
   schema_name='main' AND table_name != 'data_quality_report'`
   (lista gerada, nunca manual; zero views de usuário em `main`
   confirmado via `duckdb_views()` — só 14 views de sistema);
-  preserva `main.data_quality_report`; backup `cp` prévio obrigatório
+  preserva `main.data_quality_report`. Executado em 20/09 contra
+  `data/silver/observatorio.duckdb` com backup prévio
+  (`data/backups/observatorio_pre_sprint27_onda2_20260920.duckdb`);
+  `main` restante = só `data_quality_report` (93 linhas, paridade
+  com `gold`); `gold.fact_despesa` intacto (958.298).
+  Guardrail `gold/tests/main_sem_residuos.sql` (ESTADO 1: permite
+  `data_quality_report`; verificado falha-com-resíduo/passa-limpo).; backup `cp` prévio obrigatório
 - [ ] Onda 3 — ADR-060 `main→control` (Fase 2): `CREATE SCHEMA control` +
   `CREATE TABLE control.data_quality_report AS SELECT * FROM
   main.data_quality_report` + validação de contagem (81/81) + `DROP TABLE

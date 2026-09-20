@@ -27,6 +27,12 @@ Histórico das alterações, organizado por sprint (ver
   (de-para + carga), `test_gold_presenca_votacao` (dbt de verdade).
 - **Docs:** `data_dictionary.md` §§2.9–2.10, BACKLOG Onda 1.
 
+### Onda 2 — limpeza `main` (Fase 1, sem mudança de contrato)
+- DROP das 23 tabelas stale em `main` (lista dinâmica, preserva
+  `main.data_quality_report`); backup
+  `data/backups/observatorio_pre_sprint27_onda2_20260920.duckdb`.
+- Guardrail `gold/tests/main_sem_residuos.sql` (ESTADO 1).
+
 ---
 
 ## Hotfix — Canal Telegram no Alertmanager (19/09/2026)
