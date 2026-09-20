@@ -38,8 +38,11 @@ referência versionada em Git.
 > **Schema físico por camada (ADR-042/ADR-060):** `Bronze` = Parquet/MinIO
 > (sem DuckDB) · `Silver` = schema `silver` · `Gold` = schema `gold`
 > · `Controle` = schema `control` (`data_quality_report` — única tabela;
-> ADR-015/ADR-060). O default `main` do DuckDB permanece vazio por
-> construção (guardrail `gold/tests/main_sem_residuos.sql`).
+> ADR-015/ADR-060). O default `main` do DuckDB permanece vazio **de tabelas
+> de usuário** por construção (guardrail `gold/tests/main_sem_residuos.sql`);
+> o schema `main` em si não pode ser removido (embutido no motor) e abriga
+> apenas views de sistema (`duckdb_tables`, `duckdb_columns` etc.) — vê-lo
+> na árvore do visualizador, sem tabelas de usuário, é o estado correto.
 
 | Tabela | Camada | Origem | Frequência | Chave Primária | Owner |
 |---|---|---|---|---|---|

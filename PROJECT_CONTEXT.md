@@ -258,7 +258,11 @@ Fontes Externas (APIs + CSVs)
 > schema `ml_staging` (ADR-026) e o schema `control` (apenas
 > `data_quality_report`, tabela de controle viva — ADR-015/ADR-060) também
 > residem nesse mesmo arquivo. O default `main` do DuckDB permanece vazio
-> por construção. O diagrama acima representa a
+> **de tabelas de usuário** por construção — o schema `main` em si não pode
+> ser removido (é embutido no motor, como o `public` no Postgres) e abriga
+> apenas views de sistema (`duckdb_tables`, `duckdb_columns` etc.);
+> qualquer tabela de usuário em `main` é resíduo e falha o build
+> (guardrail `gold/tests/main_sem_residuos.sql`). O diagrama acima representa a
 > separação lógica de camadas, não a separação física de arquivos.
  
 ---
