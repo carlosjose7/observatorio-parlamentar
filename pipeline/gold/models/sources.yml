@@ -32,9 +32,10 @@ sources:
 
   - name: control
     description: >
-      Tabelas de controle no schema `main` (ADR-042) — lidas pela API e
-      escritas pelo pipeline Silver. Não são Gold nem Silver de negócio.
-    schema: main
+      Tabelas de controle no schema `control` (ADR-060) — lidas pela API
+      (via promoção à Gold) e escritas pelo pipeline Silver. Não são Gold
+      nem Silver de negócio.
+    schema: control
     tables:
       - name: data_quality_report
         description: Data Quality Report da Silver (ADR-015), por run_id/tabela.

@@ -3615,3 +3615,63 @@ Consequências:
   omitem os segundos) + teste; `pipeline/silver.py` ganha
   `garantir_tabela_silver` (reutilizável por qualquer domínio novo).
 - Qualquer mudança nesta decisão volta para aprovação antes de prosseguir.
+
+---
+
+ADR-060
+Título: Schema `control` para tabelas de controle — `main` vazio por construção
+
+Status:
+Aceito — Sprint 27, Onda 3 (branch sprint/27-pauta-controle)
+
+Contexto:
+ADR-042 isolou Silver/Gold em schemas próprios, mas manteve a tabela de
+controle viva `data_quality_report` no schema `main` (default do DuckDB).
+`main` não é schema de domínio — é o destino de todo nome não-qualificado.
+Duas evidências de que o default como morada é armadilha, não desenho:
+1. O DuckDB de produção acumulou 23 tabelas stale em `main` (cópia
+   pré-ADR-042: `fact_despesa` defasado em ~465k linhas), removidas na
+   Onda 2 com backup — a migração ADR-042 foi COPY sem DROP e nenhum
+   guardrail impedia recriação.
+2. `_garantir_silver_cgu_vazio` (`pipeline_dag.py`) criava
+   `silver_cartao`/`silver_emenda` sem qualificador — caíam em `main`
+   (schema errado pós-ADR-042: o dbt as lê em `silver.*`), ou seja, um
+   poluente ativo de `main`, não só resíduo histórico.
+O nome lógico correto já existia (`source('control', ...)` em
+`sources.yml`, mapeado para o físico errado). O incidente da Sprint 20
+(resíduo `main.*` calando a etapa analytics) é o custo medido.
+
+Decisão:
+1. Criar o schema de domínio `control`: único morador =
+   `control.data_quality_report` (escrita exclusiva pela Silver,
+   `pipeline/silver.py:_tabela_com_schema`; fonte do model Gold,
+   `sources.yml` source `control`).
+2. Mecânica de migração = COPY + DROP, nunca RENAME: POC em DuckDB
+   1.4.5 provou que `ALTER TABLE main.x RENAME TO control.x` falha
+   (Parser Error) e `SET SCHEMA` não é implementado
+   (`T_AlterObjectSchemaStmt`) — `CREATE TABLE control.x AS SELECT *
+   FROM main.x` + validação de contagem/colunas + `DROP TABLE main.x`,
+   com backup prévio do arquivo.
+3. Alinhar o default: profile dbt `dev` passa de `schema: main` para
+   `schema: gold` (nada nasce em `main` por omissão); corrigir
+   `_garantir_silver_cgu_vazio` para schema-qualificado (`silver.*`,
+   com `CREATE SCHEMA IF NOT EXISTS silver`); `_conectar_duckdb`
+   passa a garantir `control` junto de `silver`.
+4. Guardrail versionado `gold/tests/main_sem_residuos.sql` (singular,
+   roda em todo `dbt build` sem `--select` restritivo): ESTADO 1
+   (Onda 2) permitia `data_quality_report`; ESTADO 2 = conjunto vazio
+   — qualquer tabela em `main` falha o build. Verificado
+   falha-com-resíduo/passa-limpo antes do merge.
+5. `gold.data_quality_report` e `gold.pipeline_runs` permanecem em
+   `gold` — são as cópias promovidas que a API lê (fronteira read-only
+   ADR-026/031/019); `control` guarda o bruto, `gold` o promovido.
+
+Consequências:
+- `main` vazio é invariante testada, não convenção: regressão vira
+  build vermelho, não descoberta tardia (padrão do fechamento sem dado
+  real — lição do ADR-023).
+- Arquivo físico (`data/silver/observatorio.duckdb` guardando tudo)
+  segue fora de escopo (item separado, ADR-042).
+- Qualquer nova tabela de controle futura nasce em `control`, nunca
+  em `main` — desvio exige amendment deste ADR.
+- Qualquer mudança nesta decisão volta para aprovação antes de prosseguir.

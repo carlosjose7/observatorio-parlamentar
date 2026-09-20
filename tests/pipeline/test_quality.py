@@ -337,7 +337,7 @@ class TestPersistenciaDedupSilver:
 
         report = self._query(
             tmp_path,
-            "SELECT registros_deduplicados, registros_validos FROM data_quality_report",
+            "SELECT registros_deduplicados, registros_validos FROM control.data_quality_report",
         )
         assert report == [(1, 1)]
 

@@ -35,10 +35,11 @@ referência versionada em Git.
 > dimensões institucionais introduzidas em ADR-010 e o schema
 > revisado de `dim_fornecedor` (ADR-011).
 >
-> **Schema físico por camada (ADR-042):** `Bronze` = Parquet/MinIO
+> **Schema físico por camada (ADR-042/ADR-060):** `Bronze` = Parquet/MinIO
 > (sem DuckDB) · `Silver` = schema `silver` · `Gold` = schema `gold`
-> · `Gold (controle)` = exceção, permanece em `main`
-> (`data_quality_report` — única tabela; ADR-015).
+> · `Controle` = schema `control` (`data_quality_report` — única tabela;
+> ADR-015/ADR-060). O default `main` do DuckDB permanece vazio por
+> construção (guardrail `gold/tests/main_sem_residuos.sql`).
 
 | Tabela | Camada | Origem | Frequência | Chave Primária | Owner |
 |---|---|---|---|---|---|

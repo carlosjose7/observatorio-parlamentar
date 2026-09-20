@@ -153,6 +153,7 @@ def _conectar_duckdb():
     caminho.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(caminho))
     con.execute("CREATE SCHEMA IF NOT EXISTS silver")
+    con.execute("CREATE SCHEMA IF NOT EXISTS control")
     return con
 
 
@@ -186,14 +187,16 @@ def garantir_tabela_silver(tabela: str) -> None:
 
 
 def _tabela_com_schema(tabela: str, schema: str = "silver") -> str:
-    """Qualifica o nome da tabela com o schema (ADR-042).
+    """Qualifica o nome da tabela com o schema (ADR-042, ADR-060).
 
     Tabelas Silver ficam em `silver.*`, quarantine e dedup também.
-    Tabelas de controle (`data_quality_report`) ficam em `main` —
-    a API já lê de lá e a mudança de schema é tema separado.
+    Tabelas de controle (`data_quality_report`) ficam em `control` —
+    schema de domínio próprio (ADR-060); `main` (default do DuckDB)
+    permanece vazio por construção, guardado pelo teste
+    `gold/tests/main_sem_residuos.sql`.
     """
     if tabela == "data_quality_report":
-        return f"main.{tabela}"
+        return f"control.{tabela}"
     return f"{schema}.{tabela}"
 
 

@@ -271,15 +271,15 @@ def _resumo_final() -> None:
     con = duckdb.connect(caminho, read_only=True)
     try:
         tabelas = con.execute(
-            "select table_name from information_schema.tables"
-            " where table_schema = 'main' order by table_name"
+            "select table_schema, table_name from information_schema.tables"
+            " where table_schema in ('control', 'main') order by 1, 2"
         ).fetchall()
-        for (tabela,) in tabelas:
+        for (esquema, tabela) in tabelas:
             try:
-                n = con.execute(f'select count(*) from "{tabela}"').fetchone()[0]
+                n = con.execute(f'select count(*) from "{esquema}"."{tabela}"').fetchone()[0]
             except Exception:  # noqa: BLE001 — tabela sem acesso simples, segue
                 n = "?"
-            print(f"  {tabela}: {n} linhas", flush=True)
+            print(f"  {esquema}.{tabela}: {n} linhas", flush=True)
     finally:
         con.close()
 

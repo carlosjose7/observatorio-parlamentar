@@ -259,13 +259,13 @@ elas — são auditáveis pela chave natural da fonte:
 - `pipeline_runs` — controle de execuções (Bronze, ADR-019); incremental por
   `run_id`.
 - `data_quality_report` — DQ report da Silver promovido (ADR-031); fonte
-  `silver.data_quality_report`, chave (`run_id`, `tabela`).
+  `control.data_quality_report` (ADR-060), chave (`run_id`, `tabela`).
 
 ---
 
 ## Notas de leitura
 
-- **Fontes Silver** (`silver_*`, schema `main`): `silver_despesa`,
+- **Fontes Silver** (`silver_*`, schema `silver`, ADR-042): `silver_despesa`,
   `silver_emenda`, `silver_parlamentar`, `silver_cartao` (escritas por
   `pipeline/silver.py`). As dimensões/fatos fazem a resolução contra essas
   fotos; a Gold é a única camada materializada consumida pela API (ADR-026).

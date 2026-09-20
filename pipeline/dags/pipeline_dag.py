@@ -403,7 +403,8 @@ def _garantir_silver_cgu_vazio() -> None:
     Silver então não cria as tabelas, e o `dbt build` completo falha no Gold
     com "table silver_cartao/silver_emenda does not exist" — mesmo sintoma do
     `ml_staging` (ADR-026). Schema declarativo de `pipeline/schemas_silver.py`
-    (fonte única): cria a tabela no schema `main` do DuckDB da Silver/Gold.
+    (fonte única): cria a tabela no schema `silver` (ADR-042/ADR-060 —
+    nunca no default `main`, que permanece vazio por construção).
     """
     import os
 
@@ -415,12 +416,13 @@ def _garantir_silver_cgu_vazio() -> None:
     caminho = os.environ["DUCKDB_DATABASE_PATH"]
     con = duckdb.connect(caminho)
     try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS silver")
         for tabela in alvos:
             existentes = {
                 r[0]
                 for r in con.execute(
                     "select table_name from information_schema.tables"
-                    " where table_schema = 'main'"
+                    " where table_schema = 'silver'"
                 ).fetchall()
             }
             if tabela in existentes:
@@ -428,7 +430,7 @@ def _garantir_silver_cgu_vazio() -> None:
             colunas = ", ".join(
                 f'"{nome}" {tipo}' for nome, (tipo, _) in SCHEMAS_SILVER[tabela].items()
             )
-            con.execute(f'create table "{tabela}" ({colunas})')
+            con.execute(f'create table silver."{tabela}" ({colunas})')
         logger.info("silver_cgu_garantido", tabelas=list(alvos))
     finally:
         con.close()

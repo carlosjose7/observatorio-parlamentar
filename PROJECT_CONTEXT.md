@@ -252,12 +252,13 @@ Fontes Externas (APIs + CSVs)
 > acima refere-se a não haver proxy reverso para `/`, não a ausência
 > de chamadas client-side à API.
 >
-> **Nota (ADR-042):** fisicamente, Silver e Gold vivem no MESMO
+> **Nota (ADR-042/ADR-060):** fisicamente, Silver e Gold vivem no MESMO
 > arquivo DuckDB (`data/silver/observatorio.duckdb`), em schemas
 > separados (`silver.*`, `gold.*`), não em arquivos distintos. O
-> schema `ml_staging` (ADR-026) e o schema `main` (apenas
-> `data_quality_report`, tabela de controle viva — ADR-015) também
-> residem nesse mesmo arquivo. O diagrama acima representa a
+> schema `ml_staging` (ADR-026) e o schema `control` (apenas
+> `data_quality_report`, tabela de controle viva — ADR-015/ADR-060) também
+> residem nesse mesmo arquivo. O default `main` do DuckDB permanece vazio
+> por construção. O diagrama acima representa a
 > separação lógica de camadas, não a separação física de arquivos.
  
 ---
@@ -379,7 +380,7 @@ observatorio-parlamentar/
 │   │                                 #   por design (ADR-007)
 │   │   └── .gitkeep
 │   ├── silver/                       # Arquivo único: schemas `silver`, `gold`,
-│   │                                 #   `ml_staging`, `main` (ADR-042)
+│   │                                 #   `ml_staging`, `control` (ADR-042/060)
 │   │   └── .gitkeep
 │   └── gold/                         # Vestigial — Gold NÃO vive aqui.
 │                                     #   Vive no schema `gold` dentro de

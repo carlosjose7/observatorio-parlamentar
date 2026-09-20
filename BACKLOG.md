@@ -2299,16 +2299,22 @@ para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
   com `gold`); `gold.fact_despesa` intacto (958.298).
   Guardrail `gold/tests/main_sem_residuos.sql` (ESTADO 1: permite
   `data_quality_report`; verificado falha-com-resíduo/passa-limpo).; backup `cp` prévio obrigatório
-- [ ] Onda 3 — ADR-060 `main→control` (Fase 2): `CREATE SCHEMA control` +
+- [x] Onda 3 — ADR-060 `main→control` (Fase 2): `CREATE SCHEMA control` +
   `CREATE TABLE control.data_quality_report AS SELECT * FROM
-  main.data_quality_report` + validação de contagem (81/81) + `DROP TABLE
-  main.data_quality_report` (**não usar `RENAME TO` entre schemas —
-  POC DuckDB 1.4.5: `RENAME TO control.x` → Parser Error; `SET SCHEMA` →
-  Not implemented**); atualiza `pipeline/silver.py:161`,
-  `pipeline/gold/models/sources.yml:27`,
-  `pipeline/gold/models/control/data_quality_report.sql:2`,
-  `pipeline/dags/pipeline_dag.py:377/394`, `pipeline/gold/profiles.yml:7`,
-  testes e docs (ver aceite)
+  main.data_quality_report` + validação de contagem/colunas (93/93) +
+  `DROP TABLE main.data_quality_report` (**não usar `RENAME TO` entre
+  schemas — POC DuckDB 1.4.5: Parser Error; `SET SCHEMA` → Not
+  implemented**). Executado em 20/09 com backup prévio
+  (`data/backups/observatorio_pre_sprint27_onda3_20260920.duckdb`);
+  `main` vazio, `control` = só `data_quality_report`.
+  Código: `silver.py` (`control.*` + schema garantido na conexão),
+  `sources.yml` (`schema: control`), `data_quality_report.sql`,
+  `profiles.yml` dev (`schema: gold`), `_garantir_silver_cgu_vazio`
+  (silver-qualificado — era poluente ativo de `main`),
+  `run_e2e_local` (resumo `control`), seed do contrato de integração
+  (`control.*`), guardrail ESTADO 2 (conjunto vazio).
+  ADR-060 Aceito; docs sincronizados no mesmo diff
+  (PROJECT_CONTEXT §5/§6, data_dictionary §2, arch_er, BACKLOG, CHANGELOG).
 
 **Correção 1 — guardrail com dois estados (Revisor Técnico):**
 guardrail parametrizado por `EXPECTED_MAIN_TABLES`, não condição única:

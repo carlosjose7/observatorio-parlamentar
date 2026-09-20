@@ -88,16 +88,18 @@ def _seed(db: Path) -> None:
             " pipeline_version varchar, execution_timestamp timestamp,"
             " source_version varchar)"
         )
-        # data_quality_report (Silver, ADR-015/031) — promovido à Gold pelo dbt
+        # data_quality_report (Silver, ADR-015/031/060) — promovido à Gold pelo dbt;
+        # vive no schema `control` (nunca no default `main`).
+        con.execute("create schema if not exists control")
         con.execute(
-            "create table data_quality_report (run_id varchar, tabela varchar,"
+            "create table control.data_quality_report (run_id varchar, tabela varchar,"
             " total_registros bigint, registros_validos bigint,"
             " registros_quarentena bigint, registros_deduplicados bigint,"
             " regras_violadas varchar, percentual_nulos_criticos double,"
             " execution_timestamp varchar)"
         )
         con.executemany(
-            "insert into data_quality_report values (?,?,?,?,?,?,?,?,?)",
+            "insert into control.data_quality_report values (?,?,?,?,?,?,?,?,?)",
             [
                 ("run-integ-2026", "silver_despesa", 100, 98, 2, 0,
                  '["regra_violada_integ"]', 0.25, "2026-02-01 05:00:00"),

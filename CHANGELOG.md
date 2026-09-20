@@ -33,6 +33,14 @@ Histórico das alterações, organizado por sprint (ver
   `data/backups/observatorio_pre_sprint27_onda2_20260920.duckdb`.
 - Guardrail `gold/tests/main_sem_residuos.sql` (ESTADO 1).
 
+### Onda 3 — rename `main→control` (ADR-060)
+- `control.data_quality_report` (COPY+DROP validado, 93 linhas);
+  `main` vazio por construção (guardrail ESTADO 2).
+- Código: Silver escreve `control.*`, source `control`, profile dev
+  `schema: gold`, `_garantir_silver_cgu_vazio` silver-qualificado
+  (era poluente ativo de `main`).
+- Docs sincronizados: PROJECT_CONTEXT §5/§6, data_dictionary §2, arch_er.
+
 ---
 
 ## Hotfix — Canal Telegram no Alertmanager (19/09/2026)
