@@ -24,6 +24,7 @@ logger = structlog.get_logger()
 _ISO_FORMATS = (
     "%Y-%m-%dT%H:%M:%S",
     "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M",  # eventos/votações da Câmara omitem os segundos (ADR-058)
     "%Y-%m-%d",
 )
 _PTBR_FORMAT = "%d/%m/%Y"

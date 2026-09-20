@@ -183,6 +183,37 @@ referência versionada em Git.
 
 > Grão: ``(ano, id_fornecedor)``. Fonte `fact_despesa` (agregado puro, sem ML — ADR-021).
 
+### 2.9 fact_presenca (ADR-058 — Onda 1, Sprint 27)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_presenca` | BIGINT | 0% | PK surrogate determinístico (`row_number` por evento/parlamentar) |
+| `id_parlamentar` | BIGINT (FK) | **0% — NOT NULL** | `dim_parlamentar` — versão vigente na data do evento (SCD2 as-of) |
+| `surrogate_key` | BIGINT (FK) | **0% — NOT NULL** | Versão exata casada (auditoria, paridade com fact_despesa) |
+| `id_evento` | BIGINT | 0% | Evento/sessão da Câmara (sempre Encerrada — gate ADR-058) |
+| `id_orgao` | BIGINT (FK) | **0% — NOT NULL** | `dim_orgao` — sempre `CD`, via JOIN por sigla (ADR-022.1) |
+| `data_sk` | BIGINT (FK) | 0% | `dim_data` — YYYYMMDD da data do evento |
+| `resultado` | VARCHAR | 0% | `presente` (linha do lote) ou `ausente` (derivado: vigente sem linha) |
+| `is_ausencia_injustificada` | BOOLEAN | **100% NULL** | Desconhecido — a fonte não distingue justificada (ADR-058) |
+
+*> Grão: **(parlamentar, evento)**. Linhas não promovidas vão a `fact_presenca_quarantine` (motivos `evento_nao_resolvido` \| `evento_nao_encerrado` \| `parlamentar_nao_resolvido` \| `data_nao_resolvida` \| `orgao_nao_resolvido`).*
+
+### 2.10 fact_votacao (ADR-058 — Onda 1, Sprint 27)
+
+| Campo | Tipo | Nulos | Descrição |
+|---|---|---|---|
+| `id_voto` | BIGINT | 0% | PK surrogate determinístico (`row_number` por votação/parlamentar) |
+| `id_parlamentar` | BIGINT (FK) | **0% — NOT NULL** | `dim_parlamentar` — versão vigente na data do evento |
+| `surrogate_key` | BIGINT (FK) | **0% — NOT NULL** | Versão exata casada (auditoria) |
+| `id_votacao` | BIGINT | 0% | Votação nominal de origem |
+| `id_evento` | BIGINT | 0% | Evento de origem (sempre Encerrada) |
+| `id_orgao` | BIGINT (FK) | **0% — NOT NULL** | `dim_orgao` — sempre `CD` |
+| `data_sk` | BIGINT (FK) | 0% | `dim_data` — YYYYMMDD da data do evento |
+| `voto` | VARCHAR | 0% | Voto normalizado (`sim`/`nao`/`abstencao`/`artigo17`/`obstrucao`/`nao_mapeado`) |
+| `seguiu_partido` | BOOLEAN | **nullable** | NULL quando não comparável (sem orientação, `Liberado`, voto não-binário) |
+
+*> Grão: **(parlamentar, votação)**. Quarentena `fact_votacao_quarantine` com os mesmos motivos (troca `evento_nao_resolvido` por `votacao_sem_evento`).*
+
 ---
 
 ## 3. Schemas das Fontes (Sprint 0B — Exploração Empírica)

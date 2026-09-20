@@ -1,0 +1,150 @@
+version: 2
+
+# Contrato de qualidade de presença/votação (ADR-022, padrão despesa/schema.yml).
+#
+# `relationships` (severity warn) + `fk_orphan_pct` (severity warn,
+# threshold `fk_orfas_threshold_pct` via `get_dbt_vars()`, ADR-008) convivem
+# por DESIGN — ver despesa/schema.yml. `seguiu_partido` é nullable por
+# construção (Decisão 4: orientação ausente/Liberado e voto não-binário →
+# NULL), sem teste `not_null`.
+
+models:
+  - name: fact_presenca
+    description: >
+      Presença parlamentar por sessão (ADR-058). Grão: (id_parlamentar,
+      id_evento). `presente` = linha do lote com parlamentar resolvido;
+      `ausente` = derivado (vigente sem linha). `is_ausencia_injustificada`
+      sempre NULL (fonte não distingue justificada).
+    columns:
+      - name: id_presenca
+        tests:
+          - unique
+          - not_null
+      - name: id_parlamentar
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+      - name: surrogate_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: surrogate_key
+              config:
+                severity: warn
+      - name: id_evento
+        tests:
+          - not_null
+      - name: id_orgao
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_orgao')
+              field: id_orgao
+              config:
+                severity: warn
+      - name: data_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_data')
+              field: data_sk
+              config:
+                severity: warn
+      - name: resultado
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['presente', 'ausente']
+
+  - name: fact_presenca_quarantine
+    description: Presenças não promovidas, com motivo explícito (ADR-018).
+    columns:
+      - name: motivo_quarentena
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'evento_nao_resolvido'
+                - 'evento_nao_encerrado'
+                - 'parlamentar_nao_resolvido'
+                - 'data_nao_resolvida'
+                - 'orgao_nao_resolvido'
+
+  - name: fact_votacao
+    description: >
+      Voto parlamentar por votação nominal (ADR-058). Grão:
+      (id_parlamentar, id_votacao). `seguiu_partido` NULL quando não
+      comparável (sem orientação, Liberado ou voto não-binário).
+    columns:
+      - name: id_voto
+        tests:
+          - unique
+          - not_null
+      - name: id_parlamentar
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+              config:
+                severity: warn
+          - fk_orphan_pct:
+              to: ref('dim_parlamentar')
+              field: id_parlamentar
+      - name: surrogate_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_parlamentar')
+              field: surrogate_key
+              config:
+                severity: warn
+      - name: id_votacao
+        tests:
+          - not_null
+      - name: id_evento
+        tests:
+          - not_null
+      - name: id_orgao
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_orgao')
+              field: id_orgao
+              config:
+                severity: warn
+      - name: data_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_data')
+              field: data_sk
+              config:
+                severity: warn
+      - name: voto
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['sim', 'nao', 'abstencao', 'artigo17', 'obstrucao', 'nao_mapeado']
+
+  - name: fact_votacao_quarantine
+    description: Votos não promovidos, com motivo explícito (ADR-018).
+    columns:
+      - name: motivo_quarentena
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'votacao_sem_evento'
+                - 'evento_nao_encerrado'
+                - 'parlamentar_nao_resolvido'
+                - 'data_nao_resolvida'
+                - 'orgao_nao_resolvido'

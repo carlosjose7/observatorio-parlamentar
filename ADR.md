@@ -3482,3 +3482,136 @@ Consequências:
 - Nenhuma mudança em testes/compose (além do mount)/dashboard/exporter:
   é só roteamento — o diff prova o escopo cirúrgico.
 - Qualquer mudança nesta decisão volta para aprovação antes de prosseguir.
+
+---
+
+ADR-058
+Título: fact_presenca e fact_votacao (Câmara) — grão, fontes, regra
+"só Encerrada conta", normalização de situacaoItem/voto
+
+Status:
+Aceito — Sprint 27, Onda 1 (branch sprint/27-pauta-controle)
+
+Contexto:
+`PROJECT_CONTEXT.md §7` já especifica `fact_presenca` (grão
+parlamentar/sessão, colunas `resultado`, `is_ausencia_injustificada`)
+e `fact_votacao` (grão parlamentar/votação, colunas `voto`,
+`seguiu_partido`), e `§8` define `taxa_ausencia` e `indice_alinhamento`
+sobre essas duas fatos — mas nenhuma das duas tinha modelo dbt
+materializado (`pipeline/gold/models/` não continha `fact_presenca.sql`
+nem `fact_votacao.sql`).
+
+ADR-032 já registrou essa lacuna: `taxa_ausencia`/`indice_alinhamento`
+ficam fora do payload de `/agent/parlamentar` "porque dependem de
+`fact_presenca`/`fact_votacao`, ainda inexistentes no Gold", prevendo
+que fatos futuras ampliariam o payload via amendment, sem mudar a
+fronteira. Este ADR fecha essa dívida (a ampliação do payload agent
+fica como amendment futuro, fora desta onda).
+
+Fontes confirmadas (evidência viva do bloco B do POC de pauta, mais
+documentação pública):
+- `GET /eventos` — descoberta e metadados de sessão.
+- Presença: arquivo em lote `eventosPresencaDeputados-{ano}.json`
+  (2026 = 58.756 linhas) — semântica **só-presença**: cada linha
+  `(idEvento, dataHoraInicio, idDeputado)` significa PRESENTE; não há
+  linha de falta nem campo de resultado. Rota REST
+  `/eventos/{id}/deputados` é só roster (sem flag) — **não serve**.
+- `GET /votacoes`, `GET /eventos/{id}/votacoes`, `GET /votacoes/{id}/votos`
+  (nominal: `tipoVoto`, `dataRegistroVoto`, `deputado_.id`), `GET
+  /votacoes/{id}/orientacoes` (`orientacaoVoto`, `siglaPartidoBloco`,
+  `codTipoLideranca` P/B).
+
+Escopo restrito à Câmara nesta ADR (Senado: grão e nomenclatura próprios,
+onda/ADR futura — ver Fora de escopo).
+
+Decisão:
+1. **Grão:**
+   - `fact_presenca`: 1 linha por `(id_parlamentar, id_evento)`.
+   - `fact_votacao`: 1 linha por `(id_parlamentar, id_votacao)`.
+2. **Regra "só Encerrada conta":** eventos com `situacao != "Encerrada"`
+   nunca alimentam `fact_presenca` (lista de evento futuro/em andamento
+   é lista de **esperados**, não comparecimento real). Gate explícito por
+   `situacao` via join com `/eventos` antes de qualquer promoção.
+   Regra equivalente para `fact_votacao`: `GET /votacoes/{id}` **não tem
+   campo de status** — votação listada = resultado registrado =
+   encerrada. Gate = linha com `descricao`/`aprovacao` presente **e**
+   evento (`idEvento`) com `situacao = "Encerrada"`.
+3. **Normalização** — mesmo padrão ADR-024 (par `_bruto` +
+   `_normalizada`, sentinela `nao_mapeado`, de-para versionado com
+   teste, nunca `NULL` silencioso):
+   - `fact_presenca`: fonte só-presença ⇒ `resultado_normalizado`
+     ∈ {`presente` (linha existe), `ausente` (derivado: em exercício
+     sem linha)}. **"Falta justificada" não existe nesta fonte** —
+     `is_ausencia_injustificada` nasce NULL (desconhecido, não `false`).
+   - `fact_votacao`: `voto_normalizado` ∈ {`sim`, `nao`,
+     `abstencao`, `artigo17`, `nao_mapeado`} + `obstrucao` como
+     candidato explícito (valor conhecido de outras votações, não
+     observado na amostra 2611313-31, n=396: Sim 346, Não 46,
+     Abstenção 3, Artigo 17 = 1). "Ausente" **não** é `tipoVoto` — é
+     derivado (sem linha em `/votos`), igual à presença.
+4. **`seguiu_partido`:** cruzamento `voto_normalizado` ×
+   `orientacaoVoto`, resolvendo o partido do parlamentar no as-of da
+   data do evento via `dim_parlamentar` (SCD2, ADR-020) — join por
+   `exists`, nunca `inner join` direto pelo id natural.
+   `orientacaoVoto` vazio (`''`) = bancada sem orientação ⇒
+   `seguiu_partido` NULL; `Liberado` = sem cobrança ⇒ NULL (não
+   "alinhado"); `artigo17`/`abstencao`/outros não-binários ⇒ NULL.
+   Implementação: comparação sem acento/caixa via `translate()`
+   (mesma técnica do macro `nome_normalizado`).
+5. **FKs e nullability** (constelação, ADR-012; institucional ADR-010):
+   - `fact_presenca.id_parlamentar` → `dim_parlamentar`, NOT NULL
+     (via `exists` as-of na data do evento).
+   - `fact_presenca.id_orgao` → `dim_orgao`, NOT NULL (sigla `CD`).
+   - `fact_presenca.data_sk` → `dim_data`, NOT NULL.
+   - `fact_votacao.id_parlamentar` → `dim_parlamentar`, NOT NULL.
+   - `fact_votacao.id_orgao` → `dim_orgao`, NOT NULL.
+   - `fact_votacao.data_sk` → `dim_data`, NOT NULL.
+   - `run_id`, `pipeline_version`, `execution_timestamp`,
+     `source_version` em toda linha (RF-12).
+6. **Quarentena:** linhas cujo FK não resolve vão para
+   `fact_presenca_quarantine`/`fact_votacao_quarantine` (ADR-018/022).
+   Motivos: `evento_nao_resolvido`/`votacao_sem_evento`,
+   `evento_nao_encerrado`, `parlamentar_nao_resolvido`,
+   `data_nao_resolvida`, `orgao_nao_resolvido`. Pontes efêmeras
+   `presenca_parlamento_classificacao` /
+   `votacao_parlamento_classificacao` centralizam a regra (padrão
+   ADR-017: fato consome `resolvido`, quarentena o resto).
+7. **Bronze incremental do domínio** (fonte lógica `camara_votacao`,
+   fora de FONTES/PipelineRun — precedente dos parlamentares, ADR-020):
+   watermark próprio `watermark_camara_votacao` (teto da janela, ISO
+   AAAA-MM-DD); janela `[watermark, hoje]` (overlap absorvido pela
+   dedup da Silver, ADR-014); sem watermark, bootstrap rolante de 90
+   dias (backfill histórico = tarefa explícita do operador);
+   append-only por data de execução (`camara_eventos/`,
+   `camara_presenca/`, `camara_votacoes/`, `camara_votos/`,
+   `camara_orientacoes/`); falha isolada log-only, nunca derruba a run.
+   Silver com 5 tabelas (`silver_evento`, `silver_presenca`,
+   `silver_votacao`, `silver_voto`, `silver_orientacao`), cada carga
+   garantindo a tabela mesmo com Bronze vazio (via
+   `garantir_tabela_silver` — `dbt build` completo nunca quebra por
+   fonte ausente).
+
+Fora de escopo explícito:
+- **Tempo real / streaming de pauta:** gated pelo veredito do POC
+  (Onda 0, INCONCLUSIVO em 20/09 — janela aberta). Se POSITIVO,
+  tratado em ADR-059 (número reservado), sem mudar nada desta ADR.
+- **Senado:** serviço unificado `/dadosabertos/votacao.json`
+  (levantamento preliminar não verificado — nota de backlog, não fato
+  de implementação). Exige extrator/normalização dedicados no padrão
+  ADR-024. Onda/ADR futura.
+- **Co-voto / grafo de coesão (frente 4), risk_index × pauta (frente
+  3), payload `/agent/parlamentar` (amendment ADR-032):** dependem
+  deste ADR; modelagem futura, não desta onda.
+- **Endpoints da API para os novos fatos:** nenhum CU exige nesta
+  versão; seguem o padrão das demais fatos quando houver requisito.
+
+Consequências:
+- `/agent/parlamentar` passa a poder entregar `taxa_ausencia` e
+  `indice_alinhamento` via amendment do ADR-032, sem mudar sua
+  fronteira read-only sobre o Gold (ADR-026).
+- `§8` deixa de ter métrica especificada sem fonte materializada para
+  essas duas linhas.
+- `pipeline/normalize.py` ganha `%Y-%m-%dT%H:%M` (eventos/votações
+  omitem os segundos) + teste; `pipeline/silver.py` ganha
+  `garantir_tabela_silver` (reutilizável por qualquer domínio novo).
+- Qualquer mudança nesta decisão volta para aprovação antes de prosseguir.

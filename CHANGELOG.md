@@ -8,6 +8,27 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 27 — Onda 1: presença/votação (ADR-058) (20/09/2026, sprint ABERTA)
+
+### Adicionado
+- **ADR-058 (Aceito):** `fact_presenca` (grão parlamentar/evento, `presente`/
+  `ausente` derivado, `is_ausencia_injustificada` sempre NULL) e `fact_votacao`
+  (grão parlamentar/votação, `seguiu_partido` NULL quando não comparável);
+  regra "só Encerrada conta", normalização `nao_mapeado` (padrão ADR-024),
+  pontes efêmeras de classificação + quarentenas por construção (ADR-018).
+- **Bronze/Silver (Câmara):** extractors (`eventos`, presença em lote,
+  `votacoes`/`votos`/`orientacoes` em cascata com isolamento por evento),
+  5 Silver (`silver_evento`, `silver_presenca`, `silver_votacao`,
+  `silver_voto`, `silver_orientacao`) com gate Pandera; watermark próprio
+  `watermark_camara_votacao` fora de FONTES/PipelineRun (precedente
+  parlamentares); `garantir_tabela_silver` (tabela nasce mesmo sem dados).
+- **`normalize.py`:** formato `%Y-%m-%dT%H:%M` (eventos omitem segundos).
+- **Testes:** `test_votacao_extract` (HTTP mockado), `test_transform_votacao`
+  (de-para + carga), `test_gold_presenca_votacao` (dbt de verdade).
+- **Docs:** `data_dictionary.md` §§2.9–2.10, BACKLOG Onda 1.
+
+---
+
 ## Hotfix — Canal Telegram no Alertmanager (19/09/2026)
 
 ### Adicionado

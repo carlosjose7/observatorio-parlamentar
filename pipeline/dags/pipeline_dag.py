@@ -12,6 +12,13 @@ from pipeline.camara.transform import (
 from pipeline.camara.transform import (
     carregar_silver_parlamentar as silver_parlamentar,
 )
+from pipeline.camara.votacao_transform import (
+    carregar_silver_evento,
+    carregar_silver_orientacao,
+    carregar_silver_presenca,
+    carregar_silver_votacao,
+    carregar_silver_voto,
+)
 from pipeline.config import get_pipeline_version
 from pipeline.runs import _gravar_span_seguro, medir_task
 from pipeline.senado.transform import carregar_silver_despesa as silver_senado
@@ -128,6 +135,28 @@ def _executar_silver(**context):
             "transparencia_emendas": _executar_com_span(
                 storage, run_id, "silver_emenda",
                 lambda: carregar_silver_emenda(storage=storage, run_id=run_id),
+            ),
+            # Onda 1 (ADR-058): domínio votação — tabelas sempre garantidas
+            # (mesmo com Bronze vazio), uma carga isolada por tabela.
+            "votacao_evento": _executar_com_span(
+                storage, run_id, "silver_votacao_evento",
+                lambda: carregar_silver_evento(storage=storage, run_id=run_id),
+            ),
+            "votacao_presenca": _executar_com_span(
+                storage, run_id, "silver_votacao_presenca",
+                lambda: carregar_silver_presenca(storage=storage, run_id=run_id),
+            ),
+            "votacao_votacao": _executar_com_span(
+                storage, run_id, "silver_votacao_votacao",
+                lambda: carregar_silver_votacao(storage=storage, run_id=run_id),
+            ),
+            "votacao_voto": _executar_com_span(
+                storage, run_id, "silver_votacao_voto",
+                lambda: carregar_silver_voto(storage=storage, run_id=run_id),
+            ),
+            "votacao_orientacao": _executar_com_span(
+                storage, run_id, "silver_votacao_orientacao",
+                lambda: carregar_silver_orientacao(storage=storage, run_id=run_id),
             ),
         }
 

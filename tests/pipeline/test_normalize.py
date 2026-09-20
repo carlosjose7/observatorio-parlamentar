@@ -30,6 +30,10 @@ class TestParseDateMultiFormat:
     def test_iso_data_simples(self):
         assert parse_date_multi_format("2024-07-03") == date(2024, 7, 3)
 
+    def test_iso_sem_segundos_eventos_camara(self):
+        # Eventos/votações da Câmara omitem os segundos (ADR-058).
+        assert parse_date_multi_format("2024-05-15T14:00") == date(2024, 5, 15)
+
     def test_ptbr_senado_cgu(self):
         assert parse_date_multi_format("03/07/2024") == date(2024, 7, 3)
 

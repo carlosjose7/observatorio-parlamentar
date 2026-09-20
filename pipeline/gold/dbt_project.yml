@@ -67,6 +67,9 @@ models:
     cartao:
       +materialized: table
       +schema: gold
+    votacao:
+      +materialized: table
+      +schema: gold
 
 seeds:
   observatorio_gold:

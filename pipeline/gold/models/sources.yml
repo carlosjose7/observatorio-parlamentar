@@ -19,6 +19,16 @@ sources:
           `dim_parlamentar` (ADR-020).
       - name: silver_cartao
         description: Transações CPGF CGU normalizados (chave `id`, transform.py).
+      - name: silver_evento
+        description: Eventos/sessões da Câmara com situação normalizada (ADR-058).
+      - name: silver_presenca
+        description: Presença por (evento, deputado), semântica só-presença (ADR-058).
+      - name: silver_votacao
+        description: Votações nominais por evento (ADR-058).
+      - name: silver_voto
+        description: Votos por (votação, deputado) com voto normalizado (ADR-058).
+      - name: silver_orientacao
+        description: Orientações de bancada por votação, insumo do `seguiu_partido` (ADR-058).
 
   - name: control
     description: >
