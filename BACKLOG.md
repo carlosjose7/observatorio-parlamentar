@@ -2282,7 +2282,19 @@ para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
   - Tentativa 20/09 (dom, fora dos dias úteis): 0 eventos no dia;
     14–21/09 com 22 `Convocada` + 2 `Encerrada`, 0 `Em Andamento` →
     INCONCLUSIVO, janela segue aberta (tentativas úteis: 3/5).
-    ADR-059 segue fechado; Onda 1 sem dependência do veredito.
+    ADR-059 segue fechado (= nunca aberto); Onda 1 sem dependência do
+    veredito. Próxima tentativa: terça-feira (dia útil com sessão).
+  - **Streaming com Redpanda (ESBOÇO CONDICIONAL — NÃO é decisão):**
+    se e somente se a Onda 0 voltar POSITIVO, o desenho candidato é:
+    sidecar de polling em `/eventos/{id}/pauta` durante sessão ativa
+    (a Câmara não tem streaming nativo — só REST; polling vira stream
+    via diff, mesma lógica do script do POC) → tópico Redpanda
+    (Kafka-compatible, mais leve que Kafka puro p/ 2 OCPU/12GB) →
+    consumer grava "Bronze Live" paralela (Airflow/ADR-009 intocados)
+    → visão ao vivo/alertas; `fact_presenca`/`fact_votacao` (ADR-058)
+    seguem fonte histórica. Nada existe (sem código, schema de tópico
+    ou consumer group) — só vira concreto dentro do ADR-059, e só
+    após POSITIVO. Sem detalhar mais até terça confirmar a necessidade.
 - [x] Onda 1 — ADR-058 `fact_presenca`/`fact_votacao` batch (draft existente)
   - ADR-058 Aceito (grão, gate Encerrada, normalização, seguiu_partido,
     quarentenas, Bronze incremental Decisão 7); Bronze/Silver/Gold + 3
@@ -2335,13 +2347,22 @@ de schema impediria revert pontual por onda. Se na Onda 1 se confirmar
 que 058 não toca `sources.yml`, PR único volta a ser aceitável —
 decisão registrada aqui, não assumida.
 
-**Aceite Onda 3 (técnico + documental, drift = defeito bloqueante):**
-- [ ] `main` vazio (só objetos de sistema); `control.data_quality_report`
-  = `gold.data_quality_report` = 81 linhas
-- [ ] `dbt build` PASS; `SET search_path='gold'` inalterado;
-  `GET /qualidade/relatorio` e `GET /pipeline/status` 200
-- [ ] Nenhum `grep "main\."` restante fora de comentário histórico
-- [ ] Rebuild limpo não recria tabelas em `main` (guardrail verde)
-- [ ] Docs sincronizados **no mesmo diff**: `PROJECT_CONTEXT.md §5/6/7`,
+**Aceite Onda 3 (técnico + documental, drift = defeito bloqueante) — verificado em 20/09:**
+- [x] `main` vazio (só objetos de sistema); `control.data_quality_report`
+  = `gold.data_quality_report` = 93 linhas (query direta no banco vivo;
+  81 era a contagem da cópia de inspeção de 17/09 — 3 runs diários × 4
+  tabelas desde então; fonte única: banco vivo em 20/09)
+- [x] `dbt build` PASS=213/ERROR=0 (core, `--exclude` analytics, em cópia
+  do banco vivo pós-cargas Silver votação); `SET search_path='gold'`
+  inalterado; `GET /qualidade/relatorio` e `GET /pipeline/status` 200
+  (total=93, run e314a9ac)
+- [x] Nenhum `grep "main\."` restante fora de comentário histórico
+  (2 menções históricas intencionais: `data_quality_report.sql:2`,
+  `analytics_stage.py:59`; 1 stale corrigido: `test_gold_risk.py:18`
+  `main.risk_scores` → `gold.risk_scores`)
+- [x] Rebuild limpo não recria tabelas em `main` (guardrail
+  `main_sem_residuos` ESTADO 2 PASS na cópia pós-build; `_garantir_*`
+  silver-qualificado)
+- [x] Docs sincronizados **no mesmo diff**: `PROJECT_CONTEXT.md §5/6/7`,
   `docs/data/data_dictionary.md`, `docs/architecture/arch_er.md:268`,
-  este BACKLOG e `CHANGELOG.md`
+  este BACKLOG e `CHANGELOG.md` (todos com `control`, grep confirma)

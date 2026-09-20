@@ -15,7 +15,7 @@ Fluxo realista de duas fases (espelha a DAG):
    (`executar_carga_ml_risco`, ADR-026/029); o dbt então materializa a Gold.
 
 Coberto aqui:
-- `main.risk_scores` nasce vazia com o staging vazio (contrato ADR-026) e
+- `gold.risk_scores` nasce vazia com o staging vazio (contrato ADR-026) e
   vira o split dos 5 scores com o staging populado.
 - Grão correto `(periodo, id_parlamentar)` por run e `risk_index`
   = média das 5 scores (peso 0.2 uniforme do ADR-029).
