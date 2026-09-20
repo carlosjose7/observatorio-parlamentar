@@ -2260,3 +2260,69 @@ de pipeline.
 - [x] Docs (ADR-057 Aceito, CHANGELOG, PROJECT_CONTEXT §1.3)
 - Pendente do operador: bot (BotFather), `chat_id` real,
   `secrets/telegram_bot_token` (chmod 600), restart do serviço
+
+---
+
+## Sprint 27 — Pauta (batch + POC) + saneamento `main→control` (ABERTA)
+
+**Branch:** sprint/27-pauta-controle → main (base: `68f7b76`, 19/09/2026)
+**Processo:** checkpoint por onda com auditoria independente por wave
+(nenhuma wave fecha sem auditoria via `git clone`); sem PR único cobrindo
+temas não relacionados.
+
+**Numeração ADR (verificada contra o repo em 20/09/2026):**
+ADR-054/055/056/057 já Aceitos (Sprints 24–26 + Telegram); **058**
+reservado para `fact_presenca/votacao` (draft em
+`/tmp/opencode/adr058_fact_presenca_votacao_draft.md`); **059** reservado
+para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
+**ADR-060**. Nenhuma onda reivindica número já ocupado.
+
+- [ ] Onda 0 — POC pauta streaming — veredito POSITIVO/NEGATIVO
+  (arquivos em `/tmp/opencode/poc_pauta_*`); gate do ADR-059
+- [ ] Onda 1 — ADR-058 `fact_presenca`/`fact_votacao` batch (draft existente)
+- [ ] Onda 2 — Limpeza `main` (Fase 1, sem mudança de contrato):
+  DROP dinâmico das 23 tabelas stale via `duckdb_tables() WHERE
+  schema_name='main' AND table_name != 'data_quality_report'`
+  (lista gerada, nunca manual; zero views de usuário em `main`
+  confirmado via `duckdb_views()` — só 14 views de sistema);
+  preserva `main.data_quality_report`; backup `cp` prévio obrigatório
+- [ ] Onda 3 — ADR-060 `main→control` (Fase 2): `CREATE SCHEMA control` +
+  `CREATE TABLE control.data_quality_report AS SELECT * FROM
+  main.data_quality_report` + validação de contagem (81/81) + `DROP TABLE
+  main.data_quality_report` (**não usar `RENAME TO` entre schemas —
+  POC DuckDB 1.4.5: `RENAME TO control.x` → Parser Error; `SET SCHEMA` →
+  Not implemented**); atualiza `pipeline/silver.py:161`,
+  `pipeline/gold/models/sources.yml:27`,
+  `pipeline/gold/models/control/data_quality_report.sql:2`,
+  `pipeline/dags/pipeline_dag.py:377/394`, `pipeline/gold/profiles.yml:7`,
+  testes e docs (ver aceite)
+
+**Correção 1 — guardrail com dois estados (Revisor Técnico):**
+guardrail parametrizado por `EXPECTED_MAIN_TABLES`, não condição única:
+- Onda 2: permitido = `{'data_quality_report'}` — falha se
+  `duckdb_tables() WHERE schema_name='main'` tiver qualquer outra tabela
+  de usuário (evita quebrar a CI antes da Onda 3 existir).
+- Onda 3: permitido = `{}` (vazio) — falha se qualquer tabela de usuário
+  em `main`.
+Transição Onda 2→3 atualiza a constante no mesmo diff do rename.
+
+**Correção 2 — conflito `sources.yml` Onda 1 × Onda 3:**
+draft 058 não declara `source()` novos nem cita `sources.yml`, mas fatos
+novas (`fact_presenca`/`fact_votacao`) inevitavelmente exigirão sources
+Silver — conflito real nesse arquivo com a Onda 3 (`schema: main` →
+`control`, linha 27). Por isso **checkpoint por onda com auditoria
+independente** (não PR único): PR único para POC + fato batch + limpeza
+de schema impediria revert pontual por onda. Se na Onda 1 se confirmar
+que 058 não toca `sources.yml`, PR único volta a ser aceitável —
+decisão registrada aqui, não assumida.
+
+**Aceite Onda 3 (técnico + documental, drift = defeito bloqueante):**
+- [ ] `main` vazio (só objetos de sistema); `control.data_quality_report`
+  = `gold.data_quality_report` = 81 linhas
+- [ ] `dbt build` PASS; `SET search_path='gold'` inalterado;
+  `GET /qualidade/relatorio` e `GET /pipeline/status` 200
+- [ ] Nenhum `grep "main\."` restante fora de comentário histórico
+- [ ] Rebuild limpo não recria tabelas em `main` (guardrail verde)
+- [ ] Docs sincronizados **no mesmo diff**: `PROJECT_CONTEXT.md §5/6/7`,
+  `docs/data/data_dictionary.md`, `docs/architecture/arch_er.md:268`,
+  este BACKLOG e `CHANGELOG.md`
