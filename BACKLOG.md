@@ -2279,6 +2279,10 @@ para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
 
 - [ ] Onda 0 — POC pauta streaming — veredito POSITIVO/NEGATIVO
   (arquivos em `/tmp/opencode/poc_pauta_*`); gate do ADR-059
+  - Tentativa 20/09 (dom, fora dos dias úteis): 0 eventos no dia;
+    14–21/09 com 22 `Convocada` + 2 `Encerrada`, 0 `Em Andamento` →
+    INCONCLUSIVO, janela segue aberta (tentativas úteis: 3/5).
+    ADR-059 segue fechado; Onda 1 sem dependência do veredito.
 - [ ] Onda 1 — ADR-058 `fact_presenca`/`fact_votacao` batch (draft existente)
 - [ ] Onda 2 — Limpeza `main` (Fase 1, sem mudança de contrato):
   DROP dinâmico das 23 tabelas stale via `duckdb_tables() WHERE
