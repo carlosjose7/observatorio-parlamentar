@@ -174,3 +174,15 @@ def test_alertmanager_telegram_sem_segredo_versionado():
     assert "hooks.slack.com/services/" not in texto  # Slack segue template
     compose = (_REPO / "docker-compose.yml").read_text(encoding="utf-8")
     assert "./secrets/telegram_bot_token:/run/secrets/telegram_bot_token:ro" in compose
+
+
+def test_compose_external_url_por_env_com_default_localhost():
+    """Links de alerta usáveis (hotfix pós-Sprint 26): `web.external-url`
+    via env com default localhost — nunca hostname interno nem IP fixo."""
+    doc = yaml.safe_load(
+        (_REPO / "docker-compose.yml").read_text(encoding="utf-8")
+    )
+    prom = " ".join(doc["services"]["prometheus"]["command"])
+    am = " ".join(doc["services"]["alertmanager"]["command"])
+    assert "--web.external-url=${PROMETHEUS_EXTERNAL_URL:-http://localhost:9090}" in prom
+    assert "--web.external-url=${ALERTMANAGER_EXTERNAL_URL:-http://localhost:9093}" in am
