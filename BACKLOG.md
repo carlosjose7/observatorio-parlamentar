@@ -2263,7 +2263,9 @@ de pipeline.
 
 ---
 
-## Sprint 27 — Pauta (batch + POC) + saneamento `main→control` (ABERTA)
+## Sprint 27 — Pauta (batch + POC) + saneamento `main→control`
+
+**Sprint 27 FECHADA em 2026-09-23.**
 
 **Branch:** sprint/27-pauta-controle → main (base: `68f7b76`, 19/09/2026)
 **Processo:** checkpoint por onda com auditoria independente por wave
@@ -2277,13 +2279,20 @@ reservado para `fact_presenca/votacao` (draft em
 para streaming (só se o POC da Onda 0 for POSITIVO); este saneamento é
 **ADR-060**. Nenhuma onda reivindica número já ocupado.
 
-- [ ] Onda 0 — POC pauta streaming — veredito POSITIVO/NEGATIVO
-  (arquivos em `/tmp/opencode/poc_pauta_*`); gate do ADR-059
+- [x] Onda 0 — POC pauta streaming — veredito INCONCLUSIVO por
+  indisponibilidade estrutural (relatório em `/tmp/opencode/poc_pauta_VEREDITO.md`); gate do ADR-059
   - Tentativa 20/09 (dom, fora dos dias úteis): 0 eventos no dia;
     14–21/09 com 22 `Convocada` + 2 `Encerrada`, 0 `Em Andamento` →
-    INCONCLUSIVO, janela segue aberta (tentativas úteis: 3/5).
+    INCONCLUSIVO parcial, janela aberta à época.
+  - Veredito final 23/09 (aprovado pelo PO): 0 eventos no dia, 1 na
+    semana (audiência, sem pauta deliberativa), 2 em 12 dias — causa
+    **recesso eleitoral** (esforço concentrado só em 10–14/08 e
+    31/08–~04/09; sem cronograma p/ outubro, 1º turno 04/10, 2º 25/10),
+    não falta de sorte. Ação que muda: nada a tentar até o cenário
+    mudar (não "tentar amanhã").
     ADR-059 segue fechado (= nunca aberto); Onda 1 sem dependência do
-    veredito. Próxima tentativa: terça-feira (dia útil com sessão).
+    veredito. Revisita agendada: **semana de 03/11/2026** (primeira
+    semana útil após o 2º turno de 25/10; 02/11 é feriado).
   - **Streaming com Redpanda (ESBOÇO CONDICIONAL — NÃO é decisão):**
     se e somente se a Onda 0 voltar POSITIVO, o desenho candidato é:
     sidecar de polling em `/eventos/{id}/pauta` durante sessão ativa

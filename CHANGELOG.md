@@ -8,7 +8,18 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
-## Sprint 27 — Onda 1: presença/votação (ADR-058) (20/09/2026, sprint ABERTA)
+## Sprint 27 — Onda 1: presença/votação (ADR-058) (20–23/09/2026, sprint FECHADA)
+
+### Onda 0 — POC pauta streaming: INCONCLUSIVO estrutural
+- Veredito 23/09 (relatório em `/tmp/opencode/poc_pauta_VEREDITO.md`):
+  0 eventos no dia, 2 não-deliberativos em 12 dias — causa recesso
+  eleitoral (1º turno 04/10, 2º 25/10), não falta de sorte. ADR-059
+  segue fechado; revisita agendada p/ a semana de 03/11/2026.
+- POC live-capture Câmara/Senado à parte
+  (`/tmp/opencode/relatorio_poc_live_capture.md`): sem sinal "ao vivo"
+  em nenhuma fonte (Câmara sem validador/timestamp de publicação;
+  Senado republica arquivo anual em lote) — streaming inviável,
+  ADR-009 intacto.
 
 ### Adicionado
 - **ADR-058 (Aceito):** `fact_presenca` (grão parlamentar/evento, `presente`/
