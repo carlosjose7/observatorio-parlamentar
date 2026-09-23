@@ -97,6 +97,18 @@ else:
 # ── Fluxo principal ─────────────────────────────────────────────
 cd "$PROJECT_DIR"
 
+# ── Preflight permissão dbt (incidente 20–22/09/2026) ────────────
+# O dbt roda como uid 50000 (USER airflow) dentro do container e escreve em
+# pipeline/gold/logs/dbt.log + pipeline/gold/target/ via bind mount. Arquivos
+# criados como root no host (ex.: dbt manual com sudo) derrubam o gold_core
+# com `Permission denied` antes de qualquer model, congelando o Gold. O
+# deploy exclui logs/target do rsync, então o lixo persiste entre deploys.
+# Este preflight devolve a posse ao uid 50000; falha silenciosa se sem sudo.
+if [ -d "$PROJECT_DIR/pipeline/gold/logs" ] || [ -d "$PROJECT_DIR/pipeline/gold/target" ]; then
+    sudo -n chown -R 50000:root "$PROJECT_DIR/pipeline/gold/logs" "$PROJECT_DIR/pipeline/gold/target" >/dev/null 2>&1 || true
+    sudo -n chmod -R u+rwX "$PROJECT_DIR/pipeline/gold/logs" "$PROJECT_DIR/pipeline/gold/target" >/dev/null 2>&1 || true
+fi
+
 log "Subindo perfil pipeline (postgres + airflow-scheduler)..."
 docker compose ${COMPOSE_PROFILE_ARGS} up -d postgres airflow-scheduler
 
