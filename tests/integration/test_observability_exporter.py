@@ -11,9 +11,11 @@ from __future__ import annotations
 import socket
 import urllib.request
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from prometheus_client import start_http_server
 
 import observability.pipeline_exporter as exporter
@@ -406,3 +408,26 @@ def test_exporter_gold_indisponivel_nao_quebra_o_http(monkeypatch):
 )
 def test_parse_watermark_formatos_reais(bruto, esperado):
     assert exporter._parse_watermark(bruto) == esperado
+
+
+def test_freshness_toda_fonte_tem_regra_dedicada():
+    """Anti-recaída (ADR-061): fonte nova sem regra Freshness* falha aqui.
+
+    Lê `_FONTES` do exporter (fonte única) e exige cada uma em alguma
+    expr de regra `Freshness*` — cair no genérico está proibido.
+    """
+    repo = Path(exporter.__file__).resolve().parents[1]
+    alerts = yaml.safe_load(
+        (repo / "infra" / "observability" / "alerts.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    exprs = [
+        r["expr"]
+        for g in alerts["groups"]
+        for r in g["rules"]
+        if r["alert"].startswith("Freshness")
+    ]
+    assert exprs, "nenhuma regra Freshness*"
+    for fonte, _atributo in exporter._FONTES:
+        assert any(fonte in e for e in exprs), f"{fonte} sem regra Freshness*"

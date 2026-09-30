@@ -586,6 +586,12 @@ class ObservabilitySlosSettings(_StrictModel):
     # dos globais, patamar crônico da fonte.
     quarentena_cartao_warn_pct: float = Field(default=20.0, ge=0)
     quarentena_cartao_critical_pct: float = Field(default=25.0, ge=0)
+    # Freshness granular por fonte (ADR-061, Onda 1): espelho em
+    # `config/observability.yaml` — `extra="forbid"` exige os dois juntos.
+    freshness_camara_warn_meses_atraso: int = Field(default=2, ge=0)
+    freshness_camara_critical_meses_atraso: int = Field(default=3, ge=0)
+    freshness_anual_mes_inicio: int = Field(default=3, ge=1, le=12)
+    freshness_anual_critical_anos_atraso: int = Field(default=2, ge=1)
     api_p95_ms: float = Field(default=500, gt=0)
 
 
