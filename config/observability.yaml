@@ -22,6 +22,13 @@ observability:
     # das réguas globais — alerta versionado, não fonte de threshold).
     quarentena_cartao_warn_pct: 20.0
     quarentena_cartao_critical_pct: 25.0
+    # Freshness granular por fonte (ADR-061 — régua de horas não serve
+    # p/ watermarks mensais/anuais; fonte única, `alerts.yml` espelha
+    # os literais com teste de correspondência, precedente quarentena).
+    freshness_camara_warn_meses_atraso: 2
+    freshness_camara_critical_meses_atraso: 3
+    freshness_anual_mes_inicio: 3
+    freshness_anual_critical_anos_atraso: 2
     # Latência p95 da API para consultas simples, em milissegundos.
     api_p95_ms: 500
 

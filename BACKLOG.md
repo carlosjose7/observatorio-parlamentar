@@ -2380,11 +2380,29 @@ decisão registrada aqui, não assumida.
 
 ## Pós-Sprint 26 — pendências SRE (trabalho futuro)
 
-- ☐ **Recalibração do Freshness (dívida do ADR-055):** `senado` e
-  `cgu_emenda` versionam watermark por ano (âncora conservadora em
-  1º/jan → ~261d de "lag") contra threshold único de 24h/26h —
-  `FreshnessWarn/Critical` vivem disparados sem incidente real.
-  Condição de recalibração já cumprida (4 fontes visíveis há >24h).
-  Escopo: régua por granularidade da fonte (ex: tolerância anual p/
-  fontes anuais) em vez de threshold único; atualizar `alerts.yml`,
-  contrato e HEALTH se impactado. Não é desta sprint por decisão.
+- ☑ **Recalibração do Freshness (dívida do ADR-055) — RESOLVIDA na
+  Sprint 28 (ADR-061):** réguas absolutas aposentadas; anual
+  (graça Jan/Fev, promoção objetiva), mensal (graça 1 mês),
+  cartão por progresso; limiares no yaml; anti-recaída testada.
+
+---
+
+## Sprint 28 — Freshness granular
+
+**Branch:** sprint/28-freshness-granular → main (PR único ao final)
+
+**Sprint 28 FECHADA em 2026-09-30.**
+
+> Executa a dívida do ADR-055 (spam real no Telegram). Aposenta
+> 24h/26h absolutas; granular por fonte; sem série nova.
+
+- [x] Onda 0 — ADR-061 proposto e aprovado (4 ajustes auditoria:
+  relação ADRs, graça Jan/Fev, promoção objetiva, repeat_interval
+  fora de escopo; supersessão parcial da 053 registrada)
+- [x] Onda 1 — `alerts.yml` (16 regras, promtool ok) + limiares em
+  `config/observability.yaml` com espelho pydantic (`forbid`) +
+  exprs validadas contra prod (quietas) e no promtool
+- [x] Onda 2 — testes (espelho alerts↔yaml, anti-recaída por fonte,
+  nomes) + painel freshness mantido observacional (decisão ADR-061/5)
+- [x] Onda 3 — docs (CHANGELOG, BACKLOG FECHADA, pendência SRE
+  marcada resolvida) + auditoria

@@ -8,6 +8,18 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 28 — Freshness granular (30/09/2026)
+
+### Corrigido
+- **Freshness por fonte (ADR-061, dívida do ADR-055):** aposentadas
+  as réguas absolutas 24h/26h (categoria errada p/ watermarks
+  mensais/anuais — spam no Telegram sem incidente). Novas:
+  `FreshnessAnualStale/Critical` (graça Jan/Fev, promoção objetiva
+  em 2 anos), `FreshnessCamaraWarn/Critical` (graça 1 mês);
+  cartão segue por progresso. Limiares em `config/observability.yaml`.
+- **Supersessão parcial da ADR-053** registrada (só a implementação
+  dos alertas absolutos; SLOs e Health intocados).
+
 ## Sprint 27 — Onda 1: presença/votação (ADR-058) (20–23/09/2026, sprint FECHADA)
 
 ### Onda 0 — POC pauta streaming: INCONCLUSIVO estrutural

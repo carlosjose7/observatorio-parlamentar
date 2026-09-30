@@ -71,7 +71,11 @@ def _metricas(expr: str) -> set[str]:
     return {
         t
         for t in norm
-        if t not in {"sum", "rate", "max", "time", "increase", "histogram_quantile", "deriv", "quantile_over_time"}
+        # Funções/agregadores do PromQL + palavras-chave de matching —
+        # não são séries (lista estendida na Sprint 28: year/month/
+        # scalar/vector das réguas granulares de freshness, ADR-061).
+        if t not in {"sum", "rate", "max", "time", "increase", "histogram_quantile", "deriv", "quantile_over_time", "year", "month", "day_of_month", "hour", "minute", "scalar", "vector"}
+        and t not in {"and", "or", "unless", "on", "by", "without", "bool", "group_left", "group_right", "offset"}
         and len(t) > 1
     }
 
@@ -131,6 +135,26 @@ def test_alertas_somente_series_do_contrato():
     assert {"QuarentenaCartaoWarn", "QuarentenaCartaoCritical"} <= nomes
     assert "FreshnessCartaoStalled" in nomes
     assert {"PipelineHealthCritical", "DQScoreFail", "TaskFalhou"} <= nomes
+    # ADR-061: granulares novas, absolutas 24h/26h aposentadas.
+    assert {"FreshnessAnualStale", "FreshnessAnualCritical", "FreshnessCamaraWarn", "FreshnessCamaraCritical"} <= nomes
+    assert "FreshnessWarn" not in nomes and "FreshnessCritical" not in nomes
+
+
+def test_freshness_limiares_espelham_config():
+    """Limiares granulares vivem no yaml (ADR-008) e alerts espelha.
+
+    Quebra no drift em qualquer direção (precedente quarentena).
+    """
+    slos = yaml.safe_load(
+        (_REPO / "config" / "observability.yaml").read_text(encoding="utf-8")
+    )["observability"]["slos"]
+    texto = (_REPO / "infra" / "observability" / "alerts.yml").read_text(
+        encoding="utf-8"
+    )
+    assert f">= {slos['freshness_camara_warn_meses_atraso']}" in texto
+    assert f">= {slos['freshness_camara_critical_meses_atraso']}" in texto
+    assert f">= {slos['freshness_anual_mes_inicio']}" in texto
+    assert f">= {slos['freshness_anual_critical_anos_atraso']}" in texto
 
 
 def test_compose_grafana_somente_localhost_sem_nginx():

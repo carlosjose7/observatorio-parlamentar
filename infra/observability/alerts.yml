@@ -1,28 +1,51 @@
-# Alertas Prometheus (Sprint 23, ADR-053, Onda 3; Sprint 24, ADR-054).
-# Réguas espelham os SLOs de config/observability.yaml (0.95/24h/26h/2%/5%/
-# 500ms) — sem Alertmanager: avaliados e visíveis no
-# Prometheus UI/Grafana; roteamento fica para sprint futura.
+# Alertas Prometheus (Sprint 23, ADR-053, Onda 3; Sprint 24, ADR-054;
+# Sprint 28, ADR-061: freshness granular por fonte).
+# Réguas espelham os SLOs de config/observability.yaml — freshness
+# medida por granularidade da fonte (anual/mensal/progresso, ADR-061),
+# não mais em 24h/26h absolutos (aposentados: categoria errada de
+# medida p/ watermarks mensais/anuais).
 # Exceção ADR-054: silver_cartao tem quarentena crônica ~17–20%
 # (lacuna declarada da fonte, "Sem informação") — régua própria 20%/25%;
 # o 2%/5% global vale para as demais tabelas (seletor !=).
 groups:
   - name: observatorio.slos
     rules:
-      - alert: FreshnessWarn
-        expr: max(pipeline_watermark_lag_hours{fonte!="cgu_cartao"}) > 24
-        for: 15m
+      # Réguas absolutas 24h/26h aposentadas (ADR-061): nenhuma fonte
+      # tem watermark com granularidade de horas — ver regras granulares.
+      # Nota PromQL: `time()` é escalar e `year()/month()` exigem vetor;
+      # o lado "agora" vai escalarizado (`scalar(...vector(time()))`)
+      # para o broadcast funcionar — validado contra o Prometheus real.
+      - alert: FreshnessAnualStale
+        expr: year(time() - pipeline_watermark_lag_hours{fonte=~"senado|cgu_emenda"} * 3600) < scalar(year(vector(time()))) and on() (month(vector(time())) >= 3)
+        for: 24h
         labels:
           severity: warn
         annotations:
-          summary: "Watermark defasado além do SLO 24h (alerta em 26h, exceto cartão)"
+          summary: "Watermark anual defasado (ano < corrente, após graça Jan/Fev)"
 
-      - alert: FreshnessCritical
-        expr: max(pipeline_watermark_lag_hours{fonte!="cgu_cartao"}) > 26
-        for: 15m
+      - alert: FreshnessAnualCritical
+        expr: scalar(year(vector(time()))) - year(time() - pipeline_watermark_lag_hours{fonte=~"senado|cgu_emenda"} * 3600) >= 2 and on() (month(vector(time())) >= 3)
+        for: 24h
         labels:
           severity: critical
         annotations:
-          summary: "Watermark defasado além de 26h (exceto cartão)"
+          summary: "Watermark anual 2+ anos defasado"
+
+      - alert: FreshnessCamaraWarn
+        expr: scalar(year(vector(time())) * 12 + month(vector(time()))) - (year(time() - pipeline_watermark_lag_hours{fonte="camara"} * 3600) * 12 + month(time() - pipeline_watermark_lag_hours{fonte="camara"} * 3600)) >= 2
+        for: 1h
+        labels:
+          severity: warn
+        annotations:
+          summary: "Câmara 2+ meses defasada (1 mês de graça)"
+
+      - alert: FreshnessCamaraCritical
+        expr: scalar(year(vector(time())) * 12 + month(vector(time()))) - (year(time() - pipeline_watermark_lag_hours{fonte="camara"} * 3600) * 12 + month(time() - pipeline_watermark_lag_hours{fonte="camara"} * 3600)) >= 3
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Câmara 3+ meses defasada"
 
       # Cartão em backfill por desenho (desde 01/2013, +1 mês/dia):
       # lag absoluto é gigante e correto — o sinal que importa é o

@@ -3138,6 +3138,9 @@ Título: Grafana + alertas Prometheus (Sprint 23, Fase 2)
 
 Status:
 Aceito — Sprint 23, Ondas 0–4 (branch sprint/23-grafana)
+(Nota 30/09/2026, ADR-061: implementação dos alertas
+`FreshnessWarn/Critical` absolutos parcialmente supersedida —
+SLOs, dashboard e série mantidos.)
 
 Contexto:
 Sprint 22 FECHADA (PR #78, ADR-051 Aceito): métricas Fase 0+1 no
@@ -3675,3 +3678,86 @@ Consequências:
 - Qualquer nova tabela de controle futura nasce em `control`, nunca
   em `main` — desvio exige amendment deste ADR.
 - Qualquer mudança nesta decisão volta para aprovação antes de prosseguir.
+
+---
+
+ADR-061
+Título: Freshness granular por fonte (aposenta 24h/26h absolutas)
+
+Status:
+Aceito — Sprint 28, Ondas 0–3 (branch sprint/28-freshness-granular)
+
+Relação com ADRs anteriores (explícita para não fragilizar a regra
+"não contradizer sem ADR"):
+- COMPLEMENTA o ADR-055: executa sua decisão 3 (recalibração adiada
+  até as 4 séries visíveis — condição cumprida, visíveis há >24h).
+  Parser, âncora conservadora e cartão-por-progresso do ADR-055
+  seguem intocados.
+- SUPERSEDE PARCIALMENTE o ADR-053: somente a implementação dos
+  alertas `FreshnessWarn/Critical` absolutos (24h/26h sobre
+  `max(lag)`). Doutrina do SLO, dashboard e série mantidos — nota
+  de supersessão parcial registrada no status do ADR-053.
+- COMPLEMENTA o ADR-056 (não toca): o Health Index
+  (cobertura/sucesso/qualidade/performance, `calcular_health`) não
+  consome lag de watermark — aposentar as réguas absolutas não
+  altera o Health. Verificado no código.
+
+Contexto:
+Dívida do ADR-055, registrada no backlog pós-Sprint 26 e virando
+spam real: `FreshnessWarn/Critical` (24h/26h absolutos) vivem
+disparados sem incidente — `critical` → Telegram a cada 4h
+(`repeat_interval`, ADR-057). Valores de 30/09/2026 com runs
+`success` e watermarks correntes: camara `09/2026` (698h),
+senado/cgu_emenda `2026` (6530h). Nenhuma fonte tem watermark com
+granularidade de horas: camara é mensal (`%m/%Y`), senado/emenda
+anual (`%Y`), cartão em backfill (progresso, ADR-055). Régua de
+horas sobre dado mensal/anual é categoria errada de medida —
+o 24h/26h nunca poderia ficar quieto. A doutrina do SLO
+(`freshness_horas: 24`, `config/observability.yaml`) permanece;
+o que muda é a medição, que passa a respeitar a cadência de
+publicação de cada fonte.
+
+Decisão:
+1. Aposentar `FreshnessWarn/Critical` absolutas (24h/26h sobre
+   `max(lag)`): nenhuma fonte as satisfaz por construção.
+2. `FreshnessAnualStale` (senado, cgu_emenda): dispara quando
+   `year(watermark) < year(now)` — `for: 24h`, severity `warn`.
+   Promoção objetiva (sem "promovível vago"): `year(now)` menos
+   `year(watermark) >= 2` → `FreshnessAnualCritical` (severity
+   `critical`). 1 ano de atraso = warn, 2+ = critical.
+   Graça de início de ano: a ingestão do Senado é sazonal (CSV
+   anual publicado após o mês anterior) — o CSV do ano corrente
+   pode legitimamente não existir em janeiro/fevereiro. A regra
+   só avalia com `month(now) >= 3` (graça Jan/Fev); ano de
+   referência = ano corrente. PromQL com `year()/month()/time()`
+   sobre o epoch `time() - lag*3600`, sem série nova.
+3. `FreshnessCamaraStale`: meses de atraso contados a partir do
+   mês corrente (matemática de calendário: `year*12+month` do
+   agora menos o do watermark; dentro do mês diff = 0) —
+   `>= 2` warn, `>= 3` critical (`for: 1h`, dado mensal move
+   devagar). 1 mês de graça cobre o delay de publicação da fonte.
+4. Cartão mantém `FreshnessCartaoStalled` (progresso, ADR-055) —
+   intocado.
+5. Limiares em `config/observability.yaml` (ADR-008, zero hardcode):
+   `freshness_camara_warn_meses_atraso: 2`,
+   `freshness_camara_critical_meses_atraso: 3`,
+   `freshness_anual_mes_inicio: 3` (graça),
+   `freshness_anual_critical_anos_atraso: 2` — com os campos
+   espelho no modelo pydantic (`extra="forbid"` exige os dois
+   juntos) e teste de correspondência alerts↔yaml na Onda 2.
+   Onda 0 não toca o yaml (quebraria o load sem o modelo);
+   valores decididos aqui, implementados na Onda 1.
+
+Consequências:
+- Telegram silencia com dados correntes (verificado contra 30/09
+  antes de mergear); atraso genuíno volta a alertar por fonte.
+- O mecanismo "critical repete a cada 4h" (`repeat_interval`)
+  permanece: um critical VERDADEIRO continua repetindo — domínio
+  de roteamento do ADR-057, fora do escopo desta sprint (desenho
+  vigente registrado, não dívida nova).
+- Granularidade nova de fonte exige regra própria — e a Onda 2
+  trava isso com teste que falha quando uma fonte de
+  `pipeline_exporter._FONTES` não aparece em nenhuma expr
+  `Freshness*` (critério de aceite anti-recaída).
+- Qualquer mudança nesta decisão durante as ondas paralisa a sprint
+  e volta para aprovação antes de prosseguir.
