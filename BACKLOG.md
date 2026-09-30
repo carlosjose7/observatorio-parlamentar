@@ -2388,3 +2388,24 @@ decisão registrada aqui, não assumida.
   Escopo: régua por granularidade da fonte (ex: tolerância anual p/
   fontes anuais) em vez de threshold único; atualizar `alerts.yml`,
   contrato e HEALTH se impactado. Não é desta sprint por decisão.
+
+---
+
+## Sprint 28 — Freshness granular (aberta, em andamento)
+
+> Executa o item acima (dívida do ADR-055, spam real no Telegram).
+> Escopo: aposentar 24h/26h absolutas, 3 regras granulares
+> (anual/mensal/progresso), sem série nova nem mudança no exporter.
+
+**Branch:** sprint/28-freshness-granular → main (PR único ao final)
+
+- [x] Onda 0 — ADR-061 proposto (aposenta absolutas, granular por fonte)
+- [ ] Onda 1 — `alerts.yml`: remove FreshnessWarn/Critical, adiciona
+  FreshnessAnualStale(/Critical) + FreshnessCamaraStale (cartão
+  intocado) + limiares em `config/observability.yaml` com campos
+  espelho no modelo pydantic (`extra="forbid"`)
+- [ ] Onda 2 — testes (regras contra dados de 30/09; correspondência
+  alerts↔yaml; anti-recaída: toda fonte de `_FONTES` em alguma expr
+  Freshness*) + revisão do painel freshness (observacional)
+- [ ] Onda 3 — docs (CHANGELOG, BACKLOG FECHADA, risco da pendência
+  marcado resolvido) + auditoria
