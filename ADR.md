@@ -3685,7 +3685,7 @@ ADR-061
 Título: Freshness granular por fonte (aposenta 24h/26h absolutas)
 
 Status:
-Proposto — Sprint 28, branch sprint/28-freshness-granular (revisão antes de prosseguir)
+Aceito — Sprint 28, Ondas 0–3 (branch sprint/28-freshness-granular)
 
 Relação com ADRs anteriores (explícita para não fragilizar a regra
 "não contradizer sem ADR"):
