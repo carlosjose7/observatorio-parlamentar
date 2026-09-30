@@ -1,7 +1,9 @@
-# Alertas Prometheus (Sprint 23, ADR-053, Onda 3; Sprint 24, ADR-054).
-# Réguas espelham os SLOs de config/observability.yaml (0.95/24h/26h/2%/5%/
-# 500ms) — sem Alertmanager: avaliados e visíveis no
-# Prometheus UI/Grafana; roteamento fica para sprint futura.
+# Alertas Prometheus (Sprint 23, ADR-053, Onda 3; Sprint 24, ADR-054;
+# Sprint 28, ADR-061: freshness granular por fonte).
+# Réguas espelham os SLOs de config/observability.yaml — freshness
+# medida por granularidade da fonte (anual/mensal/progresso, ADR-061),
+# não mais em 24h/26h absolutos (aposentados: categoria errada de
+# medida p/ watermarks mensais/anuais).
 # Exceção ADR-054: silver_cartao tem quarentena crônica ~17–20%
 # (lacuna declarada da fonte, "Sem informação") — régua própria 20%/25%;
 # o 2%/5% global vale para as demais tabelas (seletor !=).
