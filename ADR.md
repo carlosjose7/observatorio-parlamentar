@@ -23,7 +23,12 @@ Título: Critérios de detecção de anomalia estatística em despesas
  
 Status:
 Aceito
- 
+(Nota 08/10/2026, ADR-062: esclarecimento — passam a existir dois
+Isolation Forests. O de despesas (contamination = 0.05, threshold
+< -0.1, nível despesa) permanece inalterado; o de risco (nível
+parlamentar, score contínuo, sem threshold) é novo e não usa a
+`expense_anomaly` como entrada.)
+
 Contexto:
 PROJECT_CONTEXT.md §10 já define 6 critérios (Z-score > 2.5,
 Isolation Forest score < -0.1, fornecedor com <3 clientes, empresa
@@ -51,9 +56,13 @@ Consequências:
  
 ADR-003
 Título: Fórmula do Risk Index composto
- 
+
 Status:
-Aceito
+Superseded by ADR-062
+(Nota 08/10/2026: fórmula de pesos uniformes substituída pelo
+ADR-062. Vigência operacional: os pesos 0.2 seguem em produção até a
+ativação do `model_version` 1 — Sprint 29, Onda 3, condicionada aos
+critérios do ADR-029.)
  
 Contexto:
 PROJECT_CONTEXT.md §8 e §9 referenciam "risk_index" como média
@@ -1621,6 +1630,10 @@ Título: Fórmulas explícitas dos 5 scores individuais de risco (§9)
 
 Status:
 Aceito
+(Nota 08/10/2026, ADR-062: alteração parcial — o
+`supplier_dependency_score` passa de média simples de `dep_f` para
+média ponderada por `v_pf / V_p`, e um 6º score (`V`, volume por
+pares) é adicionado. As demais fórmulas permanecem intocadas.)
 
 Contexto:
 ADR-003 formalizou o `risk_index` composto (média ponderada, pesos 0.2
@@ -3761,3 +3774,243 @@ Consequências:
   `Freshness*` (critério de aceite anti-recaída).
 - Qualquer mudança nesta decisão durante as ondas paralisa a sprint
   e volta para aprovação antes de prosseguir.
+
+---
+
+ADR-062
+Título: Revisão do `risk_index` — HHI redefinido, score de volume e camada de ML não supervisionada
+
+Status:
+Aceito — Sprint 29, Ondas 0–1 (branch sprint/29-risk-index)
+
+Relação com ADRs anteriores (explícita para não fragilizar a regra
+"não contradizer sem ADR"):
+- SUPERSEDE o ADR-003 (fórmula do `risk_index`, pesos uniformes 0.2).
+  Os pesos 0.2 seguem vigentes em produção até a ativação do
+  `model_version` 1 (Sprint 29, Onda 3) — ver Consequências.
+- EXECUTA a revisão de pesos prevista no ADR-029 (dado real ≥ 12 meses
+  no Gold: 2023–2025). A conformidade com os critérios do ADR-029 está
+  no Anexo, item a item, com o que ainda está pendente.
+- ALTERA PARCIALMENTE o ADR-027: somente a definição do
+  `supplier_dependency_score` (média simples → média ponderada por
+  valor) e a lista de scores (5 → 6). As demais fórmulas do ADR-027
+  (`political_exposure`, `expense_anomaly`, `network_influence`)
+  permanecem intocadas.
+- ESCLARECE o ADR-002: passam a existir dois Isolation Forests; o de
+  despesas fica inalterado.
+
+Contexto:
+O ADR-003 fixou pesos uniformes (0.2) como baseline e o ADR-029
+condicionou sua revisão a dado real de pelo menos um ciclo completo no
+Gold, hoje satisfeito (2023–2025). Não há rótulo de risco: um modelo
+supervisionado treinado contra a `regra_anomalia` (ADR-002) seria
+circular — reproduziria a regra que o gerou. Além disso, o HHI aparece
+em duas direções (`supplier_concentration_score` e
+`supplier_dependency_score`), o que torna os dois correlacionados por
+construção se não forem redefinidos. Por fim, a observação empírica de
+parlamentares gastando 10x ou mais que outros no mesmo período e UF não
+tem sinal correspondente: nenhum score atual compara o parlamentar com
+seus pares (a `expense_anomaly` compara cada despesa com o histórico do
+próprio parlamentar).
+
+Decisão:
+1. Scores (todos com Min-Max para [0,1], universo = parlamentares do
+   período de análise; Min-Max do ADR-003 mantido):
+   - C (concentração, parlamentar→fornecedores):
+       HHI_p = Σ_f (v_pf / V_p)²,   C_p = norm(HHI_p)
+   - D (dependência, fornecedor→parlamentares, agregada ao parlamentar):
+       HHI_f = Σ_p (v_pf / V_f)²
+       D_p = norm( Σ_f (v_pf / V_p) · HHI_f )
+     Mesma fórmula em direções opostas. Spearman(C, D) é calculado e
+     registrado a cada execução; |ρ| > 0,8 abre revisão de design.
+   - E (`political_exposure`), A (`expense_anomaly`) e N
+     (`network_influence`, PageRank): definições inalteradas (ADR-027).
+   - V (volume por pares): item 4.
+   Total: 6 scores.
+
+2. ALTERAÇÃO DECLARADA (ADR-027): D_p passa de média simples de HHI_f
+   para média ponderada por v_pf / V_p. Fornecedor grande passa a pesar
+   mais. Migração: o D antigo e o novo foram comparados na janela de
+   referência (Anexo); rankings históricos mudam e a mudança é
+   registrada no CHANGELOG.
+
+3. Índice base (CRITIC, sem rótulo), sobre os 6 scores, na janela de
+   referência:
+     r_jk = Spearman(s_j, s_k)
+     C_j  = σ_j · Σ_k (1 − r_jk)     (1−r, não 1−|r|: correlação negativa
+                                       = conflito = mais informação, como
+                                       no CRITIC original)
+     σ_j  = desvio-padrão amostral (ddof = 1)
+     w_j  = C_j / Σ_k C_k
+     base_p = Σ_j w_j · s_pj
+   σ_j = 0 → w_j = 0 e aviso nos diagnósticos (coluna constante também
+   sai da soma de correlação das demais); todos σ_j = 0 → erro
+   explícito, nunca fallback silencioso. w_j < `w_min_aviso` (config)
+   gera aviso, sem piso forçado.
+
+4. Score de volume V:
+     meses_p = dias de sobreposição entre o período e a união dos
+               intervalos [effective_date, end_date) de dim_parlamentar
+               do id_parlamentar (intervalos contíguos unidos, para que
+               troca de partido não conte como saída) / 30,4375
+     x_p  = total_gasto_p / meses_p
+     g(p) = (casa, UF) no período; se |g| < `n_min_pares` → grupo (casa)
+     z_p  = (ln x_p − mediana_g) / (1,4826 · MAD_g)
+     V_p  = norm( max(0, z_p) )
+   Guardas:
+     - x_p ≤ 0 → V_p = 0 (ln indefinido)
+     - meses_p < `meses_min` → V_p = 0, marcado como "janela curta"
+     - MAD_g = 0 → usa o grupo (casa); se também for 0 → V_p = 0 + aviso
+     - norm aplicado após max(0, z), sobre o universo do período;
+       max = min → norm = 0
+   Valores iniciais (config, a calibrar na fase DS): `n_min_pares` = 10,
+   `meses_min` = 3. Valor adotado após calibração: ver Anexo.
+
+5. Camada ML: Isolation Forest sobre [C, D, E, N, V] — sem A, para não
+   contar duas vezes o IF de despesas (ADR-002):
+     ml_p = norm( −score_samples(IF) )
+   contamination = "auto", sem threshold de decisão, `random_state` em
+   config (`risk.random_state`).
+
+6. Composição final:
+     risk_index_p = (1 − λ) · base_p + λ · ml_p,   λ = `risk.lambda_ml` = 0,25
+
+7. Versionamento (substitui a ideia de congelar por `pipeline_version`,
+   que segue 0.1.0 estático):
+   - `model_version` próprio, independente de `pipeline_version`.
+   - Artefato por `model_version`: pesos CRITIC + parâmetros de V
+     (`n_min_pares`, `meses_min`) + IF serializado (joblib) + janela de
+     referência + `random_state` + sha256 do conjunto.
+   - Armazenamento: MinIO, prefixo `models/risk/{model_version}/`;
+     registro (model_version, hash, janela, criado_em, run_id) na tabela
+     de diagnósticos.
+   - Cada execução grava `model_version` e hash junto dos scores,
+     permitindo reproduzir qualquer run.
+   - Recalibrar = novo `model_version`, por comando explícito, nunca
+     automático. Mudou a janela, o λ ou o método → novo `model_version`.
+
+8. SHAP restrito à camada ML (item 5). Pin exato, grupo opcional próprio
+   (ex.: `analytics-explain`), usado só no job batch, fora do grupo
+   `api`. Build ARM validado na A1 (aarch64): `shap==0.49.1`,
+   `TreeExplainer` sobre IF 200×5 / 50 árvores em 0,2 s, pico ~209 MB.
+   Fallback se algum build futuro falhar: permutation importance (só
+   scikit-learn).
+
+9. Diagnósticos: tabela dedicada `control.risk_model_diagnostics`, formato
+   longo (`run_id`, `model_version`, `execution_timestamp`, `metric`,
+   `key`, `value`, `status`), mais log estruturado com `run_id`.
+   (`control.data_quality_report` tem grão (run_id, tabela) com
+   contagens, incompatível com série longa de métricas.) Métricas por
+   execução: Spearman(C,D); Spearman(V, C|D|E|A|N); pesos CRITIC;
+   estabilidade (Spearman do ranking, Jaccard top-10%) contra a execução
+   anterior no mesmo `model_version`; casos com V = 0 por janela curta.
+   Status "revisar" quando |ρ(C,D)| > 0,8. Sem regra Prometheus neste
+   ADR (granularidade nova exige regra própria, como no ADR-061).
+
+10. Validação: (a) qualitativa em casos públicos conhecidos
+    (PROJECT_CONTEXT §1.4), por categorias, com fonte oficial anexada e
+    teste de recall do ranking, sem afirmar nada sobre pessoas;
+    (b) estabilidade: Spearman do ranking ≥ 0,90 e Jaccard do top-10%
+    ≥ 0,70 entre execuções consecutivas no mesmo `model_version`
+    (baselines a calibrar com janelas históricas).
+
+11. Configuração (ADR-008): `risk.pesos` e a validação "> 0, soma 1" de
+    `pipeline/config.py` saem; entram em `RiskSettings`: `lambda_ml`,
+    `n_min_pares`, `meses_min`, `random_state`, `janela_referencia`,
+    `periodo_analise`, `w_min_aviso`, parâmetros do IF e `model_version`
+    ativa.
+
+12. Linguagem: `risk_index` é "indicador para investigação"; nunca
+    "irregularidade" ou "corrupção".
+
+Esclarecimento ao ADR-002:
+Existem dois Isolation Forests. O de despesas (nível despesa,
+contamination = 0.05, threshold < −0.1) permanece inalterado. O de
+risco (nível parlamentar, score contínuo, sem threshold) é novo. A
+distinção é documentada em `docs/data/data_dictionary.md`.
+
+Consequências:
+- Pesos derivados dos dados em vez de arbitrados; ranking estável por
+  congelamento, com recalibração explícita e rastreável.
+- O ranking muda por D (item 2); a mudança é documentada e comparada.
+- Nova dependência (`shap`), restrita ao batch.
+- "5 scores" vira "6 scores" em PROJECT_CONTEXT (§8, §9, RF-03, CU-05),
+  registry da Feature Store e `config/analytics.yaml`.
+- ADR-003: Superseded by ADR-062. Vigência operacional: os pesos 0.2
+  continuam em produção até a ativação do `model_version` 1 (Onda 3);
+  a ativação obedece ao ADR-029 (pesos só mudam por ADR, com
+  renormalização no mesmo período e comparação histórica antes/depois).
+- Qualquer mudança nesta decisão durante as ondas paralisa a sprint e
+  volta para aprovação antes de prosseguir.
+
+Anexo — Calibração (run 47c704df, janela 2023–2025, `n_min_pares` = 8):
+Relatório: `reports/risk_calibration/risk_calibration_47c704df.{json,md}`.
+O run 8679aa6a (base `n_min` = 10) está SUPERADO e não deve ser citado.
+
+a) Universo: 535 / 529 / 553 parlamentares pontuados (2023 / 2024 /
+   2025), zero descartado; 2026 fora (incompleto e ano eleitoral).
+
+b) Pesos CRITIC (pool | 2023 | 2024 | 2025 | amplitude):
+     C 0.174 | 0.185 | 0.168 | 0.174 | 0.017
+     D 0.174 | 0.174 | 0.174 | 0.179 | 0.005
+     E 0.164 | 0.186 | 0.131 | 0.148 | 0.055
+     A 0.114 | 0.113 | 0.109 | 0.123 | 0.014
+     N 0.231 | 0.232 | 0.236 | 0.244 | 0.012
+     V 0.143 | 0.110 | 0.182 | 0.131 | 0.072
+   Nenhum peso abaixo de `w_min_aviso` (0,05). E e V são os menos
+   estáveis entre anos.
+
+c) Correlações: Spearman(C,D) = 0,217 / 0,156 / 0,191 (guarda de 0,8
+   longe). Spearman(V,N) = +0,283 / +0,242 / +0,210;
+   Spearman(V,C) = −0,153 / −0,113 / −0,093.
+
+d) D antigo × novo (ADR-027 alterado): Spearman 0,296 / 0,303 / 0,353;
+   Jaccard do top-10% 0,241 / 0,165 / 0,287; deslocamento médio de
+   posição 146 / 139 / 139; média do score 0,54→0,71 / 0,57→0,72 /
+   0,58→0,73. Não é ajuste fino: é outro sinal.
+
+e) O "10x" mora nas caudas, não no corpo: R² de ln(total) com meses →
+   +UF → +casa = 0,000→0,065→0,137 (2023), 0,039→0,130→0,147 (2024),
+   0,027→0,095→0,095 (2025). Razão residual p90/p10 = 3,94 / 2,09 /
+   1,86; p99/p1 = 42,1 / 13,3 / 20,0. 2023 é ano de posse (1º/02):
+   49,7% com ano parcial e R² de meses = 0,000, mantido no pool e
+   citado como atípico.
+
+f) `n_min_pares`: adotado 8 (= bancada mínima por UF; config-only,
+   dentro de "a calibrar"). Grupos (casa, UF) abaixo de 8: Câmara 8 / 9 /
+   2 e Senado 27 / 27 / 27 (todos). Fallback para nível de casa em
+   27,9% / 26,5% / 16,6% dos parlamentares. Correção de registro: a
+   Câmara também cai no fallback (UFs de 8 a 9 cadeiras); nenhum texto
+   pode afirmar "Câmara em nível de UF". Sensibilidade do V contra a
+   base 8, `n_min` = 10: Spearman 0,936 / 0,948 / 0,903 e Jaccard do
+   top-10% 0,742 / 0,767 / 0,556 — o ranking global concorda, mas a
+   composição da cauda depende da regra de fallback.
+
+g) Partial pooling: `delta_uf` (R² incremental da UF) = 6,5 / 9,1 / 6,8
+   pp, acima do gatilho de 5 pp nos três anos. A UF é a maior
+   componente explicada e o fallback a descarta para 17–28% dos
+   parlamentares. Encaminhamento: emenda do item 4 em ADR próprio
+   (ADR-063, Sprint 29, Onda 2), antes do bootstrap dos pesos e antes do
+   `model_version` 1.
+
+h) 499 linhas SCD2 puladas: benignas (`starts_after_horizon`, janela
+   2026); `n_without_interval` = 0 nos três anos.
+
+i) Ressalva de interpretação: o CRITIC mede contraste informacional
+   (dispersão e independência), não importância de risco. Um peso menor
+   (ex.: A = 0,114) não significa que anomalia importe menos. Min-Max em
+   scores de cauda pesada faz o σ_j depender do formato da cauda; o
+   bootstrap e o CRITIC sobre postos percentuais (Onda 2) testam essa
+   sensibilidade.
+
+j) Conformidade com os critérios do ADR-029 (estado na aceitação):
+   - Dado real ≥ 12 meses no Gold ......................... ATENDIDO (2023–2025)
+   - Renormalização Min-Max no mesmo período ............... ATENDIDO (por ano)
+   - Distribuições empíricas de cada score ................. PENDENTE (Onda 2)
+   - Sensibilidade do risk_index por peso (robustez) ....... PENDENTE (Onda 2)
+   - Dataset de scores versionado + ranking histórico
+     `risk_index` antes (0.2) × depois ..................... PENDENTE (Onda 3)
+   - Validação de face (casos públicos, Analista de
+     Controle) ............................................. PENDENTE (Onda 3)
+   A substituição de `risk.pesos` em produção só ocorre com os itens
+   PENDENTES atendidos.

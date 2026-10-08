@@ -15,18 +15,23 @@ Histórico das alterações, organizado por sprint (ver
   (CRITIC + Isolation Forest complementar); supersede ADR-003,
   altera ADR-027 (`D_p` ponderado por valor), esclarece ADR-002
   (dois IFs); 6º score `V` (volume por pares); `model_version` próprio.
-- **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
-  `config/risk_calibration.yaml`, 41 testes, 98% do módulo):
-  rodada na Gold 2023–2025 — pesos pool C 0.171 / D 0.169 / E 0.160 /
-  A 0.111 / N 0.226 / V 0.162; relatório `.json`/`.md` em
-  `reports/risk_calibration/`.
+ - **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
+   `config/risk_calibration.yaml`, 41 testes, 98% do módulo):
+  rodada na Gold 2023–2025 (run adotado 47c704df, `n_min_pares = 8`;
+  o 8679aa6a, base 10, está superado) — pesos pool C 0.174 /
+  D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143; relatório
+  `.json`/`.md` em `reports/risk_calibration/`.
+- **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
+  conformidade com o ADR-029; notas em ADR-002/003/027;
+  PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)
 - `D` antigo vs novo: Spearman ≈ 0,30 (sinal novo — ranking mexe).
 - "5 scores" → "6 scores" (§9, RF-03, CU-05, registry, `analytics.yaml`).
 - `risk.pesos` será removido na integração (`RiskSettings` nova).
-- `n_min_pares` 10 → 8 (config-only, fallback casa-level 34–39%).
+- `n_min_pares` 10 → 8 (config-only; fallback casa-level cai de
+  34–39% para 17–28%, na Câmara e no Senado).
 
 ## Sprint 28 — Freshness granular (30/09/2026)
 

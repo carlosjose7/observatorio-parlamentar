@@ -26,7 +26,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 | CU-02 | Jornalista Investigativo | Exportar histórico de despesas de um parlamentar em CSV/Excel | Arquivo com trilha de auditoria (run_id, fonte, timestamp) |
 | CU-03 | Pesquisador Acadêmico | Consultar série histórica de gastos por partido/estado | Dados agregados por período, com metodologia de cálculo referenciada |
 | CU-04 | Analista de Controle | Listar despesas classificadas como anomalia, ordenadas por score de risco | Lista priorizada com os 6 critérios de anomalia (§10) explicitados por item |
-| CU-05 | Analista de Controle | Consultar `risk_index` composto de um parlamentar específico | Score final + decomposição nos 5 sub-scores (ADR-003) |
+| CU-05 | Analista de Controle | Consultar `risk_index` composto de um parlamentar específico | Score final + decomposição nos 6 sub-scores (ADR-062) |
 | CU-06 | Cidadão Engajado | Ver resumo simples de gastos de um parlamentar (linguagem acessível) | Card com total gasto, comparação com média da categoria, sem jargão técnico |
 | CU-07 | Engenheiro de Dados (portfólio) | Consultar `/agent/context` para obter contexto semântico agregado | JSON estruturado, agent-ready, consumível por LLM |
 | CU-08 | Pesquisador Acadêmico | Identificar comunidades de parlamentares com padrão de gasto semelhante | Clusters via NetworkX/KMeans, com parlamentares e métrica de similaridade |
@@ -37,7 +37,7 @@ Plataforma open source de análise investigativa dos gastos parlamentares brasil
 
 **RF-01** — O sistema deve ingerir dados das APIs Câmara, Senado e Portal da Transparência de forma incremental (watermark por `dataInicio`).
 **RF-02** — O sistema deve permitir consulta de despesas por parlamentar, fornecedor, partido, estado e período.
-**RF-03** — O sistema deve calcular e expor os 5 scores de risco e o `risk_index` composto (§9, ADR-003) para cada parlamentar.
+**RF-03** — O sistema deve calcular e expor os 6 scores de risco e o `risk_index` composto (§9, ADR-062) para cada parlamentar.
 **RF-04** — O sistema deve detectar anomalias de despesa segundo os 6 critérios formais (§10, ADR-002), exigindo ≥2 critérios simultâneos.
 **RF-05** — O sistema deve expor endpoints REST documentados (OpenAPI/Swagger) para consumo por dashboard e agentes de IA (§11).
 **RF-06** — O sistema deve pseudonimizar CPFs de fornecedores PF via HMAC-SHA256 na camada Silver (fronteira de pseudonimização; a Bronze mantém o dado bruto equivalente-público sob acesso restrito — §17, ADR-004/ADR-033).
@@ -605,7 +605,7 @@ Todas as visualizações devem consumir essas definições. Nunca recalcular inl
 | `hhi` | `SUM(participacao^2)` | `supplier_concentration` |
 | `taxa_ausencia` | `faltas_injustificadas / total_sessoes` | `fact_presenca` |
 | `indice_alinhamento` | `votos_com_partido / total_votos` | `fact_votacao` |
-| `risk_index` | média ponderada normalizada dos 5 scores de risco (ver §9, ADR-003) | `risk_scores` |
+| `risk_index` | índice base (CRITIC) + camada ML sobre os 6 scores de risco (ver §9, ADR-062) | `risk_scores` |
  
 > **Nota de reconciliação:** `valor_maximo`, `valor_mediano` e
 > `participacao_no_total` foram incorporados a esta tabela para
@@ -619,23 +619,24 @@ Todas as visualizações devem consumir essas definições. Nunca recalcular inl
 ## 9. Índices de Risco
   
 Cada índice é documentado matematicamente no `ADR.md` (fórmulas de
-referência nos ADRs 027 e 003).
+referência nos ADRs 027, 003 e 062).
 
 | Índice | Descrição | Fórmula (ADR-027) |
 |---|---|---|
 | `supplier_concentration_score` | Concentração de gastos em poucos fornecedores | `norm(hhi_p)`, `hhi_p = Σ_{f∈F_p} (v_{p,f}/V_p)²` (ADR-021) |
 | `political_exposure_score` | Exposição a fornecedores compartilhados com muitos parlamentares | `norm(média_{f∈F_p} (n_f − 1))`, `n_f = nº de parlamentares que usam f` |
-| `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares | `norm(média_{f∈F_p} dep_f)`, HHI por fornecedor `dep_f = Σ_p (v_{p,f}/Σ_{p'}v_{p',f})²` |
+| `supplier_dependency_score` | Dependência do fornecedor em relação a poucos parlamentares | `norm(média_{f∈F_p} dep_f)`, HHI por fornecedor `dep_f = Σ_p (v_{p,f}/Σ_{p'}v_{p',f})²`. **Aprovado (ADR-062, altera o ADR-027):** média ponderada `norm(Σ_f (v_{p,f}/V_p)·dep_f)`; vigente em produção: média simples, até a ativação do `model_version` 1 |
 | `expense_anomaly_score` | Proporção de despesas anômalas do parlamentar | `norm(a_p)`, `a_p = |despesas anômalas de p| / |despesas de p|`; anomalia = ≥2 dos 6 critérios (§10/ADR-002) |
 | `network_influence_score` | PageRank no grafo parlamentar-fornecedor | `norm(pr_p)`, PageRank bipartido (Onda 3, ADR-030) |
-| `risk_index` | Média ponderada normalizada dos 5 scores acima (ver ADR-003) | `Σ_i w_i · score_i(p)`, `w_i = 0.2` |
+| `spending_volume_score` | Gasto mensal do parlamentar vs pares de mesma casa e UF | `norm(max(0, z_p))`, `z_p = (ln x_p − mediana_g)/(1,4826·MAD_g)`, `x_p = total_p/meses_p` (ADR-062, item 4). **A implementar (Sprint 29, Onda 3)** |
+| `risk_index` | Vigente: média ponderada normalizada dos 5 scores, `w_i = 0.2` (ADR-003). Aprovado (ADR-062): índice base CRITIC + camada ML sobre 6 scores | Vigente: `Σ_i w_i · score_i(p)`, `w_i = 0.2`. Aprovado: ver subseção "Risk Index revisado" |
 
 > **Nota (ADR-029 — Aceito):** `expense_anomaly_score` é definido pela
 > proporção de despesas que satisfazem a regra de anomalia (§10), na qual
 > o Isolation Forest é **um dos 6 critérios** (score < −0.1), não o score
 > em si — coerente com ADR-002.
  
-### Fórmula do Risk Index (ADR-003 — Aceito, revisado pelo ADR-029)
+### Fórmula vigente do Risk Index (ADR-003 — supersedido pelo ADR-062; vigente até a ativação do `model_version` 1)
 
 Todos os scores individuais são normalizados via Min-Max para o
 intervalo [0,1] antes da ponderação. Pesos uniformes (0.2 cada) são
@@ -655,6 +656,28 @@ risk_index = 0.2 * norm(supplier_concentration_score)
  
 A função de normalização Min-Max deve estar documentada na
 Feature Store (`docs/data/ml_feature.md`) como feature derivada reutilizável.
+
+### Risk Index revisado (ADR-062 — Aceito; ativação na Sprint 29, Onda 3)
+
+Definição aprovada, **ainda não vigente em produção** (vigente: pesos 0.2
+acima). A substituição de `risk.pesos` só ocorre com os critérios
+pendentes do ADR-029 atendidos (ver Anexo do ADR-062).
+
+- **6 scores:** `C` (concentração, `norm(hhi_p)`), `D` (dependência
+  ponderada por valor), `E`, `A`, `N` (inalterados, ADR-027) e `V`
+  (volume por pares (casa, UF), z robusto em log).
+- **Índice base:** pesos CRITIC (Spearman, `1 − r`) estimados na janela
+  de referência 2023–2025 e congelados por `model_version`.
+- **Camada ML:** Isolation Forest sobre `[C, D, E, N, V]` (sem `A`,
+  para não contar duas vezes o IF de despesas); SHAP restrito a ela.
+- **Composição:** `risk_index = (1 − λ)·base + λ·ml`, `λ = 0,25`
+  (baseline a calibrar).
+- **Calibração (run 47c704df, `n_min_pares = 8`):** pesos pool
+  C 0.174 / D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143;
+  detalhes e ressalvas no Anexo do ADR-062. O CRITIC mede contraste
+  informacional, não importância de risco.
+- **Linguagem:** `risk_index` é "indicador para investigação", nunca
+  "irregularidade" ou "corrupção".
  
 ---
  

@@ -2425,25 +2425,37 @@ decisão registrada aqui, não assumida.
   baselines a calibrar; linguagem "indicador p/ investigação" mantida
 - [x] Onda 1 — calibração offline rodada na Gold real (janela B
   2023–2025, 535/529/553 pontuados, zero drop): `risk_calibration.py` +
-  `risk_calibration.yaml` (`scores_source = gold.risk_scores`) + 41
-  testes (98% do módulo, ruff limpo); `duckdb>=1.0.0` no grupo
-  `analytics` (mesmo especificador do `pipeline`, ADR-006). Pesos pool
-  C 0.171 / D 0.169 / E 0.160 / A 0.111 / N 0.226 / V 0.162
-  (V 2023 outlier 0.108, ano de posse; 24/25 estáveis); D antigo vs
-  novo ρ ≈ 0,30 nos 3 anos (sinal novo, nota de migração obrigatória);
-  `Spearman(C,D)` 0,16–0,22 (redundância não se materializou); 10x
-  mora nas caudas (residual p99/p1 13–42x; UF/meses/casa explicam só
-  10–15%); fallback casa-level 34–39% Câmara e Senado
-  (`n_min = 8` decidido, config-only); 499 SCD2 puladas = benignas
-  (`starts_after_horizon`, janela 2026 — sem defeito, sem regra nova);
-  `delta_uf` 6,5–9,1pp nos 3 anos (gatilho de partial pooling
-  disparado → emenda futura, sem bloquear)
-- [ ] Onda 2 — bootstrap dos pesos + CRITIC sobre postos (diff 2:
-  `bootstrap_samples`, `random_state`); documentar "CRITIC mede
-  contraste, não importância" (A baixo ≠ anomalia irrelevante)
+  `risk_calibration.yaml` (`scores_source = gold.risk_scores`,
+  `n_min_pares = 8`) + 41 testes (98% do módulo, ruff limpo);
+  `duckdb>=1.0.0` no grupo `analytics` (mesmo especificador do
+  `pipeline`, ADR-006). Relatório adotado **47c704df** (base 8; o
+  8679aa6a, base 10, está SUPERADO). Pesos pool C 0.174 / D 0.174 /
+  E 0.164 / A 0.114 / N 0.231 / V 0.143 (V por ano 0.110 / 0.182 /
+  0.131; E 0.186 / 0.131 / 0.148); D antigo vs novo ρ 0,30 / 0,30 /
+  0,35 (sinal novo, nota de migração obrigatória); `Spearman(C,D)`
+  0,16–0,22 (redundância não se materializou); 10x mora nas caudas
+  (residual p99/p1 42 / 13 / 20x; meses+UF+casa explicam 9,5–14,7%
+  de ln(total)); fallback casa-level 28% / 27% / 17% (Câmara e
+  Senado; Senado 27/27 grupos sempre abaixo de `n_min`); Jaccard do
+  top-10% do V entre `n_min` 8 e 10 = 0,74 / 0,77 / 0,56 (cauda
+  sensível à regra de fallback); 499 SCD2 puladas = benignas
+  (`starts_after_horizon`, janela 2026 — sem defeito, sem regra
+  nova); `delta_uf` 6,5 / 9,1 / 6,8pp (gatilho de partial pooling
+  disparado → ADR-063, Onda 2)
+- [x] Onda 1c — documentação: ADR-062 no `ADR.md` (+ anexo de
+  calibração e conformidade com ADR-029), notas em ADR-002/003/027,
+  PROJECT_CONTEXT §8/§9, RF-03 e CU-05 ("5 → 6 scores")
+- [ ] Onda 2 — (1) ADR-063: emenda só do item 4 do ADR-062 (partial
+  pooling: mediana de UF encolhida p/ casa, MAD pooled por casa, `k`
+  em config, fallback onde encolher for impossível; aceite =
+  `delta_uf` residual menor no relatório); (2) depois, sobre o V
+  final: bootstrap dos pesos + CRITIC sobre postos (diff 2:
+  `bootstrap_samples`, `random_state`) e distribuições empíricas por
+  score + sensibilidade do `risk_index` por peso (ADR-029)
 - [ ] Onda 3 — IF multivariado [C,D,E,N,V], SHAP restrito à camada ML
   (build ARM ok: shap 0.49.1, 0,2s, pico ~209 MB), `model_version` +
   artefato MinIO, `control.risk_model_diagnostics`, `risk_scores.sql`,
-  remoção de `risk.pesos`, anexo de calibração ao ADR-062, "5 → 6
-  scores" em §9/RF-03/CU-05/registry/`analytics.yaml`, casos públicos
-  (4 categorias, recall top-k, sem nomes da memória)
+  remoção de `risk.pesos`, "5 → 6 scores" em registry/`analytics.yaml`,
+  casos públicos (4 categorias, recall top-k, sem nomes da memória) e
+  ranking histórico `risk_index` antes (0.2) × depois (ADR-029);
+  ativação só com os critérios PENDENTES do ADR-029 atendidos
