@@ -2406,3 +2406,44 @@ decisão registrada aqui, não assumida.
   nomes) + painel freshness mantido observacional (decisão ADR-061/5)
 - [x] Onda 3 — docs (CHANGELOG, BACKLOG FECHADA, pendência SRE
   marcada resolvida) + auditoria
+
+---
+
+## Sprint 29 — Revisão do `risk_index` (ADR-062)
+
+**Branch:** a definir → `develop` (nada commitado até 08/10/2026)
+
+**Sprint 29 ABERTA em 08/10/2026.** Revisa o `risk_index` sem rótulo
+(Regressão/XGBoost seriam circulares contra a `regra_anomalia`).
+
+- [x] Onda 0 — **ADR-062 Aceito (rev. 2):** híbrido C (CRITIC + IF
+  complementar); supersede ADR-003 (pesos 0.2 → derivados dos dados);
+  altera ADR-027 (`D_p` de média simples p/ ponderada por valor);
+  esclarece ADR-002 (dois IFs: despesa inalterado + risco novo,
+  contínuo); 6º score `V` (volume por pares, z robusto em log);
+  `λ = 0,25`, limiares 0,90/0,70 e `model_version` próprio como
+  baselines a calibrar; linguagem "indicador p/ investigação" mantida
+- [x] Onda 1 — calibração offline rodada na Gold real (janela B
+  2023–2025, 535/529/553 pontuados, zero drop): `risk_calibration.py` +
+  `risk_calibration.yaml` (`scores_source = gold.risk_scores`) + 41
+  testes (98% do módulo, ruff limpo); `duckdb>=1.0.0` no grupo
+  `analytics` (mesmo especificador do `pipeline`, ADR-006). Pesos pool
+  C 0.171 / D 0.169 / E 0.160 / A 0.111 / N 0.226 / V 0.162
+  (V 2023 outlier 0.108, ano de posse; 24/25 estáveis); D antigo vs
+  novo ρ ≈ 0,30 nos 3 anos (sinal novo, nota de migração obrigatória);
+  `Spearman(C,D)` 0,16–0,22 (redundância não se materializou); 10x
+  mora nas caudas (residual p99/p1 13–42x; UF/meses/casa explicam só
+  10–15%); fallback casa-level 34–39% Câmara e Senado
+  (`n_min = 8` decidido, config-only); 499 SCD2 puladas = benignas
+  (`starts_after_horizon`, janela 2026 — sem defeito, sem regra nova);
+  `delta_uf` 6,5–9,1pp nos 3 anos (gatilho de partial pooling
+  disparado → emenda futura, sem bloquear)
+- [ ] Onda 2 — bootstrap dos pesos + CRITIC sobre postos (diff 2:
+  `bootstrap_samples`, `random_state`); documentar "CRITIC mede
+  contraste, não importância" (A baixo ≠ anomalia irrelevante)
+- [ ] Onda 3 — IF multivariado [C,D,E,N,V], SHAP restrito à camada ML
+  (build ARM ok: shap 0.49.1, 0,2s, pico ~209 MB), `model_version` +
+  artefato MinIO, `control.risk_model_diagnostics`, `risk_scores.sql`,
+  remoção de `risk.pesos`, anexo de calibração ao ADR-062, "5 → 6
+  scores" em §9/RF-03/CU-05/registry/`analytics.yaml`, casos públicos
+  (4 categorias, recall top-k, sem nomes da memória)

@@ -66,6 +66,12 @@ dashboard = [
 analytics = [
     "scikit-learn>=1.4.0",
     "networkx>=3.2.0",
+    # Calibração offline do risk_index (Sprint 29, ADR-062): leitura
+    # read-only do Gold via DuckDB. Mesmo especificador do grupo
+    # `pipeline` (faixa >=, sem pin exato — o pin exato é política só
+    # do Airflow/constraints, ADR-006); a versão efetiva de produção
+    # segue imposta no pipeline/Dockerfile (==1.5.5).
+    "duckdb>=1.0.0",
 ]
 dev-dashboard = [
     # dashboard + dev para testes de UI no container api-test.

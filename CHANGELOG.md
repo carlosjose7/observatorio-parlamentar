@@ -8,6 +8,26 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 29 — Revisão do `risk_index` (ADR-062) (em andamento, 08/10/2026)
+
+### Adicionado
+- **ADR-062 (Aceito, rev. 2):** `risk_index` sem rótulo via híbrido
+  (CRITIC + Isolation Forest complementar); supersede ADR-003,
+  altera ADR-027 (`D_p` ponderado por valor), esclarece ADR-002
+  (dois IFs); 6º score `V` (volume por pares); `model_version` próprio.
+- **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
+  `config/risk_calibration.yaml`, 41 testes, 98% do módulo):
+  rodada na Gold 2023–2025 — pesos pool C 0.171 / D 0.169 / E 0.160 /
+  A 0.111 / N 0.226 / V 0.162; relatório `.json`/`.md` em
+  `reports/risk_calibration/`.
+- **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
+
+### Alterado (previsto, com nota de migração)
+- `D` antigo vs novo: Spearman ≈ 0,30 (sinal novo — ranking mexe).
+- "5 scores" → "6 scores" (§9, RF-03, CU-05, registry, `analytics.yaml`).
+- `risk.pesos` será removido na integração (`RiskSettings` nova).
+- `n_min_pares` 10 → 8 (config-only, fallback casa-level 34–39%).
+
 ## Sprint 28 — Freshness granular (30/09/2026)
 
 ### Corrigido
