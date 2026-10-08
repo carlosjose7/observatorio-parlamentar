@@ -2411,7 +2411,7 @@ decisão registrada aqui, não assumida.
 
 ## Sprint 29 — Revisão do `risk_index` (ADR-062)
 
-**Branch:** a definir → `develop` (nada commitado até 08/10/2026)
+**Branch:** `sprint/29-risk-index` → `develop` (Ondas 0–1 publicadas em `3b2ef72`)
 
 **Sprint 29 ABERTA em 08/10/2026.** Revisa o `risk_index` sem rótulo
 (Regressão/XGBoost seriam circulares contra a `regra_anomalia`).

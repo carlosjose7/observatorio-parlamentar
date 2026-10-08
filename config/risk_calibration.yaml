@@ -6,7 +6,7 @@ risk_calibration:
   window_years: [2023, 2024, 2025]
 
   days_per_month: 30.4375        # divisor de meses em exercício (ADR-062, item 4)
-  n_min_pares: 10                # a calibrar — mínimo de pares no grupo (casa, UF)
+  n_min_pares: 8                 # calibrado em 08/10/2026 (era 10; 8 = bancada mínima, Spearman 0,90–0,95 vs base)
   n_min_sensitivity: [5, 8, 10]  # n_min testados na análise de sensibilidade
   meses_min: 3                   # a calibrar — abaixo disso V = 0 (janela curta)
   w_min_aviso: 0.05              # a calibrar — peso CRITIC abaixo disso gera aviso
