@@ -2445,7 +2445,8 @@ decisão registrada aqui, não assumida.
 - [x] Onda 1c — documentação: ADR-062 no `ADR.md` (+ anexo de
   calibração e conformidade com ADR-029), notas em ADR-002/003/027,
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05 ("5 → 6 scores")
-- [ ] Onda 2 — (1) ADR-063: emenda só do item 4 do ADR-062 (partial
+- [ ] Onda 2 — (1) ADR-063 **Aceito em 15/10/2026** (A1/A2
+  pré-travados, código autorizado): emenda só do item 4 do ADR-062 (partial
   pooling: mediana de UF encolhida p/ casa, MAD pooled por casa, `k`
   em config, fallback onde encolher for impossível; aceite =
   `delta_uf` residual menor no relatório); (2) depois, sobre o V

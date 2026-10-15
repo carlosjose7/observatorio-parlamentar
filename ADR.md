@@ -3782,6 +3782,7 @@ Título: Revisão do `risk_index` — HHI redefinido, score de volume e camada d
 
 Status:
 Aceito — Sprint 29, Ondas 0–1 (branch sprint/29-risk-index)
+(Nota 15/10/2026, ADR-063: item 4 emendado por partial pooling — ver ADR-063.)
 
 Relação com ADRs anteriores (explícita para não fragilizar a regra
 "não contradizer sem ADR"):
@@ -4014,3 +4015,123 @@ j) Conformidade com os critérios do ADR-029 (estado na aceitação):
      Controle) ............................................. PENDENTE (Onda 3)
    A substituição de `risk.pesos` em produção só ocorre com os itens
    PENDENTES atendidos.
+
+---
+
+ADR-063
+Título: Partial pooling no score de volume V — emenda do item 4 do ADR-062
+
+Status:
+Aceito — Sprint 29, Onda 2 (aceite 15/10/2026; A1/A2 e `k` por casa confirmados)
+
+Relação com ADRs anteriores (explícita para não fragilizar a regra
+"não contradizer sem ADR"):
+- EMENDA o ADR-062 somente no item 4 (regra de grupo e escala do `V`).
+  Os itens 1–3 e 5–12 do ADR-062 permanecem. As guardas do item 4
+  (x_p ≤ 0, `meses_min`, janela curta) permanecem.
+- Não toca ADR-003, ADR-027 nem ADR-029. A conformidade com o ADR-029
+  continua sendo medida no Anexo do ADR-062.
+- Se aceito, o ADR-062 recebe uma nota de status apontando para este
+  ADR; o texto original do ADR-062 não é reescrito.
+
+Contexto:
+A calibração do run 47c704df (Anexo do ADR-062) mostrou que a UF é a
+maior componente explicada do gasto: `delta_uf` = 6,5 / 9,1 / 6,8 pp
+(2023 / 2024 / 2025), acima do gatilho de 5 pp. Com `n_min_pares` = 8,
+17–28% dos parlamentares ainda caem no fallback de nível de casa, o que
+descarta o efeito de UF justamente onde os grupos são pequenos. A
+composição da cauda do `V` depende dessa regra: Jaccard do top-10% entre
+`n_min` 8 e 10 = 0,74 / 0,77 / 0,56. No Senado, as bancadas por UF são de
+3 senadores, e a localização por UF não é estimável com esse N.
+O fallback binário joga fora toda a informação de UF abaixo do limiar e
+a usa por inteiro acima dele; o encolhimento (partial pooling) usa a
+informação de UF na medida em que o N a sustenta.
+
+Decisão:
+1. Elegíveis: os mesmos do ADR-062 (x_p > 0, meses_p ≥ `meses_min`,
+   casa e UF presentes). Para a casa c e a UF u, no período:
+     n_u    = número de elegíveis em (c, u)
+     m_u    = mediana de ln x_p em (c, u)
+     m_c    = mediana de ln x_p em c
+
+2. Localização encolhida:
+     m*_u = (n_u · m_u + k_c · m_c) / (n_u + k_c),   k_c > 0
+   n_u grande → m*_u ≈ m_u; n_u pequeno → m*_u ≈ m_c; k_c → ∞ reproduz
+   o nível de casa. O peso do dado da UF é λ_u = n_u / (n_u + k_c).
+
+3. Escala pooled por casa:
+     s_c = 1,4826 · mediana_{p ∈ c} | ln x_p − m*_u(p) |
+   A escala usa todos os elegíveis da casa (N grande), não o MAD de cada
+   grupo. s_c = 0 → V_p = 0 para a casa + aviso (substitui a regra
+   "MAD_g = 0" do ADR-062).
+
+4. Score:
+     z_p = (ln x_p − m*_u(p)) / s_c
+     V_p = norm( max(0, z_p) )
+   com norm sobre o universo do período, como no ADR-062.
+
+5. `n_min_pares` deixa de governar o `V`. Permanece apenas como
+   comparador (regra do ADR-062) nos diagnósticos até a Onda 3.
+
+6. Calibração de k_c (por casa), por validação leave-one-out sobre os
+   elegíveis: para cada p, a previsão de ln x_p usa m*_u calculado sem
+   p (mediana dos demais da UF, encolhida para a mediana da casa também
+   sem p). Erro = | ln x_p − previsão |. k_c é o valor da grade
+   `pooling.k_grid` que minimiza o erro absoluto médio agregado nos
+   anos da janela de referência; empate → maior k (mais conservador).
+   Comparadores medidos no mesmo critério: `casa_only` (k → ∞) e a
+   regra do ADR-062 (`n_min_pares` = 8). Os k_c escolhidos entram no
+   artefato do `model_version` (item 7 do ADR-062). As medianas e a
+   escala são recalculadas por período; só k_c é congelado.
+
+7. Configuração (ADR-008): `pooling.k` (por casa: camara, senado) e
+   `pooling.k_grid`, ambos sem default; a execução falha com erro
+   explícito se `k` não estiver preenchido.
+
+8. Diagnósticos novos (módulo de calibração e, na integração,
+   `control.risk_model_diagnostics`):
+   - `uf_share_residual`: R² de z sobre dummies de UF, por casa e ano;
+   - erro LOO por esquema (`casa_only`, regra ADR-062, cada k da grade);
+   - distribuição de λ_u e número de grupos com λ_u < 0,5.
+
+9. Critérios de aceite (travados antes de ver o resultado):
+   A1. `uf_share_residual` com o k escolhido menor que o da regra do
+       ADR-062 nos três anos (2023–2025) para a Câmara; no Senado não
+       pode piorar.
+   A2. Erro LOO do k escolhido ≤ erro de `casa_only` e ≤ erro da regra
+       do ADR-062, agregado nos três anos, por casa.
+   Informativos (não bloqueiam): Spearman e Jaccard do top-10% do `V`
+   novo contra o `V` da regra do ADR-062; pesos CRITIC recalculados;
+   nenhum peso abaixo de `w_min_aviso`.
+   Se A1 ou A2 falhar, vale a regra do ADR-062 (`n_min_pares` = 8) e
+   este ADR passa a Rejeitado, com o resultado registrado.
+
+10. Sequência: o bootstrap dos pesos e o CRITIC sobre postos percentuais
+    (BACKLOG, Onda 2) só rodam sobre o `V` final, depois do aceite deste
+    ADR e da calibração de k.
+
+11. Linguagem: `risk_index` segue como "indicador para investigação";
+    este ADR não altera esse enquadramento.
+
+Alternativas consideradas:
+- A. Manter `n_min_pares` = 8 com fallback de casa: rejeitada como
+  decisão final por deixar 17–28% dos parlamentares sem efeito de UF e
+  por tornar a cauda sensível ao limiar; permanece como comparador.
+- B. Esta decisão (partial pooling com k calibrado por LOO).
+- C. Normalizar o gasto pela cota mensal da UF: adiada. Exige dado
+  externo ainda não validado nem versionado; fica no backlog.
+
+Consequências:
+- O `V` usa a informação de UF em todos os grupos da Câmara. No Senado
+  (cerca de 3 por UF) espera-se k alto, ou seja, comportamento próximo
+  ao nível de casa; esse limite é conhecido e documentado.
+- O encolhimento troca variância por viés: não elimina o efeito
+  legítimo de UF nos grupos pequenos, apenas reduz o ruído de estimá-lo.
+- Um hiperparâmetro novo por casa, calibrado e congelado por
+  `model_version`; recalibrar = novo `model_version`.
+- O ranking do `V` muda para uma parte relevante dos parlamentares; o
+  Jaccard do top-10% contra a regra atual é medido e registrado, e a
+  nota de migração entra no CHANGELOG.
+- Trabalho da Onda 2 (somente após o aceite): função de localização
+  encolhida e escala pooled em `risk_calibration.py`, grade de k com
+  validação LOO, diagnósticos novos e testes.

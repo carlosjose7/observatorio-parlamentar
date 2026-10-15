@@ -15,8 +15,8 @@ Histórico das alterações, organizado por sprint (ver
   (CRITIC + Isolation Forest complementar); supersede ADR-003,
   altera ADR-027 (`D_p` ponderado por valor), esclarece ADR-002
   (dois IFs); 6º score `V` (volume por pares); `model_version` próprio.
- - **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
-   `config/risk_calibration.yaml`, 41 testes, 98% do módulo):
+- **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
+  `config/risk_calibration.yaml`, 41 testes, 98% do módulo):
   rodada na Gold 2023–2025 (run adotado 47c704df, `n_min_pares = 8`;
   o 8679aa6a, base 10, está superado) — pesos pool C 0.174 /
   D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143; relatório
@@ -24,6 +24,9 @@ Histórico das alterações, organizado por sprint (ver
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
+- **ADR-063 (Aceito em 15/10/2026):** emenda do item 4 do ADR-062
+  (partial pooling no `V`: mediana encolhida, MAD pooled por casa,
+  `k` por casa via LOO, A1/A2 pré-travados); código na Onda 2.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)
