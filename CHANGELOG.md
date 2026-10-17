@@ -16,7 +16,7 @@ Histórico das alterações, organizado por sprint (ver
   altera ADR-027 (`D_p` ponderado por valor), esclarece ADR-002
   (dois IFs); 6º score `V` (volume por pares); `model_version` próprio.
 - **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
-  `config/risk_calibration.yaml`, 41 testes, 98% do módulo):
+  `config/risk_calibration.yaml`, 73 testes, 99% do módulo):
   rodada na Gold 2023–2025 (run adotado 47c704df, `n_min_pares = 8`;
   o 8679aa6a, base 10, está superado) — pesos pool C 0.174 /
   D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143; relatório
@@ -24,9 +24,11 @@ Histórico das alterações, organizado por sprint (ver
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
-- **ADR-063 (Aceito em 15/10/2026):** emenda do item 4 do ADR-062
-  (partial pooling no `V`: mediana encolhida, MAD pooled por casa,
-  `k` por casa via LOO, A1/A2 pré-travados); código na Onda 2.
+- **ADR-063 (Rejeitado em 16/10/2026):** partial pooling no `V`
+  não adotado — A1 FAIL (Câmara 2023–2024) e A2 FAIL (Câmara);
+  vale a regra do ADR-062 (`n_min_pares` = 8); `V` final para o
+  bootstrap = regra ADR-062 (`--stage baseline` é o padrão;
+  `k_search`/`full` ficam opt-in).
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)

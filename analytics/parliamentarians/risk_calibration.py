@@ -10,7 +10,10 @@ ADR-062 requires before a ``model_version`` is frozen:
 * variance decomposition of ``ln(total)`` (months -> + UF -> + house);
 * raw vs residual dispersion (p90/p10, p99/p1);
 * sensitivity of the volume score to ``n_min_pares``;
-* old (simple mean) vs new (value-weighted) supplier-dependency score.
+* old (simple mean) vs new (value-weighted) supplier-dependency score;
+* ADR-063 partial pooling of the volume score: leave-one-out search of the
+  shrinkage ``k`` (``--stage k_search``) and the acceptance criteria A1/A2
+  with the chosen ``k`` (``--stage full``).
 
 This module does not train the Isolation Forest, does not write to the
 warehouse and does not persist a model artifact. Those steps belong to
@@ -139,6 +142,39 @@ class ScoresSource(BaseModel):
         return value
 
 
+class PoolingConfig(BaseModel):
+    """Partial-pooling settings of the volume score (ADR-063, item 7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    k: dict[str, float | None]
+    k_grid: list[float] = Field(min_length=2)
+    tolerance: float = Field(ge=0)
+    strict_casas: list[str]
+
+    @field_validator("k")
+    @classmethod
+    def _k(cls, value: dict[str, float | None]) -> dict[str, float | None]:
+        if set(value) != {"camara", "senado"}:
+            raise ValueError("k must define exactly camara and senado (null = not calibrated yet)")
+        if any(k is not None and k <= 0 for k in value.values()):
+            raise ValueError("k values must be > 0")
+        return value
+
+    @field_validator("k_grid")
+    @classmethod
+    def _grid(cls, value: list[float]) -> list[float]:
+        if any(k <= 0 for k in value) or len(set(value)) != len(value):
+            raise ValueError("k_grid must hold unique values > 0")
+        return value
+
+    @model_validator(mode="after")
+    def _strict(self) -> PoolingConfig:
+        if not set(self.strict_casas) <= set(self.k):
+            raise ValueError("strict_casas must be a subset of the houses in k")
+        return self
+
+
 class CalibrationSettings(BaseModel):
     """Validated settings of the calibration (``config/risk_calibration.yaml``)."""
 
@@ -155,6 +191,7 @@ class CalibrationSettings(BaseModel):
     dispersion_quantiles: list[tuple[float, float]] = Field(min_length=1)
     tables: TablesConfig
     scores_source: ScoresSource
+    pooling: PoolingConfig
     output_dir: Path
 
     @field_validator("n_min_sensitivity")
@@ -519,6 +556,403 @@ def compute_volume_score(frame: pd.DataFrame, n_min: int, meses_min: float) -> p
     return out
 
 
+def _eligible(frame: pd.DataFrame, meses_min: float) -> tuple[pd.Series, pd.Series]:
+    """Monthly mean spending and the eligibility mask of ADR-062 item 4.
+
+    Args:
+        frame: Columns ``total``, ``meses``, ``casa`` and ``uf``.
+        meses_min: Minimum months in office.
+
+    Returns:
+        ``(x, eligible)``: monthly mean and a boolean mask that is true when
+        the house and UF are known, ``meses >= meses_min`` and ``x > 0``.
+    """
+    meses = frame["meses"].where(frame["meses"] > 0)
+    x = frame["total"] / meses
+    mask = frame["casa"].notna() & frame["uf"].notna() & meses.ge(meses_min) & x.gt(0)
+    return x, mask
+
+
+def compute_volume_score_pooled(
+    frame: pd.DataFrame, k_by_casa: Mapping[str, float], meses_min: float
+) -> pd.DataFrame:
+    """Volume score V with partial pooling by UF (ADR-063, items 1-4).
+
+    For each house ``c`` and UF ``u`` (eligible parliamentarians only)::
+
+        m*_u = (n_u * m_u + k_c * m_c) / (n_u + k_c)
+        s_c  = 1.4826 * median_c(|ln x - m*_u|)
+        z    = (ln x - m*_u) / s_c,    V = norm(max(0, z))
+
+    Args:
+        frame: Indexed by parliamentarian, columns ``total``, ``meses``,
+            ``casa`` and ``uf``.
+        k_by_casa: Shrinkage strength per house (> 0).
+        meses_min: Minimum months in office (ADR-062 guard).
+
+    Returns:
+        Copy of ``frame`` plus ``x``, ``z``, ``ln_dev`` (residual against
+        the shrunk location), ``lambda_u`` (weight of the UF data),
+        ``v_flag``, ``v_raw`` and ``V``.
+
+    Raises:
+        ValueError: If a column is missing or an eligible house has no ``k``.
+    """
+    missing = {"total", "meses", "casa", "uf"} - set(frame.columns)
+    if missing:
+        raise ValueError(f"frame is missing columns: {sorted(missing)}")
+    out = frame.copy()
+    x, eligible = _eligible(out, meses_min)
+    out["x"] = x
+    meses = out["meses"].where(out["meses"] > 0)
+    has_group = out["casa"].notna() & out["uf"].notna()
+    long_enough = meses.ge(meses_min)
+    positive = x.gt(0)
+
+    z = pd.Series(np.nan, index=out.index, dtype=float)
+    residual_all = pd.Series(np.nan, index=out.index, dtype=float)
+    lam_all = pd.Series(np.nan, index=out.index, dtype=float)
+    sub = out.loc[eligible]
+    if not sub.empty:
+        k_map = {str(casa): float(k) for casa, k in k_by_casa.items()}
+        unknown = sorted(set(sub["casa"].astype(str)) - set(k_map))
+        if unknown:
+            raise ValueError(f"no pooling k configured for casa: {unknown}")
+        casa_key = sub["casa"].astype(str)
+        ln_x = np.log(sub["x"])
+        uf_key = casa_key + "|" + sub["uf"].astype(str)
+        n_u = uf_key.map(uf_key.value_counts()).astype(float)
+        m_u = ln_x.groupby(uf_key).transform("median")
+        m_c = ln_x.groupby(casa_key).transform("median")
+        lam = n_u / (n_u + casa_key.map(k_map).astype(float))
+        residual = ln_x - (lam * m_u + (1.0 - lam) * m_c)
+        scale = MAD_SCALE * residual.abs().groupby(casa_key).transform("median")
+        z.loc[sub.index] = residual / scale.where(scale > 0)
+        residual_all.loc[sub.index] = residual
+        lam_all.loc[sub.index] = lam
+        zero_scale = int((scale <= 0).sum())
+        if zero_scale:
+            logger.warning("risk_calibration.pooled_zero_scale", count=zero_scale)
+
+    out["z"], out["ln_dev"], out["lambda_u"] = z, residual_all, lam_all
+    out["v_raw"] = z.clip(lower=0).fillna(0.0)
+    out["V"] = min_max(out["v_raw"])
+    conditions = [
+        meses.isna().to_numpy(),
+        (~has_group).to_numpy(),
+        (~long_enough).to_numpy(),
+        (~positive).to_numpy(),
+        (eligible & z.isna()).to_numpy(),
+    ]
+    choices = ["sem_intervalo", "sem_grupo", "janela_curta", "sem_gasto_positivo", "sem_referencia"]
+    out["v_flag"] = np.select(conditions, choices, default="ok")
+    return out
+
+
+def _leave_one_out_medians(values: np.ndarray) -> np.ndarray:
+    """Median of the other elements, for every element of ``values``."""
+    size = len(values)
+    if size < 2:
+        return np.full(size, np.nan)
+    return np.array([np.median(np.delete(values, position)) for position in range(size)])
+
+
+def loo_components(frame: pd.DataFrame, meses_min: float) -> pd.DataFrame:
+    """Leave-one-out location components of every eligible parliamentarian.
+
+    Args:
+        frame: Columns ``total``, ``meses``, ``casa`` and ``uf``.
+        meses_min: Minimum months in office.
+
+    Returns:
+        Frame indexed like the eligible rows with ``casa``, ``uf``,
+        ``ln_x``, ``n_u`` (UF size, self included), ``m_u_loo`` (UF median
+        without self; NaN if alone) and ``m_c_loo`` (house median without
+        self). Rows whose house has a single member are dropped.
+    """
+    x, eligible = _eligible(frame, meses_min)
+    sub = frame.loc[eligible, ["casa", "uf"]].copy()
+    sub["ln_x"] = np.log(x.loc[eligible])
+    sub["n_u"] = sub.groupby(["casa", "uf"])["ln_x"].transform("size").astype(float)
+    sub["m_u_loo"] = np.nan
+    sub["m_c_loo"] = np.nan
+    for _, group in sub.groupby("casa"):
+        sub.loc[group.index, "m_c_loo"] = _leave_one_out_medians(group["ln_x"].to_numpy(dtype=float))
+    for _, group in sub.groupby(["casa", "uf"]):
+        sub.loc[group.index, "m_u_loo"] = _leave_one_out_medians(group["ln_x"].to_numpy(dtype=float))
+    return sub.dropna(subset=["m_c_loo"])
+
+
+def k_label(k: float) -> str:
+    """Stable label of a shrinkage value, e.g. ``k=4``."""
+    return f"k={k:g}"
+
+
+def loo_error_sums(
+    components: pd.DataFrame, k_values: Sequence[float], n_min: int
+) -> dict[str, dict[str, tuple[float, int]]]:
+    """Sum of absolute leave-one-out errors per house and scheme (ADR-063, item 6).
+
+    Schemes: ``casa_only`` (k -> infinity), ``adr062_rule`` (UF median when
+    the UF has at least ``n_min`` eligible members, else house median) and
+    one entry per ``k`` in ``k_values``.
+
+    Args:
+        components: Output of :func:`loo_components`.
+        k_values: Shrinkage values to evaluate.
+        n_min: ``n_min_pares`` of the ADR-062 rule.
+
+    Returns:
+        ``{casa: {scheme: (sum_abs_error, n_observations)}}``.
+    """
+    result: dict[str, dict[str, tuple[float, int]]] = {}
+    for casa, group in components.groupby("casa"):
+        ln_x = group["ln_x"].to_numpy(dtype=float)
+        n_others = group["n_u"].to_numpy(dtype=float) - 1.0
+        m_u_raw = group["m_u_loo"].to_numpy(dtype=float)
+        m_u = np.nan_to_num(m_u_raw, nan=0.0)
+        m_c = group["m_c_loo"].to_numpy(dtype=float)
+        use_uf = (group["n_u"].to_numpy(dtype=float) >= n_min) & ~np.isnan(m_u_raw)
+        predictions = {"casa_only": m_c, "adr062_rule": np.where(use_uf, m_u_raw, m_c)}
+        for k in k_values:
+            predictions[k_label(k)] = (n_others * m_u + k * m_c) / (n_others + k)
+        result[str(casa)] = {
+            name: (float(np.abs(ln_x - prediction).sum()), int(len(ln_x)))
+            for name, prediction in predictions.items()
+        }
+    return result
+
+
+def loo_residuals(
+    components: pd.DataFrame, k_by_casa: Mapping[str, float], n_min: int
+) -> pd.DataFrame:
+    """Out-of-sample (leave-one-out) residuals of ``ln x`` under each scheme.
+
+    Unlike the in-sample ``z`` (whose location includes the parliamentarian
+    itself), these residuals compare each parliamentarian with a location
+    estimated without it, so a scheme cannot look better just by fitting
+    its own group.
+
+    Args:
+        components: Output of :func:`loo_components`.
+        k_by_casa: Shrinkage strength per house.
+        n_min: ``n_min_pares`` of the ADR-062 rule.
+
+    Returns:
+        Frame with ``casa``, ``uf`` and the residuals ``r_casa_only``,
+        ``r_adr062_rule`` and ``r_pooled``.
+    """
+    k_map = {str(casa): float(k) for casa, k in k_by_casa.items()}
+    n_others = components["n_u"] - 1.0
+    m_u = components["m_u_loo"]
+    m_c = components["m_c_loo"]
+    k = components["casa"].astype(str).map(k_map).astype(float)
+    pooled_prediction = (n_others * m_u.fillna(0.0) + k * m_c) / (n_others + k)
+    adr_prediction = m_u.where((components["n_u"] >= n_min) & m_u.notna(), m_c)
+    return pd.DataFrame(
+        {
+            "casa": components["casa"],
+            "uf": components["uf"],
+            "r_casa_only": components["ln_x"] - m_c,
+            "r_adr062_rule": components["ln_x"] - adr_prediction,
+            "r_pooled": components["ln_x"] - pooled_prediction,
+        }
+    )
+
+
+def aggregate_loo(
+    per_year: Mapping[int, Mapping[str, Mapping[str, tuple[float, int]]]],
+) -> dict[str, Any]:
+    """Pool leave-one-out error sums across years.
+
+    Args:
+        per_year: ``{year: {casa: {scheme: (sum_abs_error, n)}}}``.
+
+    Returns:
+        ``mean`` (pooled mean absolute error per casa and scheme),
+        ``n_obs`` (observations per casa) and ``by_year`` (yearly means).
+    """
+    sums: dict[str, dict[str, list[float]]] = {}
+    by_year: dict[int, dict[str, dict[str, float]]] = {}
+    for year, per_casa in per_year.items():
+        by_year[year] = {}
+        for casa, schemes in per_casa.items():
+            by_year[year][casa] = {name: total / n for name, (total, n) in schemes.items()}
+            bucket = sums.setdefault(casa, {})
+            for name, (total, n) in schemes.items():
+                acc = bucket.setdefault(name, [0.0, 0.0])
+                acc[0] += total
+                acc[1] += n
+    mean = {casa: {name: acc[0] / acc[1] for name, acc in bucket.items()} for casa, bucket in sums.items()}
+    n_obs = {casa: int(bucket["casa_only"][1]) for casa, bucket in sums.items()}
+    return {"mean": mean, "n_obs": n_obs, "by_year": by_year}
+
+
+def select_k(errors: Mapping[str, float], k_grid: Sequence[float], tolerance: float) -> float:
+    """Grid value with the lowest error; ties go to the larger ``k``.
+
+    Args:
+        errors: Mean error per scheme label (see :func:`k_label`).
+        k_grid: Candidate shrinkage values.
+        tolerance: Errors closer than this are considered equal.
+
+    Returns:
+        The selected ``k``.
+    """
+    best_k = float("nan")
+    best_error = math.inf
+    for k in sorted(k_grid, reverse=True):
+        error = errors[k_label(k)]
+        if error < best_error - tolerance:
+            best_k, best_error = float(k), error
+    return best_k
+
+
+def uf_share_residual(z: pd.Series, uf: pd.Series) -> float:
+    """R-squared of ``z`` on UF dummies (share of ``z`` variance explained by UF).
+
+    Args:
+        z: Volume z-scores.
+        uf: UF label aligned with ``z``.
+
+    Returns:
+        Between-UF share of the variance, or NaN when undefined.
+    """
+    frame = pd.DataFrame({"z": z, "uf": uf}).dropna()
+    if len(frame) < 3 or frame["uf"].nunique() < 2:
+        return float("nan")
+    values = frame["z"].to_numpy(dtype=float)
+    sst = float(((values - values.mean()) ** 2).sum())
+    if sst == 0.0:
+        return float("nan")
+    group_mean = frame.groupby("uf")["z"].transform("mean").to_numpy(dtype=float)
+    return float(((group_mean - values.mean()) ** 2).sum() / sst)
+
+
+def attach_pooled(
+    volume: pd.DataFrame,
+    scores: pd.DataFrame,
+    k_by_casa: Mapping[str, float],
+    meses_min: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Add the pooled volume score to the year frames.
+
+    Args:
+        volume: Full-universe volume frame from :func:`build_year`.
+        scores: Normalized scores from :func:`build_year`.
+        k_by_casa: Shrinkage strength per house.
+        meses_min: Minimum months in office.
+
+    Returns:
+        ``(volume, scores)`` copies with ``*_pooled`` columns in ``volume``
+        (``z``, ``ln_dev``, ``lambda_u``, ``v_flag``, ``v_raw``, ``V``) and
+        ``V_pooled`` (Min-Max over the scored universe) in ``scores``.
+    """
+    pooled = compute_volume_score_pooled(volume[["total", "meses", "casa", "uf"]], k_by_casa, meses_min)
+    columns = ["z", "ln_dev", "lambda_u", "v_flag", "v_raw", "V"]
+    volume_out = volume.join(pooled[columns].add_suffix("_pooled"))
+    scores_out = scores.copy()
+    scores_out["V_pooled"] = min_max(pooled.loc[scores.index, "v_raw"])
+    return volume_out, scores_out
+
+
+def _a1_passed(base: float, pooled: float, strict: bool, tolerance: float) -> bool:
+    """A1 comparison: strict improvement for strict houses, else not worse."""
+    if not (math.isfinite(base) and math.isfinite(pooled)):
+        return False
+    return pooled < base - tolerance if strict else pooled <= base + tolerance
+
+
+def evaluate_acceptance(
+    uf_residual: Mapping[int, Mapping[str, Mapping[str, float]]],
+    loo_mean: Mapping[str, Mapping[str, float]],
+    k_by_casa: Mapping[str, float],
+    strict_casas: Sequence[str],
+    tolerance: float,
+    uf_share_loo: Mapping[int, Mapping[str, Mapping[str, float]]] | None = None,
+) -> dict[str, Any]:
+    """Evaluate the ADR-063 acceptance criteria A1 and A2 (item 9).
+
+    A1: ``uf_share_residual`` with the chosen ``k`` is lower than under the
+    ADR-062 rule in every year for the strict houses, and not worse for the
+    others. A2: the leave-one-out error of the chosen ``k`` is not above
+    ``casa_only`` nor the ADR-062 rule, per house.
+
+    ``a1_loo`` repeats the A1 comparison on out-of-sample (leave-one-out)
+    residuals. It is informative only and never enters ``all_pass``: the
+    in-sample ``z`` of the ADR-062 rule removes the UF location it was fitted
+    on, which favours that rule.
+
+    Args:
+        uf_residual: ``{year: {casa: {"baseline": r2, "pooled": r2}}}``.
+        loo_mean: Pooled mean LOO error per house and scheme.
+        k_by_casa: Chosen ``k`` per house.
+        strict_casas: Houses where A1 requires a strict improvement.
+        tolerance: Numeric tolerance for comparisons.
+        uf_share_loo: ``{year: {casa: {"adr062_rule": r2, "pooled": r2, ...}}}``.
+
+    Returns:
+        Rows and verdicts for A1, A2, the informative ``a1_loo`` and overall.
+    """
+    a1_rows: list[dict[str, Any]] = []
+    for year, per_casa in uf_residual.items():
+        for casa, values in per_casa.items():
+            strict = casa in strict_casas
+            passed = _a1_passed(values["baseline"], values["pooled"], strict, tolerance)
+            a1_rows.append(
+                {
+                    "year": year,
+                    "casa": casa,
+                    "baseline": values["baseline"],
+                    "pooled": values["pooled"],
+                    "strict": strict,
+                    "pass": bool(passed),
+                }
+            )
+    a1_loo_rows: list[dict[str, Any]] = []
+    for year, per_casa in (uf_share_loo or {}).items():
+        for casa, values in per_casa.items():
+            strict = casa in strict_casas
+            passed = _a1_passed(values["adr062_rule"], values["pooled"], strict, tolerance)
+            a1_loo_rows.append(
+                {
+                    "year": year,
+                    "casa": casa,
+                    "baseline": values["adr062_rule"],
+                    "pooled": values["pooled"],
+                    "casa_only": values.get("casa_only"),
+                    "strict": strict,
+                    "pass": bool(passed),
+                }
+            )
+    a2_rows: list[dict[str, Any]] = []
+    for casa, errors in loo_mean.items():
+        chosen = errors[k_label(k_by_casa[casa])]
+        passed = chosen <= errors["casa_only"] + tolerance and chosen <= errors["adr062_rule"] + tolerance
+        a2_rows.append(
+            {
+                "casa": casa,
+                "k": k_by_casa[casa],
+                "error_k": chosen,
+                "error_casa_only": errors["casa_only"],
+                "error_adr062_rule": errors["adr062_rule"],
+                "pass": bool(passed),
+            }
+        )
+    a1_pass = bool(a1_rows) and all(row["pass"] for row in a1_rows)
+    a2_pass = bool(a2_rows) and all(row["pass"] for row in a2_rows)
+    return {
+        "a1": {"pass": a1_pass, "rows": a1_rows},
+        "a1_loo": {
+            "informative": True,
+            "pass": bool(a1_loo_rows) and all(row["pass"] for row in a1_loo_rows),
+            "rows": a1_loo_rows,
+        },
+        "a2": {"pass": a2_pass, "rows": a2_rows},
+        "all_pass": a1_pass and a2_pass,
+    }
+
+
 def variance_decomposition(frame: pd.DataFrame) -> dict[str, float]:
     """Incremental R-squared of ``ln(total)`` on months, UF and house.
 
@@ -855,23 +1289,90 @@ def analyze_year(
     }
 
 
+def analyze_pooling(
+    volume: pd.DataFrame,
+    scores: pd.DataFrame,
+    settings: CalibrationSettings,
+    components: pd.DataFrame,
+    k_by_casa: Mapping[str, float],
+) -> dict[str, Any]:
+    """Pooling diagnostics of one year (ADR-063, item 8).
+
+    Args:
+        volume: Volume frame carrying the ``*_pooled`` columns.
+        scores: Normalized scores carrying ``V_pooled``.
+        settings: Calibration settings.
+        components: Output of :func:`loo_components` for the year.
+        k_by_casa: Shrinkage strength per house.
+
+    Returns:
+        ``uf_share_residual`` per house (ADR-062 rule vs pooled), its out-of-sample
+        counterpart ``uf_share_loo``, the
+        distribution of the UF weight ``lambda_u``, pooled flags and the
+        comparison of ``V_pooled`` against ``V``.
+    """
+    both = volume.loc[np.isfinite(volume["z"]) & np.isfinite(volume["z_pooled"])]
+    residual: dict[str, dict[str, float]] = {}
+    for casa, group in both.groupby("casa"):
+        residual[str(casa)] = {
+            "baseline": uf_share_residual(group["z"], group["uf"]),
+            "pooled": uf_share_residual(group["z_pooled"], group["uf"]),
+            "n": float(len(group)),
+        }
+    residuals = loo_residuals(components, k_by_casa, settings.n_min_pares)
+    loo_share: dict[str, dict[str, float]] = {}
+    for casa, group in residuals.groupby("casa"):
+        loo_share[str(casa)] = {
+            name: uf_share_residual(group[column], group["uf"])
+            for name, column in (
+                ("casa_only", "r_casa_only"),
+                ("adr062_rule", "r_adr062_rule"),
+                ("pooled", "r_pooled"),
+            )
+        }
+    weights: dict[str, Any] = {}
+    eligible = volume.loc[volume["lambda_u_pooled"].notna()]
+    for casa, group in eligible.groupby("casa"):
+        per_group = group.groupby("uf")["lambda_u_pooled"].first()
+        weights[str(casa)] = {
+            "groups": int(len(per_group)),
+            "groups_below_half": int((per_group < 0.5).sum()),
+            "quantiles": {f"p{round(q * 100)}": float(per_group.quantile(q)) for q in (0.05, 0.25, 0.5, 0.75, 0.95)},
+        }
+    return {
+        "uf_share_residual": residual,
+        "uf_share_loo": loo_share,
+        "lambda_u": weights,
+        "flags_pooled": {str(k): int(v) for k, v in volume["v_flag_pooled"].value_counts().items()},
+        "v_pooled_vs_v": compare_rankings(scores["V"], scores["V_pooled"], settings.top_fraction),
+    }
+
+
+def _ordered_scores(frame: pd.DataFrame, v_column: str) -> pd.DataFrame:
+    """Scores in :data:`SCORE_COLUMNS` order, with ``v_column`` acting as ``V``."""
+    others = [name for name in SCORE_COLUMNS if name != "V"]
+    return frame[[*others, v_column]].rename(columns={v_column: "V"})[list(SCORE_COLUMNS)]
+
+
 def calibrate_weights(
-    year_scores: Mapping[int, pd.DataFrame], w_min_aviso: float
+    year_scores: Mapping[int, pd.DataFrame], w_min_aviso: float, v_column: str = "V"
 ) -> dict[str, Any]:
     """CRITIC weights on the pooled window and per year.
 
     Args:
         year_scores: Normalized scores per year.
         w_min_aviso: Weights below this value are reported as warnings.
+        v_column: Column used as the volume score (``V`` for the ADR-062
+            rule, ``V_pooled`` for the ADR-063 rule).
 
     Returns:
         Pooled and per-year weights, warning counts, cross-year spread
         and the pooled Spearman matrix.
     """
-    columns = list(SCORE_COLUMNS)
-    pooled_frame = pd.concat([frame[columns] for frame in year_scores.values()], ignore_index=True)
+    frames = {year: _ordered_scores(frame, v_column) for year, frame in year_scores.items()}
+    pooled_frame = pd.concat(list(frames.values()), ignore_index=True)
     pooled = critic_weights(pooled_frame)
-    by_year = {year: critic_weights(frame[columns]) for year, frame in year_scores.items()}
+    by_year = {year: critic_weights(frame) for year, frame in frames.items()}
     table = pd.DataFrame(by_year)
     return {
         "pooled": pooled.to_dict(),
@@ -888,43 +1389,139 @@ def calibrate_weights(
     }
 
 
-def run_calibration(con: duckdb.DuckDBPyConnection, settings: CalibrationSettings) -> dict[str, Any]:
-    """Run the full calibration and return the report.
+def run_calibration(
+    con: duckdb.DuckDBPyConnection,
+    settings: CalibrationSettings,
+    stage: Literal["baseline", "k_search", "full"] = "baseline",
+) -> dict[str, Any]:
+    """Run the calibration and return the report.
+
+    Stages:
+        ``baseline`` (default): the ADR-062 diagnostics (CRITIC weights,
+        dispersion, variance decomposition, ``n_min_pares`` sensitivity,
+        old vs new supplier-dependency score); needs no ``pooling.k``.
+        ``k_search``: leave-one-out search of the shrinkage ``k`` per house
+        over ``pooling.k_grid``; needs no ``k`` in the configuration.
+        ``full``: the ADR-062 diagnostics plus the pooled volume score, the
+        acceptance criteria A1/A2 and pooled CRITIC weights; requires
+        ``pooling.k`` filled for every house present in the data.
 
     Args:
         con: Open DuckDB connection (read-only recommended).
         settings: Calibration settings.
+        stage: ``"baseline"``, ``"k_search"`` or ``"full"``.
 
     Returns:
-        JSON-friendly report with metadata, per-year sections and weights.
+        JSON-friendly report.
+
+    Raises:
+        ConfigError: In the ``full`` stage when ``pooling.k`` is incomplete.
+        ValueError: If a year has no data or too few scored parliamentarians.
     """
     run_id = str(uuid.uuid4())
-    logger.info("risk_calibration.start", run_id=run_id, years=settings.window_years)
+    logger.info("risk_calibration.start", run_id=run_id, years=settings.window_years, stage=stage)
     totals = load_totals(con, settings)
     pairs = load_pairs(con, settings)
     groups = load_groups(con, settings)
     external = load_external_scores(con, settings)
     months = months_in_office(load_intervals(con, settings), settings.window_years, settings.days_per_month)
 
-    years: dict[int, Any] = {}
+    volumes: dict[int, pd.DataFrame] = {}
     year_scores: dict[int, pd.DataFrame] = {}
+    metas: dict[int, dict[str, Any]] = {}
     for year in settings.window_years:
         volume, scores, meta = build_year(year, totals, pairs, groups, months, external, settings)
         if len(scores) < 2:
             raise ValueError(f"year {year}: fewer than 2 parliamentarians have all scores")
-        years[year] = analyze_year(year, volume, scores, meta, settings)
-        year_scores[year] = scores
-    return {
-        "meta": {
-            "run_id": run_id,
-            "execution_timestamp": datetime.now(UTC).isoformat(),
-            "window_years": settings.window_years,
-            "n_min_pares": settings.n_min_pares,
-            "meses_min": settings.meses_min,
-            "w_min_aviso": settings.w_min_aviso,
+        volumes[year], year_scores[year], metas[year] = volume, scores, meta
+
+    meta = {
+        "run_id": run_id,
+        "stage": stage,
+        "execution_timestamp": datetime.now(UTC).isoformat(),
+        "window_years": settings.window_years,
+        "n_min_pares": settings.n_min_pares,
+        "meses_min": settings.meses_min,
+        "w_min_aviso": settings.w_min_aviso,
+    }
+    if stage == "baseline":
+        return {
+            "meta": meta,
+            "years": {
+                year: analyze_year(year, volumes[year], year_scores[year], metas[year], settings)
+                for year in volumes
+            },
+            "weights": calibrate_weights(year_scores, settings.w_min_aviso),
+        }
+
+    grid = list(settings.pooling.k_grid)
+    k_values = list(grid)
+    k_by_casa: dict[str, float] = {}
+    if stage == "full":
+        casas = sorted({str(casa) for volume in volumes.values() for casa in volume["casa"].dropna().unique()})
+        missing = [casa for casa in casas if settings.pooling.k.get(casa) is None]
+        if missing:
+            raise ConfigError(
+                f"pooling.k is not set for {missing}; run --stage k_search and fill pooling.k (ADR-063, item 7)"
+            )
+        k_by_casa = {casa: float(settings.pooling.k[casa]) for casa in casas}  # type: ignore[arg-type]
+        k_values = sorted(set(k_values) | set(k_by_casa.values()))
+
+    components = {
+        year: loo_components(volume[["total", "meses", "casa", "uf"]], settings.meses_min)
+        for year, volume in volumes.items()
+    }
+    per_year_loo = {
+        year: loo_error_sums(frame, k_values, settings.n_min_pares) for year, frame in components.items()
+    }
+    loo = aggregate_loo(per_year_loo)
+    tolerance = settings.pooling.tolerance
+    pooling: dict[str, Any] = {
+        "k_grid": grid,
+        "loo_mean": loo["mean"],
+        "n_obs": loo["n_obs"],
+        "loo_by_year": loo["by_year"],
+        "k_argmin": {casa: select_k(errors, grid, tolerance) for casa, errors in loo["mean"].items()},
+        "k_argmin_by_year": {
+            year: {casa: select_k(errors, grid, tolerance) for casa, errors in per_casa.items()}
+            for year, per_casa in loo["by_year"].items()
         },
+    }
+    if stage == "k_search":
+        return {"meta": meta, "k_search": pooling}
+
+    years: dict[int, Any] = {}
+    pooled_scores: dict[int, pd.DataFrame] = {}
+    for year, volume in volumes.items():
+        volume_pooled, scores_pooled = attach_pooled(volume, year_scores[year], k_by_casa, settings.meses_min)
+        section = analyze_year(year, volume, year_scores[year], metas[year], settings)
+        section["pooling"] = analyze_pooling(
+            volume_pooled, scores_pooled, settings, components[year], k_by_casa
+        )
+        years[year] = section
+        pooled_scores[year] = scores_pooled
+    pooling.update(
+        {
+            "k": k_by_casa,
+            "k_matches_argmin": {
+                casa: math.isclose(k_by_casa[casa], pooling["k_argmin"][casa]) for casa in pooling["k_argmin"]
+            },
+            "weights": calibrate_weights(pooled_scores, settings.w_min_aviso, v_column="V_pooled"),
+            "acceptance": evaluate_acceptance(
+                {year: section["pooling"]["uf_share_residual"] for year, section in years.items()},
+                loo["mean"],
+                k_by_casa,
+                settings.pooling.strict_casas,
+                tolerance,
+                {year: section["pooling"]["uf_share_loo"] for year, section in years.items()},
+            ),
+        }
+    )
+    return {
+        "meta": meta,
         "years": years,
         "weights": calibrate_weights(year_scores, settings.w_min_aviso),
+        "pooling": pooling,
     }
 
 
@@ -953,6 +1550,105 @@ def _fmt(value: Any) -> str:
     return f"{value:.3f}" if isinstance(value, float) else str(value)
 
 
+def _k_columns(errors: Mapping[str, Any]) -> list[str]:
+    """Scheme names in display order: comparators first, then ``k=`` by value."""
+    ks = sorted((name for name in errors if name.startswith("k=")), key=lambda name: float(name[2:]))
+    return ["casa_only", "adr062_rule", *ks]
+
+
+def _render_k_search(report: Mapping[str, Any]) -> str:
+    """Markdown of the ``k_search`` stage (ADR-063, item 6)."""
+    meta, search = report["meta"], report["k_search"]
+    lines = [
+        "# ADR-063 — k search (leave-one-out)",
+        "",
+        f"- run_id: `{meta['run_id']}` | stage: {meta['stage']}",
+        f"- execution_timestamp: {meta['execution_timestamp']}",
+        f"- window_years: {meta['window_years']} | n_min_pares (comparator): {meta['n_min_pares']}",
+        f"- k_grid: {search['k_grid']}",
+        "",
+        "## Mean absolute LOO error (pooled over years)",
+        "",
+    ]
+    casas = sorted(search["loo_mean"])
+    columns = _k_columns(search["loo_mean"][casas[0]]) if casas else []
+    lines += ["| casa | n | " + " | ".join(columns) + " |", "|---|---|" + "---|" * len(columns)]
+    for casa in casas:
+        errors = search["loo_mean"][casa]
+        cells = " | ".join(_fmt(errors.get(name)) for name in columns)
+        lines.append(f"| {casa} | {search['n_obs'][casa]} | {cells} |")
+    lines += ["", "## Selected k (argmin, ties to larger k)", ""]
+    for casa in casas:
+        by_year = ", ".join(f"{year}: {_fmt(ks[casa])}" for year, ks in search["k_argmin_by_year"].items())
+        lines.append(f"- {casa}: **k = {_fmt(search['k_argmin'][casa])}** (by year: {by_year})")
+    lines += ["", "Fill `pooling.k` in the YAML with these values and run `--stage full`.", ""]
+    return "\n".join(lines)
+
+
+def _render_pooling(report: Mapping[str, Any]) -> list[str]:
+    """Markdown lines of the ADR-063 section of the ``full`` report."""
+    pooling = report["pooling"]
+    acceptance = pooling["acceptance"]
+    lines = ["## ADR-063 — partial pooling", ""]
+    lines.append(
+        "- k: " + ", ".join(f"{casa}={_fmt(k)}" for casa, k in pooling["k"].items())
+        + " | LOO argmin: " + ", ".join(f"{casa}={_fmt(k)}" for casa, k in pooling["k_argmin"].items())
+        + " | k equals argmin: " + str(pooling["k_matches_argmin"])
+    )
+    lines += ["", "### A1 — UF share of the residual z (R² on UF dummies)", ""]
+    lines += ["| year | casa | ADR-062 rule | pooled | strict | pass |", "|---|---|---|---|---|---|"]
+    for row in acceptance["a1"]["rows"]:
+        lines.append(
+            f"| {row['year']} | {row['casa']} | {_fmt(row['baseline'])} | {_fmt(row['pooled'])} "
+            f"| {row['strict']} | {row['pass']} |"
+        )
+    lines += [
+        "",
+        "### A1-LOO — same comparison on out-of-sample residuals (informative, not part of the verdict)",
+        "",
+        "| year | casa | ADR-062 rule | pooled | casa_only | pass |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in acceptance["a1_loo"]["rows"]:
+        lines.append(
+            f"| {row['year']} | {row['casa']} | {_fmt(row['baseline'])} | {_fmt(row['pooled'])} "
+            f"| {_fmt(row['casa_only'])} | {row['pass']} |"
+        )
+    lines += ["", "### A2 — leave-one-out error (pooled over years)", ""]
+    lines += ["| casa | k | error k | casa_only | ADR-062 rule | pass |", "|---|---|---|---|---|---|"]
+    for row in acceptance["a2"]["rows"]:
+        lines.append(
+            f"| {row['casa']} | {_fmt(row['k'])} | {_fmt(row['error_k'])} | {_fmt(row['error_casa_only'])} "
+            f"| {_fmt(row['error_adr062_rule'])} | {row['pass']} |"
+        )
+    verdict = "criteria met" if acceptance["all_pass"] else "criteria NOT met (ADR-063, item 9: rule of ADR-062 stands)"
+    lines += [
+        "",
+        f"**A1: {'PASS' if acceptance['a1']['pass'] else 'FAIL'} · A2: {'PASS' if acceptance['a2']['pass'] else 'FAIL'}"
+        f" → {verdict}**",
+        "",
+        "### CRITIC weights (pooled): ADR-062 V vs pooled V",
+        "",
+        "| score | ADR-062 V | pooled V |",
+        "|---|---|---|",
+    ]
+    for name in SCORE_COLUMNS:
+        baseline_w = _fmt(report["weights"]["pooled"][name])
+        pooled_w = _fmt(pooling["weights"]["pooled"][name])
+        lines.append(f"| {name} | {baseline_w} | {pooled_w} |")
+    lines += ["", "### Per year", ""]
+    for year, section in report["years"].items():
+        block = section["pooling"]
+        change = block["v_pooled_vs_v"]
+        lines.append(
+            f"- {year}: V pooled vs V — Spearman {_fmt(change['spearman'])}, "
+            f"Jaccard top {_fmt(change['jaccard_top'])}, mean rank shift {_fmt(change['mean_rank_shift'])}; "
+            f"lambda_u {block['lambda_u']}"
+        )
+    lines.append("")
+    return lines
+
+
 def render_markdown(report: Mapping[str, Any]) -> str:
     """Render the report as Markdown, ready to attach to ADR-062.
 
@@ -962,6 +1658,8 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     Returns:
         Markdown text.
     """
+    if report["meta"].get("stage") == "k_search":
+        return _render_k_search(report)
     meta, weights = report["meta"], report["weights"]
     lines = [
         "# ADR-062 — calibration report",
@@ -1024,6 +1722,8 @@ def render_markdown(report: Mapping[str, Any]) -> str:
                 f"| {_fmt(row['share_fallback_casa'])} |"
             )
         lines.append("")
+    if "pooling" in report:
+        lines += _render_pooling(report)
     return "\n".join(lines)
 
 
@@ -1041,7 +1741,8 @@ def write_report(report: Mapping[str, Any], output_dir: Path, config_sha256: str
     output_dir.mkdir(parents=True, exist_ok=True)
     safe = _clean(report)
     safe["meta"]["config_sha256"] = config_sha256
-    stem = f"risk_calibration_{safe['meta']['run_id'][:8]}"
+    prefix = "risk_k_search" if safe["meta"].get("stage") == "k_search" else "risk_calibration"
+    stem = f"{prefix}_{safe['meta']['run_id'][:8]}"
     json_path, md_path = output_dir / f"{stem}.json", output_dir / f"{stem}.md"
     json_path.write_text(json.dumps(safe, indent=2, ensure_ascii=False), encoding="utf-8")
     md_path.write_text(render_markdown(safe), encoding="utf-8")
@@ -1072,6 +1773,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="DuckDB file (defaults to the DUCKDB_DATABASE_PATH environment variable)",
     )
+    parser.add_argument(
+        "--stage",
+        choices=("baseline", "k_search", "full"),
+        default="baseline",
+        help="baseline: ADR-062 diagnostics (default); k_search/full: ADR-063 pooling stages",
+    )
     args = parser.parse_args(argv)
     try:
         settings = load_settings(args.config)
@@ -1085,9 +1792,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         con = duckdb.connect(str(database), read_only=True)
         try:
-            report = run_calibration(con, settings)
+            report = run_calibration(con, settings, stage=args.stage)
         finally:
             con.close()
+    except ConfigError as exc:
+        logger.error("risk_calibration.config_error", error=str(exc))
+        return 2
     except (duckdb.Error, ValueError) as exc:
         logger.error("risk_calibration.failed", error=str(exc))
         return 1

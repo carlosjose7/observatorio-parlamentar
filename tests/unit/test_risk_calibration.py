@@ -35,6 +35,12 @@ def _settings_dict() -> dict:
             "aggregation": "mean",
             "columns": {"E": "political_exposure", "A": "expense_anomaly", "N": "network_influence"},
         },
+        "pooling": {
+            "k": {"camara": None, "senado": None},
+            "k_grid": [1, 4, 16],
+            "tolerance": 1e-9,
+            "strict_casas": ["camara"],
+        },
         "output_dir": "reports/risk_calibration",
     }
 
@@ -359,3 +365,258 @@ def test_clean_makes_report_json_safe() -> None:
 
 def test_main_returns_2_on_config_error(tmp_path: Path) -> None:
     assert rc.main(["--config", str(tmp_path / "absent.yaml")]) == 2
+
+
+# ------------------------------------------------------- pooling (ADR-063)
+
+
+def _pooled_frame(groups: dict[tuple[str, str], list[float]]) -> pd.DataFrame:
+    """Frame whose ``ln x`` equals the given values (meses = 12, total = 12 * exp(v))."""
+    rows = [
+        (f"{casa}-{uf}-{i}", 12.0 * float(np.exp(value)), 12.0, casa, uf)
+        for (casa, uf), values in groups.items()
+        for i, value in enumerate(values)
+    ]
+    return pd.DataFrame(rows, columns=["id", "total", "meses", "casa", "uf"]).set_index("id")
+
+
+def test_pooled_score_matches_hand_computation() -> None:
+    frame = _pooled_frame({("camara", "A"): [1.0, 2.0, 3.0], ("camara", "B"): [4.0, 5.0, 9.0, 10.0]})
+    result = rc.compute_volume_score_pooled(frame, {"camara": 2.0}, meses_min=3)
+    # m_c = 4, m_A = 2, m_B = 7, lambda_A = 3/5, lambda_B = 4/6
+    m_a, m_b = 0.6 * 2 + 0.4 * 4, (4 / 6) * 7 + (2 / 6) * 4
+    residual = np.array([1 - m_a, 2 - m_a, 3 - m_a, 4 - m_b, 5 - m_b, 9 - m_b, 10 - m_b])
+    scale = 1.4826 * np.median(np.abs(residual))
+    assert result["ln_dev"].to_numpy() == pytest.approx(residual)
+    assert result["z"].to_numpy() == pytest.approx(residual / scale)
+    assert result["lambda_u"].iloc[0] == pytest.approx(0.6)
+    assert result["lambda_u"].iloc[-1] == pytest.approx(4 / 6)
+    assert (result["v_flag"] == "ok").all()
+    assert result["V"].max() == 1.0
+
+
+def test_pooled_with_huge_k_reproduces_casa_level_rule() -> None:
+    frame = _volume_frame()
+    baseline = rc.compute_volume_score(frame, n_min=1000, meses_min=3)  # every group falls back to casa
+    pooled = rc.compute_volume_score_pooled(frame, {"camara": 1e12}, meses_min=3)
+    assert pooled["z"].to_numpy() == pytest.approx(baseline["z"].to_numpy(), abs=1e-6)
+
+
+def test_pooled_with_tiny_k_approaches_uf_median() -> None:
+    frame = _pooled_frame({("camara", "A"): [1.0, 2.0, 3.0], ("camara", "B"): [4.0, 5.0, 9.0]})
+    pooled = rc.compute_volume_score_pooled(frame, {"camara": 1e-9}, meses_min=3)
+    assert pooled["ln_dev"].iloc[:3].to_numpy() == pytest.approx([-1.0, 0.0, 1.0], abs=1e-6)
+    assert pooled["ln_dev"].iloc[3:].to_numpy() == pytest.approx([-1.0, 0.0, 4.0], abs=1e-6)
+
+
+def test_pooled_guards_and_missing_k() -> None:
+    frame = pd.DataFrame(
+        {
+            "total": [100.0, -5.0, 100.0, 100.0, 100.0],
+            "meses": [12.0, 12.0, 1.0, np.nan, 12.0],
+            "casa": ["camara", "camara", "camara", "camara", None],
+            "uf": ["AA"] * 5,
+        },
+        index=list("abcde"),
+    )
+    result = rc.compute_volume_score_pooled(frame, {"camara": 4.0}, meses_min=3)
+    assert result.loc["b", "v_flag"] == "sem_gasto_positivo"
+    assert result.loc["c", "v_flag"] == "janela_curta"
+    assert result.loc["d", "v_flag"] == "sem_intervalo"
+    assert result.loc["e", "v_flag"] == "sem_grupo"
+    assert result.loc["a", "v_flag"] == "sem_referencia"  # a lone eligible member: scale is zero
+    assert (result["V"] == 0).all()
+    with pytest.raises(ValueError, match="no pooling k"):
+        rc.compute_volume_score_pooled(frame, {"senado": 4.0}, meses_min=3)
+    with pytest.raises(ValueError, match="missing columns"):
+        rc.compute_volume_score_pooled(pd.DataFrame({"total": [1.0]}), {"camara": 1.0}, 1)
+
+
+def test_loo_components_and_error_sums_hand_example() -> None:
+    frame = _pooled_frame({("c", "A"): [1.0, 2.0], ("c", "B"): [3.0, 5.0]})
+    components = rc.loo_components(frame, meses_min=3)
+    assert components["m_c_loo"].tolist() == pytest.approx([3.0, 3.0, 2.0, 2.0])
+    assert components["m_u_loo"].tolist() == pytest.approx([2.0, 1.0, 5.0, 3.0])
+    assert components["n_u"].tolist() == [2.0, 2.0, 2.0, 2.0]
+
+    sums = rc.loo_error_sums(components, [1.0, 1e12, 1e-9], n_min=2)["c"]
+    assert sums["casa_only"] == (pytest.approx(7.0), 4)
+    assert sums["adr062_rule"][0] == pytest.approx(6.0)  # n_u = 2 >= n_min -> UF median
+    assert sums["k=1"][0] == pytest.approx(4.5)
+    assert sums["k=1e+12"][0] == pytest.approx(7.0, abs=1e-6)
+    assert sums["k=1e-09"][0] == pytest.approx(6.0, abs=1e-6)
+    assert rc.loo_error_sums(components, [1.0], n_min=3)["c"]["adr062_rule"][0] == pytest.approx(7.0)
+
+
+def test_loo_components_drops_singleton_house() -> None:
+    frame = _pooled_frame({("solo", "A"): [1.0]})
+    assert rc.loo_components(frame, meses_min=3).empty
+
+
+def test_aggregate_loo_pools_sums_not_means() -> None:
+    per_year = {
+        2023: {"c": {"casa_only": (10.0, 10), "k=1": (4.0, 10)}},
+        2024: {"c": {"casa_only": (30.0, 30), "k=1": (6.0, 30)}},
+    }
+    result = rc.aggregate_loo(per_year)
+    assert result["mean"]["c"]["casa_only"] == pytest.approx(1.0)
+    assert result["mean"]["c"]["k=1"] == pytest.approx(10.0 / 40.0)
+    assert result["n_obs"] == {"c": 40}
+    assert result["by_year"][2023]["c"]["k=1"] == pytest.approx(0.4)
+
+
+def test_select_k_prefers_larger_k_on_ties() -> None:
+    errors = {"k=1": 1.0, "k=2": 0.5, "k=4": 0.5, "k=8": 0.9}
+    assert rc.select_k(errors, [1, 2, 4, 8], 1e-9) == 4.0
+    near_tie = {"k=1": 0.5, "k=2": 0.5 + 1e-12}
+    assert rc.select_k(near_tie, [1, 2], 1e-9) == 2.0
+    assert rc.select_k({"k=1": 0.2, "k=2": 0.9}, [1, 2], 1e-9) == 1.0
+
+
+def test_uf_share_residual_known_values() -> None:
+    uf = pd.Series(["A", "A", "B", "B"])
+    assert rc.uf_share_residual(pd.Series([0.0, 0.0, 2.0, 2.0]), uf) == pytest.approx(1.0)
+    assert rc.uf_share_residual(pd.Series([0.0, 2.0, 0.0, 2.0]), uf) == pytest.approx(0.0)
+    assert math.isnan(rc.uf_share_residual(pd.Series([1.0, 1.0, 1.0, 1.0]), uf))
+    assert math.isnan(rc.uf_share_residual(pd.Series([1.0, 2.0, 3.0]), pd.Series(["A", "A", "A"])))
+
+
+def _acceptance(**overrides: object) -> dict:
+    data = {
+        "uf_residual": {
+            2023: {"camara": {"baseline": 0.20, "pooled": 0.10}, "senado": {"baseline": 0.30, "pooled": 0.30}},
+            2024: {"camara": {"baseline": 0.25, "pooled": 0.12}, "senado": {"baseline": 0.30, "pooled": 0.29}},
+        },
+        "loo_mean": {
+            "camara": {"casa_only": 1.0, "adr062_rule": 0.9, "k=4": 0.8},
+            "senado": {"casa_only": 1.0, "adr062_rule": 1.0, "k=64": 1.0},
+        },
+        "k_by_casa": {"camara": 4.0, "senado": 64.0},
+        "strict_casas": ["camara"],
+        "tolerance": 1e-9,
+    }
+    data.update(overrides)
+    return rc.evaluate_acceptance(**data)  # type: ignore[arg-type]
+
+
+def test_evaluate_acceptance_pass() -> None:
+    result = _acceptance()
+    assert result["a1"]["pass"] and result["a2"]["pass"] and result["all_pass"]
+    assert len(result["a1"]["rows"]) == 4 and len(result["a2"]["rows"]) == 2
+
+
+def test_evaluate_acceptance_a1_fails_when_strict_house_does_not_improve() -> None:
+    bad = {2023: {"camara": {"baseline": 0.10, "pooled": 0.10}, "senado": {"baseline": 0.3, "pooled": 0.3}}}
+    result = _acceptance(uf_residual=bad)
+    assert not result["a1"]["pass"] and not result["all_pass"]
+    assert result["a2"]["pass"]
+
+
+def test_evaluate_acceptance_a1_non_strict_house_cannot_worsen() -> None:
+    worse = {2023: {"camara": {"baseline": 0.2, "pooled": 0.1}, "senado": {"baseline": 0.3, "pooled": 0.4}}}
+    assert not _acceptance(uf_residual=worse)["a1"]["pass"]
+
+
+def test_evaluate_acceptance_a2_fails_when_chosen_k_is_worse_than_a_comparator() -> None:
+    loo = {
+        "camara": {"casa_only": 1.0, "adr062_rule": 0.7, "k=4": 0.8},
+        "senado": {"casa_only": 1.0, "adr062_rule": 1.0, "k=64": 1.0},
+    }
+    result = _acceptance(loo_mean=loo)
+    assert result["a1"]["pass"] and not result["a2"]["pass"] and not result["all_pass"]
+
+
+def test_evaluate_acceptance_nan_or_empty_fails() -> None:
+    nan = {2023: {"camara": {"baseline": float("nan"), "pooled": 0.1}}}
+    assert not _acceptance(uf_residual=nan)["a1"]["pass"]
+    assert not _acceptance(uf_residual={})["a1"]["pass"]
+    assert not _acceptance(loo_mean={})["a2"]["pass"]
+
+
+def test_attach_pooled_adds_columns_and_normalized_score() -> None:
+    volume = rc.compute_volume_score(_volume_frame(), n_min=10, meses_min=3)
+    scores = pd.DataFrame({"V": volume["V"].iloc[:12]})
+    volume_out, scores_out = rc.attach_pooled(volume, scores, {"camara": 4.0}, meses_min=3)
+    for column in ("z_pooled", "ln_dev_pooled", "lambda_u_pooled", "v_flag_pooled", "v_raw_pooled", "V_pooled"):
+        assert column in volume_out.columns
+    assert "V_pooled" not in scores.columns  # input untouched
+    assert scores_out["V_pooled"].max() == 1.0 and scores_out["V_pooled"].min() >= 0.0
+    assert scores_out["V_pooled"].idxmax() == "c0"
+
+
+def test_calibrate_weights_accepts_alternative_volume_column() -> None:
+    rng = np.random.default_rng(9)
+    frame = pd.DataFrame(rng.random((60, len(rc.SCORE_COLUMNS))), columns=list(rc.SCORE_COLUMNS))
+    frame["V_pooled"] = frame["V"] ** 2
+    base = rc.calibrate_weights({2023: frame}, 0.05)
+    pooled = rc.calibrate_weights({2023: frame}, 0.05, v_column="V_pooled")
+    assert sum(pooled["pooled"].values()) == pytest.approx(1.0)
+    assert pooled["pooled"] != base["pooled"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda p: p["pooling"].update(k={"camara": 1.0}), "exactly camara and senado"),
+        (lambda p: p["pooling"].update(k={"camara": -1.0, "senado": None}), "must be > 0"),
+        (lambda p: p["pooling"].update(k_grid=[1]), "at least 2"),
+        (lambda p: p["pooling"].update(k_grid=[1, 1, 2]), "unique values"),
+        (lambda p: p["pooling"].update(k_grid=[0, 1, 2]), "unique values"),
+        (lambda p: p["pooling"].update(strict_casas=["outra"]), "subset"),
+        (lambda p: p["pooling"].update(tolerance=-1), "greater than or equal to 0"),
+    ],
+)
+def test_pooling_config_validation(tmp_path: Path, mutate, message: str) -> None:  # type: ignore[no-untyped-def]
+    payload = _settings_dict()
+    mutate(payload)
+    with pytest.raises(rc.ConfigError, match=message):
+        rc.load_settings(_write_yaml(tmp_path / "c.yaml", payload))
+
+
+def test_k_columns_order_and_k_search_markdown() -> None:
+    errors = {"k=16": 0.3, "casa_only": 0.5, "k=1": 0.4, "adr062_rule": 0.45}
+    assert rc._k_columns(errors) == ["casa_only", "adr062_rule", "k=1", "k=16"]
+    report = {
+        "meta": {
+            "run_id": "abc",
+            "stage": "k_search",
+            "execution_timestamp": "t",
+            "window_years": [2023],
+            "n_min_pares": 8,
+        },
+        "k_search": {
+            "k_grid": [1, 16],
+            "loo_mean": {"camara": errors},
+            "n_obs": {"camara": 10},
+            "k_argmin": {"camara": 16.0},
+            "k_argmin_by_year": {2023: {"camara": 16.0}},
+        },
+    }
+    markdown = rc.render_markdown(report)
+    assert "# ADR-063 — k search" in markdown and "k = 16.000" in markdown
+
+
+def test_loo_residuals_hand_example() -> None:
+    frame = _pooled_frame({("c", "A"): [1.0, 2.0], ("c", "B"): [3.0, 5.0]})
+    components = rc.loo_components(frame, meses_min=3)
+    residuals = rc.loo_residuals(components, {"c": 1.0}, n_min=2)
+    assert residuals["r_casa_only"].tolist() == pytest.approx([-2.0, -1.0, 1.0, 3.0])
+    assert residuals["r_adr062_rule"].tolist() == pytest.approx([-1.0, 1.0, -2.0, 2.0])
+    assert residuals["r_pooled"].tolist() == pytest.approx([-1.5, 0.0, -0.5, 2.5])
+    fallback = rc.loo_residuals(components, {"c": 1.0}, n_min=3)  # UF too small -> house median
+    assert fallback["r_adr062_rule"].tolist() == pytest.approx(residuals["r_casa_only"].tolist())
+
+
+def test_evaluate_acceptance_a1_loo_is_informative_only() -> None:
+    in_sample_fails = {2023: {"camara": {"baseline": 0.05, "pooled": 0.10}, "senado": {"baseline": 0.3, "pooled": 0.3}}}
+    out_of_sample = {
+        2023: {
+            "camara": {"adr062_rule": 0.20, "pooled": 0.12, "casa_only": 0.30},
+            "senado": {"adr062_rule": 0.30, "pooled": 0.30, "casa_only": 0.30},
+        }
+    }
+    result = _acceptance(uf_residual=in_sample_fails, uf_share_loo=out_of_sample)
+    assert not result["a1"]["pass"] and not result["all_pass"]  # the locked criterion still decides
+    assert result["a1_loo"]["pass"] and result["a1_loo"]["informative"]
+    assert result["a1_loo"]["rows"][0]["casa_only"] == 0.30
+    assert not _acceptance()["a1_loo"]["pass"]  # no rows -> cannot be verified

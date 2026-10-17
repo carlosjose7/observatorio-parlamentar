@@ -2445,12 +2445,13 @@ decisão registrada aqui, não assumida.
 - [x] Onda 1c — documentação: ADR-062 no `ADR.md` (+ anexo de
   calibração e conformidade com ADR-029), notas em ADR-002/003/027,
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05 ("5 → 6 scores")
-- [ ] Onda 2 — (1) ADR-063 **Aceito em 15/10/2026** (A1/A2
-  pré-travados, código autorizado): emenda só do item 4 do ADR-062 (partial
-  pooling: mediana de UF encolhida p/ casa, MAD pooled por casa, `k`
-  em config, fallback onde encolher for impossível; aceite =
-  `delta_uf` residual menor no relatório); (2) depois, sobre o V
-  final: bootstrap dos pesos + CRITIC sobre postos (diff 2:
+- [ ] Onda 2 — (1) ADR-063 **Rejeitado em 16/10/2026** (k_search concluído:
+  argmin camara 8 / senado 4; A1 FAIL Câmara 2023–2024 — pooled deixa
+  mais resíduo de UF que a regra binária — e A2 FAIL Câmara —
+  LOO-MAE pooled acima da regra; veredito pré-travado executado:
+  vale a regra do ADR-062 (`V` final; `--stage baseline` é o padrão),
+  `n_min_pares` = 8); (2) a fazer, sobre o `V` do baseline:
+  bootstrap dos pesos + CRITIC sobre postos (diff 2:
   `bootstrap_samples`, `random_state`) e distribuições empíricas por
   score + sensibilidade do `risk_index` por peso (ADR-029)
 - [ ] Onda 3 — IF multivariado [C,D,E,N,V], SHAP restrito à camada ML
@@ -2460,3 +2461,9 @@ decisão registrada aqui, não assumida.
   casos públicos (4 categorias, recall top-k, sem nomes da memória) e
   ranking histórico `risk_index` antes (0.2) × depois (ADR-029);
   ativação só com os critérios PENDENTES do ADR-029 atendidos
+- [ ] ADR futuro (backlog) — partial pooling **só no Senado**: no
+  ADR-063 o Senado é 100% casa (sem nível de UF na regra do ADR-062)
+  e o resíduo de UF é forte (baseline 0,243/0,504/0,387 →
+  0,070/0,277/0,265 com k = 4; LOO-MAE 0,5676 → 0,5455); exige ADR
+  novo com critérios travados antes e validação temporal (k escolhido
+  em dois anos, testado no terceiro) — não reabre o ADR-063.

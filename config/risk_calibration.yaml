@@ -30,4 +30,14 @@ risk_calibration:
       A: expense_anomaly_score
       N: network_influence_score
 
+  # Partial pooling do V (ADR-063). k = null até a busca por leave-one-out
+  # (--stage k_search); depois, preencher k por casa e rodar --stage full.
+  pooling:
+    k:
+      camara: null
+      senado: null
+    k_grid: [0.5, 1, 2, 4, 8, 16, 32, 64, 128]
+    tolerance: 1.0e-9              # empate numérico (seleção de k e critérios A1/A2)
+    strict_casas: [camara]         # A1 exige melhora estrita; nas demais, não piorar
+
   output_dir: reports/risk_calibration

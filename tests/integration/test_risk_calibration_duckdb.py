@@ -78,7 +78,7 @@ def _build_gold(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("CREATE TABLE gold.risk_inputs AS SELECT * FROM inputs_df")
 
 
-def _settings(tmp_path: Path) -> rc.CalibrationSettings:
+def _settings(tmp_path: Path, k: dict[str, float | None] | None = None) -> rc.CalibrationSettings:
     return rc.CalibrationSettings(
         window_years=YEARS,
         days_per_month=30.4375,
@@ -96,6 +96,12 @@ def _settings(tmp_path: Path) -> rc.CalibrationSettings:
             period_expression="CAST(data_sk // 10000 AS INTEGER)",
             aggregation="mean",
             columns={"E": "political_exposure", "A": "expense_anomaly", "N": "network_influence"},
+        ),
+        pooling=rc.PoolingConfig(
+            k=k if k is not None else {"camara": 4.0, "senado": 64.0},
+            k_grid=[1.0, 4.0, 16.0, 64.0],
+            tolerance=1e-9,
+            strict_casas=["camara"],
         ),
         output_dir=tmp_path / "reports",
     )
@@ -195,3 +201,89 @@ def test_cli_returns_1_on_database_error(tmp_path: Path) -> None:
     empty_db = tmp_path / "empty.duckdb"
     duckdb.connect(str(empty_db)).close()
     assert rc.main(["--config", str(config_path), "--database", str(empty_db)]) == 1
+
+
+# ------------------------------------------------------- pooling (ADR-063)
+
+
+def test_k_search_stage_runs_without_configured_k(gold: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
+    settings = _settings(tmp_path, k={"camara": None, "senado": None})
+    report = rc.run_calibration(gold, settings, stage="k_search")
+    assert report["meta"]["stage"] == "k_search"
+    assert "years" not in report and "k_search" in report
+    search = report["k_search"]
+    assert set(search["k_argmin"]) == {"camara", "senado"}
+    assert all(k in settings.pooling.k_grid for k in search["k_argmin"].values())
+    assert {"casa_only", "adr062_rule", "k=1", "k=64"} <= set(search["loo_mean"]["camara"])
+    assert search["n_obs"]["camara"] > search["n_obs"]["senado"]
+    assert set(search["k_argmin_by_year"]) == set(YEARS)
+
+
+def test_full_stage_requires_k(gold: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
+    settings = _settings(tmp_path, k={"camara": 4.0, "senado": None})
+    with pytest.raises(rc.ConfigError, match="pooling.k is not set for \\['senado'\\]"):
+        rc.run_calibration(gold, settings, stage="full")
+
+
+def test_full_stage_reports_pooling_and_acceptance(gold: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
+    report = rc.run_calibration(gold, _settings(tmp_path), stage="full")
+    pooling = report["pooling"]
+    assert pooling["k"] == {"camara": 4.0, "senado": 64.0}
+    assert set(pooling["acceptance"]) == {"a1", "a1_loo", "a2", "all_pass"}
+    assert pooling["acceptance"]["a1_loo"]["informative"] is True
+    assert len(pooling["acceptance"]["a1_loo"]["rows"]) == len(YEARS) * 2
+    assert len(pooling["acceptance"]["a1"]["rows"]) == len(YEARS) * 2
+    assert sum(pooling["weights"]["pooled"].values()) == pytest.approx(1.0)
+    for year in YEARS:
+        block = report["years"][year]["pooling"]
+        assert set(block["uf_share_residual"]) == {"camara", "senado"}
+        assert 0.0 < block["lambda_u"]["camara"]["quantiles"]["p50"] < 1.0
+        assert block["v_pooled_vs_v"]["spearman"] <= 1.0
+    markdown = rc.render_markdown(rc._clean(report))
+    assert "## ADR-063 — partial pooling" in markdown and "### A1" in markdown and "### A2" in markdown
+
+
+def test_cli_stages(tmp_path: Path) -> None:
+    database = tmp_path / "warehouse.duckdb"
+    con = duckdb.connect(str(database))
+    _build_gold(con)
+    con.close()
+
+    def write_config(k: dict[str, float | None]) -> Path:
+        path = tmp_path / "c.yaml"
+        payload = json.loads(_settings(tmp_path, k=k).model_dump_json())
+        path.write_text(yaml.safe_dump({"risk_calibration": payload}), encoding="utf-8")
+        return path
+
+    no_k = write_config({"camara": None, "senado": None})
+    assert rc.main(["--config", str(no_k), "--database", str(database), "--stage", "k_search"]) == 0
+    markdown = next((tmp_path / "reports").glob("risk_k_search_*.md")).read_text(encoding="utf-8")
+    assert "# ADR-063 — k search" in markdown
+    assert rc.main(["--config", str(no_k), "--database", str(database), "--stage", "full"]) == 2
+
+    with_k = write_config({"camara": 4.0, "senado": 64.0})
+    assert rc.main(["--config", str(with_k), "--database", str(database), "--stage", "full"]) == 0
+    assert list((tmp_path / "reports").glob("risk_calibration_*.json"))
+
+
+def test_baseline_stage_is_default_and_needs_no_k(gold: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
+    settings = _settings(tmp_path, k={"camara": None, "senado": None})
+    report = rc.run_calibration(gold, settings)
+    assert report["meta"]["stage"] == "baseline"
+    assert set(report) == {"meta", "years", "weights"}
+    assert sum(report["weights"]["pooled"].values()) == pytest.approx(1.0)
+    assert "pooling" not in report["years"][YEARS[0]]
+    assert "ADR-063" not in rc.render_markdown(rc._clean(report))
+
+
+def test_cli_default_stage_runs_without_k(tmp_path: Path) -> None:
+    database = tmp_path / "warehouse.duckdb"
+    con = duckdb.connect(str(database))
+    _build_gold(con)
+    con.close()
+    path = tmp_path / "c.yaml"
+    payload = json.loads(_settings(tmp_path, k={"camara": None, "senado": None}).model_dump_json())
+    path.write_text(yaml.safe_dump({"risk_calibration": payload}), encoding="utf-8")
+    assert rc.main(["--config", str(path), "--database", str(database)]) == 0
+    saved = json.loads(next((tmp_path / "reports").glob("risk_calibration_*.json")).read_text(encoding="utf-8"))
+    assert saved["meta"]["stage"] == "baseline"

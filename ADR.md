@@ -3782,7 +3782,8 @@ Título: Revisão do `risk_index` — HHI redefinido, score de volume e camada d
 
 Status:
 Aceito — Sprint 29, Ondas 0–1 (branch sprint/29-risk-index)
-(Nota 15/10/2026, ADR-063: item 4 emendado por partial pooling — ver ADR-063.)
+(Nota 15/10/2026, ADR-063: item 4 emendado por partial pooling — ver ADR-063.
+Nota 16/10/2026, ADR-063 Rejeitado: emenda não adotada; item 4 original mantido.)
 
 Relação com ADRs anteriores (explícita para não fragilizar a regra
 "não contradizer sem ADR"):
@@ -4022,7 +4023,9 @@ ADR-063
 Título: Partial pooling no score de volume V — emenda do item 4 do ADR-062
 
 Status:
-Aceito — Sprint 29, Onda 2 (aceite 15/10/2026; A1/A2 e `k` por casa confirmados)
+Rejeitado — Sprint 29, Onda 2 (aceite 15/10/2026; veredito 16/10/2026:
+A1 FAIL na Câmara 2023–2024 e A2 FAIL na Câmara; vale a regra do
+ADR-062, `n_min_pares` = 8)
 
 Relação com ADRs anteriores (explícita para não fragilizar a regra
 "não contradizer sem ADR"):
@@ -4135,3 +4138,28 @@ Consequências:
 - Trabalho da Onda 2 (somente após o aceite): função de localização
   encolhida e escala pooled em `risk_calibration.py`, grade de k com
   validação LOO, diagnósticos novos e testes.
+
+Resultado (veredito, 16/10/2026):
+- k_search (run a615ef91): Câmara k = 8 (argmin por ano: 16 / 4 / 4);
+  Senado k = 4 (4 / 2 / 4). O full (run 721888cc) roda com k = 8 e 4.
+- A1 (`uf_share_residual`, regra → pooled): Câmara 0,0644 → 0,0855
+  (2023) e 0,0497 → 0,0516 (2024) — piora; 0,0554 → 0,0532 (2025) —
+  melhora. Senado: 0,2429 → 0,0695; 0,5043 → 0,2772; 0,3874 → 0,2654.
+  FAIL na Câmara em 2023–2024.
+- A2 (erro LOO médio nos três anos): Câmara 0,2706 (regra do ADR-062)
+  vs 0,2711 (k = 8) vs 0,2796 (`casa_only`) → FAIL por 0,0005; Senado
+  0,5676 (regra) vs 0,5455 (k = 4) → passa.
+- Variante fora da amostra (`a1_loo`, informativa): mesmo padrão na
+  Câmara (piora em 2024–2025).
+- Conclusão: A1 e A2 falham na Câmara → **ADR-063 Rejeitado**; vale a
+  regra do ADR-062 (`n_min_pares` = 8). A causa é estrutural: nos
+  grupos grandes da Câmara a regra binária já remove a localização de
+  UF por inteiro, e o encolhimento retém parte dela (λ_u < 1); o ganho
+  do pooling concentra-se no Senado e no fallback.
+- Evidência: `reports/risk_calibration/risk_k_search_a615ef91.{json,md}`
+  e `risk_calibration_721888cc.{json,md}`.
+- Config de cada run: `config/risk_calibration.yaml` (sha256
+  `cbdea3ae532649cc3d40ae413983c2168be011c24ca7ca38aa2af4f3edbaf77f`)
+  no k_search; `risk_calibration_721888cc.config.yaml` (sha256
+  `c3a35a4007fc3591ef95454a3be6834b873dad53452f7fdbb7a3163efda3db35`)
+  ao lado do relatório do full.
