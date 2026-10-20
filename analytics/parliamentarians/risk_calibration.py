@@ -13,7 +13,11 @@ ADR-062 requires before a ``model_version`` is frozen:
 * old (simple mean) vs new (value-weighted) supplier-dependency score;
 * ADR-063 partial pooling of the volume score: leave-one-out search of the
   shrinkage ``k`` (``--stage k_search``) and the acceptance criteria A1/A2
-  with the chosen ``k`` (``--stage full``).
+  with the chosen ``k`` (``--stage full``);
+* a data fingerprint (digests and control totals of the inputs) in every report;
+* ``--stage robustness`` (ADR-029 criteria): empirical score distributions, cluster
+  bootstrap of the CRITIC weights, CRITIC on percentile ranks and the sensitivity of
+  the base-index ranking to the weight vector.
 
 This module does not train the Isolation Forest, does not write to the
 warehouse and does not persist a model artifact. Those steps belong to
@@ -175,6 +179,27 @@ class PoolingConfig(BaseModel):
         return self
 
 
+class RobustnessConfig(BaseModel):
+    """Weight-robustness and sensitivity settings (ADR-029 criteria; ``--stage robustness``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bootstrap_samples: int = Field(ge=2)
+    random_state: int
+    ci_level: float = Field(gt=0, lt=1)
+    dirichlet_samples: int = Field(ge=2)
+    dirichlet_concentration: float = Field(gt=0)
+    stability_threshold: float = Field(gt=0, le=1)
+    distribution_quantiles: list[float] = Field(min_length=1)
+
+    @field_validator("distribution_quantiles")
+    @classmethod
+    def _quantiles(cls, value: list[float]) -> list[float]:
+        if any(not 0 < q < 1 for q in value) or len(set(value)) != len(value):
+            raise ValueError("distribution_quantiles must be unique values in (0, 1)")
+        return value
+
+
 class CalibrationSettings(BaseModel):
     """Validated settings of the calibration (``config/risk_calibration.yaml``)."""
 
@@ -192,6 +217,9 @@ class CalibrationSettings(BaseModel):
     tables: TablesConfig
     scores_source: ScoresSource
     pooling: PoolingConfig
+    robustness: RobustnessConfig
+    fingerprint_decimals: int = Field(ge=0, le=15)
+    fingerprint_money_decimals: int = Field(ge=0, le=6)
     output_dir: Path
 
     @field_validator("n_min_sensitivity")
@@ -1348,6 +1376,377 @@ def analyze_pooling(
     }
 
 
+# --------------------------------------------------------------------------
+# Data fingerprint, score distributions and weight robustness (Sprint 29, Onda 2)
+# --------------------------------------------------------------------------
+
+
+def frame_fingerprint(frame: pd.DataFrame, sort_by: Sequence[str], decimals: int) -> str:
+    """SHA-256 of a frame, independent of row order and of float noise below ``decimals``.
+
+    Args:
+        frame: Data to fingerprint.
+        sort_by: Columns that define a deterministic row order.
+        decimals: Decimal places kept for floating-point values.
+
+    Returns:
+        Hexadecimal digest.
+    """
+    ordered = frame.sort_values(list(sort_by), kind="mergesort").reset_index(drop=True)
+    text = ordered.to_csv(index=False, float_format=f"%.{decimals}f")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def data_fingerprint(
+    totals: pd.DataFrame,
+    pairs: pd.DataFrame,
+    groups: pd.DataFrame,
+    external: pd.DataFrame,
+    intervals: pd.DataFrame,
+    decimals: int,
+    money_decimals: int,
+) -> dict[str, Any]:
+    """Fingerprint of the Gold inputs read by a calibration run.
+
+    The report already stores the SHA-256 of the configuration; this adds the
+    identity of the data, so a change of inputs between two runs (a rebuilt
+    Silver, a new ingestion) can be told apart from a change of code or config.
+
+    Args:
+        totals: Output of :func:`load_totals`.
+        pairs: Output of :func:`load_pairs`.
+        groups: Output of :func:`load_groups`.
+        external: Output of :func:`load_external_scores`.
+        intervals: Output of :func:`load_intervals`.
+        decimals: Decimal places kept when hashing score-like floating-point values.
+        money_decimals: Decimal places kept for monetary sums (``totals`` and
+            ``pairs``). Those are aggregates computed by the database, whose
+            floating-point summation order is not guaranteed, so they are
+            rounded to the cent grid, far above the summation noise.
+
+    Returns:
+        ``hashes`` (one digest per input), ``rows`` (row counts) and
+        ``sums_by_year`` (control totals per calendar year).
+    """
+    as_text = intervals.assign(start=intervals["start"].astype(str), end=intervals["end"].astype(str))
+    hashes = {
+        "totals": frame_fingerprint(totals, ["id_parlamentar", "periodo"], money_decimals),
+        "pairs": frame_fingerprint(pairs, ["id_parlamentar", "id_fornecedor", "periodo"], money_decimals),
+        "groups": frame_fingerprint(groups, ["id_parlamentar", "periodo"], decimals),
+        "external": frame_fingerprint(external, ["id_parlamentar", "periodo"], decimals),
+        "intervals": frame_fingerprint(as_text, ["id_parlamentar", "start", "end"], decimals),
+    }
+    rows = {
+        "totals": int(len(totals)),
+        "pairs": int(len(pairs)),
+        "groups": int(len(groups)),
+        "external": int(len(external)),
+        "intervals": int(len(intervals)),
+    }
+    sums: dict[int, dict[str, float]] = {}
+    for year in sorted(totals["periodo"].unique()):
+        year_totals = totals.loc[totals["periodo"] == year]
+        year_pairs = pairs.loc[pairs["periodo"] == year]
+        year_external = external.loc[external["periodo"] == year]
+        sums[int(year)] = {
+            "total": round(float(year_totals["total"].sum()), 2),
+            "pairs_valor": round(float(year_pairs["valor"].sum()), 2),
+            "E": round(float(year_external["E"].sum()), 6),
+            "A": round(float(year_external["A"].sum()), 6),
+            "N": round(float(year_external["N"].sum()), 6),
+        }
+    return {"hashes": hashes, "rows": rows, "sums_by_year": sums}
+
+
+def score_distribution(scores: pd.DataFrame, quantiles: Sequence[float]) -> dict[str, Any]:
+    """Empirical distribution of each normalized score (ADR-029 criterion).
+
+    Args:
+        scores: Normalized scores, one column per entry of :data:`SCORE_COLUMNS`.
+        quantiles: Quantiles to report, in (0, 1).
+
+    Returns:
+        Per score: ``n``, ``mean``, ``std``, ``skew``, ``share_zero`` and ``quantiles``.
+    """
+    result: dict[str, Any] = {}
+    for name in SCORE_COLUMNS:
+        values = scores[name]
+        result[name] = {
+            "n": int(values.size),
+            "mean": float(values.mean()),
+            "std": float(values.std(ddof=1)),
+            "skew": float(values.skew()),
+            "share_zero": float((values == 0).mean()),
+            "quantiles": {f"p{q * 100:g}": float(values.quantile(q)) for q in quantiles},
+        }
+    return result
+
+
+def percentile_rank_scores(scores: pd.DataFrame) -> pd.DataFrame:
+    """Percentile ranks in (0, 1] per column (ties share the average rank).
+
+    Args:
+        scores: Scores of one period.
+
+    Returns:
+        Frame with the same shape; every non-constant column is roughly uniform.
+    """
+    return scores.rank(pct=True, method="average")
+
+
+def stack_scores(year_scores: Mapping[int, pd.DataFrame], v_column: str = "V") -> pd.DataFrame:
+    """Stack the yearly score frames with ``year`` and ``id`` columns.
+
+    Args:
+        year_scores: Normalized scores per year, indexed by parliamentarian.
+        v_column: Column acting as ``V``.
+
+    Returns:
+        Frame with ``year``, ``id`` and one column per score; rows are sorted by id
+        within each year, so the result does not depend on the input row order.
+    """
+    frames = {year: _ordered_scores(frame, v_column).sort_index() for year, frame in year_scores.items()}
+    return pd.concat(frames, names=["year", "id"]).reset_index()
+
+
+def _id_positions(ids: pd.Series) -> list[np.ndarray]:
+    """Row positions of every distinct id (the resampling clusters).
+
+    Clusters are numbered in sorted id order, so the draws of a seeded bootstrap
+    do not depend on the order in which the database returned the rows.
+    """
+    codes, _ = pd.factorize(ids, sort=True)
+    order = np.argsort(codes, kind="stable")
+    boundaries = np.cumsum(np.bincount(codes))[:-1]
+    return np.split(order, boundaries)
+
+
+def bootstrap_critic_weights(stacked: pd.DataFrame, n_boot: int, rng: np.random.Generator) -> np.ndarray:
+    """Cluster bootstrap of the pooled CRITIC weights.
+
+    Parliamentarians are resampled with replacement and keep all their
+    year-rows, because the same person appears in several years.
+
+    Args:
+        stacked: Output of :func:`stack_scores`.
+        n_boot: Number of bootstrap draws.
+        rng: Random generator (seeded by the caller).
+
+    Returns:
+        Array ``(n_boot, n_scores)`` of weights in :data:`SCORE_COLUMNS` order.
+    """
+    columns = list(SCORE_COLUMNS)
+    values = stacked[columns]
+    positions = _id_positions(stacked["id"])
+    draws = np.empty((n_boot, len(columns)))
+    for draw in range(n_boot):
+        chosen = rng.integers(0, len(positions), size=len(positions))
+        index = np.concatenate([positions[cluster] for cluster in chosen])
+        draws[draw] = critic_weights(values.iloc[index]).reindex(columns).to_numpy()
+    return draws
+
+
+def summarize_bootstrap(draws: np.ndarray, reference: pd.Series, ci_level: float) -> dict[str, Any]:
+    """Percentile intervals of the bootstrapped weights.
+
+    Args:
+        draws: Output of :func:`bootstrap_critic_weights`.
+        reference: Weights of the full sample, indexed by score.
+        ci_level: Interval level, e.g. 0.95.
+
+    Returns:
+        Per score: reference, mean, std, interval and whether the interval
+        contains the uniform weight; plus how often each score has the top weight.
+    """
+    columns = list(SCORE_COLUMNS)
+    uniform = 1.0 / len(columns)
+    low, high = np.percentile(draws, [(1 - ci_level) / 2 * 100, (1 + ci_level) / 2 * 100], axis=0)
+    scores = {
+        name: {
+            "reference": float(reference[name]),
+            "mean": float(draws[:, j].mean()),
+            "std": float(draws[:, j].std(ddof=1)),
+            "ci_low": float(low[j]),
+            "ci_high": float(high[j]),
+            "includes_uniform": bool(low[j] <= uniform <= high[j]),
+        }
+        for j, name in enumerate(columns)
+    }
+    top = pd.Series(np.array(columns)[draws.argmax(axis=1)]).value_counts(normalize=True)
+    return {
+        "n_draws": int(len(draws)),
+        "ci_level": ci_level,
+        "uniform_weight": uniform,
+        "scores": scores,
+        "share_top_weight": {name: float(top.get(name, 0.0)) for name in columns},
+    }
+
+
+def dirichlet_weights(reference: np.ndarray, concentration: float, n: int, rng: np.random.Generator) -> np.ndarray:
+    """Random weight vectors around ``reference`` (Dirichlet, mean = reference).
+
+    Args:
+        reference: Reference weights (sum 1).
+        concentration: Larger values stay closer to ``reference``.
+        n: Number of vectors.
+        rng: Random generator (seeded by the caller).
+
+    Returns:
+        Array ``(n, len(reference))`` whose rows sum to one.
+    """
+    alpha = np.where(reference > 0, concentration * reference, 1e-9)
+    return rng.dirichlet(alpha, size=n)
+
+
+def index_ranks(scores: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """Descending ranks (1 = highest) of the weighted base index.
+
+    Args:
+        scores: Matrix ``(n, s)`` of normalized scores.
+        weights: Matrix ``(d, s)``, one weight vector per row.
+
+    Returns:
+        Matrix ``(n, d)`` of ranks, ties broken by position.
+    """
+    index = scores @ weights.T
+    order = np.argsort(-index, axis=0, kind="stable")
+    ranks = np.empty_like(order)
+    np.put_along_axis(ranks, order, np.arange(1, index.shape[0] + 1)[:, None], axis=0)
+    return ranks.astype(float)
+
+
+def sensitivity_metrics(
+    scores: np.ndarray,
+    reference: np.ndarray,
+    alternatives: np.ndarray,
+    *,
+    top_fraction: float,
+    ci_level: float,
+    stability_threshold: float,
+    intervals: bool,
+) -> dict[str, Any]:
+    """How much the base-index ranking moves when the weights change.
+
+    Args:
+        scores: Matrix ``(n, s)`` of normalized scores of one year.
+        reference: Reference weights, shape ``(s,)``.
+        alternatives: Alternative weight vectors, shape ``(d, s)``.
+        top_fraction: Share defining the top set.
+        ci_level: Level of the summary interval (and of the rank interval).
+        stability_threshold: Share of vectors in which a top member must stay on top.
+        intervals: Also report per-parliamentarian rank intervals (needs ``d > 1``).
+
+    Returns:
+        Spearman, top-set Jaccard and mean absolute rank shift against the
+        reference ranking (mean and interval over the vectors); optionally
+        the rank-interval widths and the share of stable top members.
+    """
+    n = scores.shape[0]
+    k = max(1, math.ceil(top_fraction * n))
+    reference_rank = index_ranks(scores, reference[None, :])[:, 0]
+    ranks = index_ranks(scores, alternatives)
+    centered_ref = reference_rank - reference_rank.mean()
+    centered = ranks - ranks.mean(axis=0)
+    denominator = np.sqrt((centered_ref**2).sum()) * np.sqrt((centered**2).sum(axis=0))
+    spearman_values = (centered_ref @ centered) / denominator
+    reference_top = reference_rank <= k
+    top = ranks <= k
+    inter = (top & reference_top[:, None]).sum(axis=0)
+    jaccard_values = inter / (2 * k - inter)
+    shift_values = np.abs(ranks - reference_rank[:, None]).mean(axis=0)
+    low_q, high_q = (1 - ci_level) / 2 * 100, (1 + ci_level) / 2 * 100
+
+    def summary(values: np.ndarray) -> dict[str, float]:
+        low, high = np.percentile(values, [low_q, high_q])
+        return {"mean": float(values.mean()), "low": float(low), "high": float(high)}
+
+    result: dict[str, Any] = {
+        "n": int(n),
+        "top_k": int(k),
+        "n_weight_vectors": int(alternatives.shape[0]),
+        "spearman": summary(spearman_values),
+        "jaccard_top": summary(jaccard_values),
+        "mean_rank_shift": summary(shift_values),
+    }
+    if intervals:
+        rank_low, rank_high = np.percentile(ranks, [low_q, high_q], axis=1)
+        widths = rank_high - rank_low
+        stable = (top.mean(axis=1)[reference_top] >= stability_threshold).mean()
+        result["rank_interval"] = {
+            "median_width": float(np.median(widths)),
+            "p95_width": float(np.percentile(widths, 95)),
+            "median_width_share": float(np.median(widths) / n),
+        }
+        result["share_top_stable"] = float(stable)
+    return result
+
+
+def run_robustness(year_scores: Mapping[int, pd.DataFrame], settings: CalibrationSettings) -> dict[str, Any]:
+    """Weight robustness and sensitivity of the base index (ADR-062 rule for ``V``).
+
+    Args:
+        year_scores: Normalized scores per year from :func:`build_year`.
+        settings: Calibration settings.
+
+    Returns:
+        Weights under Min-Max and percentile-rank normalization, the cluster
+        bootstrap of the weights, the agreement between the two normalizations
+        and the sensitivity of each year's ranking to alternative weights.
+    """
+    cfg = settings.robustness
+    # Row order must not matter: DuckDB does not guarantee it, and ties in the index are
+    # broken by position.
+    year_scores = {year: frame.sort_index() for year, frame in year_scores.items()}
+    boot_seed, dirichlet_seed = np.random.SeedSequence(cfg.random_state).spawn(2)
+    columns = list(SCORE_COLUMNS)
+    stacked = stack_scores(year_scores)
+    reference = critic_weights(stacked[columns])
+    reference_array = reference.to_numpy()
+    draws = bootstrap_critic_weights(stacked, cfg.bootstrap_samples, np.random.default_rng(boot_seed))
+
+    rank_frames = {year: percentile_rank_scores(_ordered_scores(frame, "V")) for year, frame in year_scores.items()}
+    rank_weights = critic_weights(pd.concat(list(rank_frames.values()), ignore_index=True)[columns])
+    rank_array = rank_weights.reindex(columns).to_numpy()
+    uniform = np.full((1, len(columns)), 1.0 / len(columns))
+    dirichlet = dirichlet_weights(
+        reference_array, cfg.dirichlet_concentration, cfg.dirichlet_samples, np.random.default_rng(dirichlet_seed)
+    )
+
+    common = {
+        "top_fraction": settings.top_fraction,
+        "ci_level": cfg.ci_level,
+        "stability_threshold": cfg.stability_threshold,
+    }
+    sensitivity: dict[int, Any] = {}
+    agreement: dict[int, Any] = {}
+    for year, frame in year_scores.items():
+        matrix = _ordered_scores(frame, "V").to_numpy(dtype=float)
+        sensitivity[year] = {
+            "uniform": sensitivity_metrics(matrix, reference_array, uniform, intervals=False, **common),
+            "critic_rank_weights": sensitivity_metrics(
+                matrix, reference_array, rank_array[None, :], intervals=False, **common
+            ),
+            "bootstrap_weights": sensitivity_metrics(matrix, reference_array, draws, intervals=True, **common),
+            "dirichlet_weights": sensitivity_metrics(matrix, reference_array, dirichlet, intervals=True, **common),
+        }
+        minmax_index = pd.Series(matrix @ reference_array)
+        rank_index = pd.Series(rank_frames[year].to_numpy(dtype=float) @ rank_array)
+        agreement[year] = compare_rankings(minmax_index, rank_index, settings.top_fraction)
+    difference = (reference - rank_weights).abs()
+    return {
+        "config": cfg.model_dump(),
+        "weights": {
+            "minmax_pooled": reference.to_dict(),
+            "rank_pooled": rank_weights.to_dict(),
+            "abs_diff": difference.to_dict(),
+            "max_abs_diff": float(difference.max()),
+        },
+        "bootstrap": summarize_bootstrap(draws, reference, cfg.ci_level),
+        "normalization_agreement": agreement,
+        "sensitivity": sensitivity,
+    }
+
+
 def _ordered_scores(frame: pd.DataFrame, v_column: str) -> pd.DataFrame:
     """Scores in :data:`SCORE_COLUMNS` order, with ``v_column`` acting as ``V``."""
     others = [name for name in SCORE_COLUMNS if name != "V"]
@@ -1392,11 +1791,14 @@ def calibrate_weights(
 def run_calibration(
     con: duckdb.DuckDBPyConnection,
     settings: CalibrationSettings,
-    stage: Literal["baseline", "k_search", "full"] = "baseline",
+    stage: Literal["baseline", "k_search", "full", "robustness"] = "baseline",
 ) -> dict[str, Any]:
     """Run the calibration and return the report.
 
     Stages:
+        ``robustness``: score distributions, cluster bootstrap of the CRITIC
+        weights, CRITIC on percentile ranks and the sensitivity of the
+        base-index ranking to the weights (ADR-029); needs no ``pooling.k``.
         ``baseline`` (default): the ADR-062 diagnostics (CRITIC weights,
         dispersion, variance decomposition, ``n_min_pares`` sensitivity,
         old vs new supplier-dependency score); needs no ``pooling.k``.
@@ -1409,7 +1811,7 @@ def run_calibration(
     Args:
         con: Open DuckDB connection (read-only recommended).
         settings: Calibration settings.
-        stage: ``"baseline"``, ``"k_search"`` or ``"full"``.
+        stage: ``"baseline"``, ``"k_search"``, ``"full"`` or ``"robustness"``.
 
     Returns:
         JSON-friendly report.
@@ -1424,7 +1826,8 @@ def run_calibration(
     pairs = load_pairs(con, settings)
     groups = load_groups(con, settings)
     external = load_external_scores(con, settings)
-    months = months_in_office(load_intervals(con, settings), settings.window_years, settings.days_per_month)
+    intervals = load_intervals(con, settings)
+    months = months_in_office(intervals, settings.window_years, settings.days_per_month)
 
     volumes: dict[int, pd.DataFrame] = {}
     year_scores: dict[int, pd.DataFrame] = {}
@@ -1443,6 +1846,15 @@ def run_calibration(
         "n_min_pares": settings.n_min_pares,
         "meses_min": settings.meses_min,
         "w_min_aviso": settings.w_min_aviso,
+        "data_fingerprint": data_fingerprint(
+            totals,
+            pairs,
+            groups,
+            external,
+            intervals,
+            settings.fingerprint_decimals,
+            settings.fingerprint_money_decimals,
+        ),
     }
     if stage == "baseline":
         return {
@@ -1452,6 +1864,17 @@ def run_calibration(
                 for year in volumes
             },
             "weights": calibrate_weights(year_scores, settings.w_min_aviso),
+        }
+
+    if stage == "robustness":
+        quantiles = settings.robustness.distribution_quantiles
+        return {
+            "meta": meta,
+            "distributions": {
+                "pooled": score_distribution(stack_scores(year_scores)[list(SCORE_COLUMNS)], quantiles),
+                "by_year": {year: score_distribution(frame, quantiles) for year, frame in year_scores.items()},
+            },
+            "robustness": run_robustness(year_scores, settings),
         }
 
     grid = list(settings.pooling.k_grid)
@@ -1566,6 +1989,7 @@ def _render_k_search(report: Mapping[str, Any]) -> str:
         f"- execution_timestamp: {meta['execution_timestamp']}",
         f"- window_years: {meta['window_years']} | n_min_pares (comparator): {meta['n_min_pares']}",
         f"- k_grid: {search['k_grid']}",
+        _fingerprint_line(meta),
         "",
         "## Mean absolute LOO error (pooled over years)",
         "",
@@ -1649,6 +2073,114 @@ def _render_pooling(report: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _fingerprint_line(meta: Mapping[str, Any]) -> str:
+    """One Markdown line with the short digests of the data inputs."""
+    fingerprint = meta.get("data_fingerprint")
+    if not fingerprint:
+        return "- data_fingerprint: n/a"
+    digests = " | ".join(f"{name} {digest[:12]}" for name, digest in fingerprint["hashes"].items())
+    return f"- data_fingerprint: {digests}"
+
+
+def _summary_cell(summary: Mapping[str, float]) -> str:
+    """``mean (low–high)`` for a metric summary."""
+    return f"{_fmt(summary['mean'])} ({_fmt(summary['low'])}–{_fmt(summary['high'])})"
+
+
+def _render_robustness(report: Mapping[str, Any]) -> str:
+    """Markdown of the ``robustness`` stage (ADR-029 criteria)."""
+    meta, robustness = report["meta"], report["robustness"]
+    weights, boot = robustness["weights"], robustness["bootstrap"]
+    config = robustness["config"]
+    lines = [
+        "# ADR-029 — weight robustness and sensitivity (base index, ADR-062 rule for V)",
+        "",
+        f"- run_id: `{meta['run_id']}` | stage: {meta['stage']}",
+        f"- execution_timestamp: {meta['execution_timestamp']}",
+        f"- window_years: {meta['window_years']}",
+        _fingerprint_line(meta),
+        f"- bootstrap_samples: {config['bootstrap_samples']} | dirichlet_samples: {config['dirichlet_samples']} "
+        f"| dirichlet_concentration: {config['dirichlet_concentration']} | random_state: {config['random_state']} "
+        f"| ci_level: {config['ci_level']} | stability_threshold: {config['stability_threshold']}",
+        "",
+        "## Empirical distribution of each score",
+        "",
+    ]
+    sections = {"pooled": report["distributions"]["pooled"], **report["distributions"]["by_year"]}
+    for label, section in sections.items():
+        names = list(next(iter(section.values()))["quantiles"])
+        lines += [
+            f"### {label}",
+            "",
+            "| score | n | mean | std | skew | share zero | " + " | ".join(names) + " |",
+            "|---|---|---|---|---|---|" + "---|" * len(names),
+        ]
+        for score, stats in section.items():
+            cells = " | ".join(_fmt(stats["quantiles"][name]) for name in names)
+            lines.append(
+                f"| {score} | {stats['n']} | {_fmt(stats['mean'])} | {_fmt(stats['std'])} | {_fmt(stats['skew'])} "
+                f"| {_fmt(stats['share_zero'])} | {cells} |"
+            )
+        lines.append("")
+    lines += [
+        "## CRITIC weights: Min-Max vs percentile ranks (pooled)",
+        "",
+        "| score | Min-Max | percentile ranks | abs diff |",
+        "|---|---|---|---|",
+    ]
+    for name in SCORE_COLUMNS:
+        lines.append(
+            f"| {name} | {_fmt(weights['minmax_pooled'][name])} | {_fmt(weights['rank_pooled'][name])} "
+            f"| {_fmt(weights['abs_diff'][name])} |"
+        )
+    lines += [
+        "",
+        f"Largest absolute difference: {_fmt(weights['max_abs_diff'])}.",
+        "",
+        f"## Cluster bootstrap of the pooled weights ({boot['n_draws']} draws, {boot['ci_level']:.0%} interval)",
+        "",
+        f"Uniform weight = {_fmt(boot['uniform_weight'])}.",
+        "",
+        "| score | reference | mean | std | CI low | CI high | interval contains uniform | share with top weight |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for name in SCORE_COLUMNS:
+        stats = boot["scores"][name]
+        lines.append(
+            f"| {name} | {_fmt(stats['reference'])} | {_fmt(stats['mean'])} | {_fmt(stats['std'])} "
+            f"| {_fmt(stats['ci_low'])} | {_fmt(stats['ci_high'])} | {stats['includes_uniform']} "
+            f"| {_fmt(boot['share_top_weight'][name])} |"
+        )
+    lines += ["", "## Agreement between the Min-Max and the percentile-rank indexes", ""]
+    for year, values in robustness["normalization_agreement"].items():
+        lines.append(
+            f"- {year}: Spearman {_fmt(values['spearman'])}, Jaccard top {_fmt(values['jaccard_top'])}, "
+            f"mean rank shift {_fmt(values['mean_rank_shift'])}"
+        )
+    lines += ["", "## Sensitivity of the base-index ranking to the weight vector", ""]
+    for year, schemes in robustness["sensitivity"].items():
+        lines += [
+            f"### {year}",
+            "",
+            "| weights | vectors | Spearman | Jaccard top | mean rank shift "
+            "| rank-interval median width | top members stable |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for scheme, metrics in schemes.items():
+            interval = metrics.get("rank_interval")
+            width = "n/a"
+            if interval:
+                width = f"{_fmt(interval['median_width'])} ({_fmt(interval['median_width_share'])} of n)"
+            stable = _fmt(metrics["share_top_stable"]) if "share_top_stable" in metrics else "n/a"
+            lines.append(
+                f"| {scheme} | {metrics['n_weight_vectors']} | {_summary_cell(metrics['spearman'])} "
+                f"| {_summary_cell(metrics['jaccard_top'])} | {_summary_cell(metrics['mean_rank_shift'])} "
+                f"| {width} | {stable} |"
+            )
+        lines.append("")
+    return "\n".join(lines)
+
+
 def render_markdown(report: Mapping[str, Any]) -> str:
     """Render the report as Markdown, ready to attach to ADR-062.
 
@@ -1658,7 +2190,10 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     Returns:
         Markdown text.
     """
-    if report["meta"].get("stage") == "k_search":
+    stage = report["meta"].get("stage")
+    if stage == "robustness":
+        return _render_robustness(report)
+    if stage == "k_search":
         return _render_k_search(report)
     meta, weights = report["meta"], report["weights"]
     lines = [
@@ -1668,6 +2203,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"- execution_timestamp: {meta['execution_timestamp']}",
         f"- window_years: {meta['window_years']} | n_min_pares: {meta['n_min_pares']} "
         f"| meses_min: {meta['meses_min']} | w_min_aviso: {meta['w_min_aviso']}",
+        _fingerprint_line(meta),
         "",
         "## CRITIC weights",
         "",
@@ -1741,7 +2277,9 @@ def write_report(report: Mapping[str, Any], output_dir: Path, config_sha256: str
     output_dir.mkdir(parents=True, exist_ok=True)
     safe = _clean(report)
     safe["meta"]["config_sha256"] = config_sha256
-    prefix = "risk_k_search" if safe["meta"].get("stage") == "k_search" else "risk_calibration"
+    prefix = {"k_search": "risk_k_search", "robustness": "risk_robustness"}.get(
+        safe["meta"].get("stage"), "risk_calibration"
+    )
     stem = f"{prefix}_{safe['meta']['run_id'][:8]}"
     json_path, md_path = output_dir / f"{stem}.json", output_dir / f"{stem}.md"
     json_path.write_text(json.dumps(safe, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1775,9 +2313,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--stage",
-        choices=("baseline", "k_search", "full"),
+        choices=("baseline", "k_search", "full", "robustness"),
         default="baseline",
-        help="baseline: ADR-062 diagnostics (default); k_search/full: ADR-063 pooling stages",
+        help="baseline: ADR-062 diagnostics (default); robustness: ADR-029 weight robustness; "
+        "k_search/full: ADR-063 pooling stages",
     )
     args = parser.parse_args(argv)
     try:

@@ -103,6 +103,17 @@ def _settings(tmp_path: Path, k: dict[str, float | None] | None = None) -> rc.Ca
             tolerance=1e-9,
             strict_casas=["camara"],
         ),
+        fingerprint_decimals=10,
+        fingerprint_money_decimals=2,
+        robustness=rc.RobustnessConfig(
+            bootstrap_samples=30,
+            random_state=42,
+            ci_level=0.9,
+            dirichlet_samples=30,
+            dirichlet_concentration=50.0,
+            stability_threshold=0.9,
+            distribution_quantiles=[0.05, 0.5, 0.95],
+        ),
         output_dir=tmp_path / "reports",
     )
 
@@ -287,3 +298,85 @@ def test_cli_default_stage_runs_without_k(tmp_path: Path) -> None:
     assert rc.main(["--config", str(path), "--database", str(database)]) == 0
     saved = json.loads(next((tmp_path / "reports").glob("risk_calibration_*.json")).read_text(encoding="utf-8"))
     assert saved["meta"]["stage"] == "baseline"
+
+
+# ---------------------------------------------- robustness and fingerprint (Onda 2)
+
+
+def test_robustness_stage_report(gold: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
+    settings = _settings(tmp_path, k={"camara": None, "senado": None})
+    report = rc.run_calibration(gold, settings, stage="robustness")
+    assert report["meta"]["stage"] == "robustness"
+    assert set(report) == {"meta", "distributions", "robustness"}
+    assert set(report["distributions"]["by_year"]) == set(YEARS)
+    assert set(report["distributions"]["pooled"]) == set(rc.SCORE_COLUMNS)
+    robustness = report["robustness"]
+    assert robustness["bootstrap"]["n_draws"] == 30
+    assert sum(robustness["weights"]["minmax_pooled"].values()) == pytest.approx(1.0)
+    assert set(robustness["sensitivity"]) == set(YEARS)
+    markdown = rc.render_markdown(rc._clean(report))
+    for heading in (
+        "# ADR-029",
+        "## Empirical distribution of each score",
+        "## Cluster bootstrap of the pooled weights",
+        "## Sensitivity of the base-index ranking",
+        "- data_fingerprint:",
+    ):
+        assert heading in markdown
+
+
+def test_data_fingerprint_is_in_every_stage_stable_and_sensitive(
+    gold: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    settings = _settings(tmp_path)
+    baseline = rc.run_calibration(gold, settings)
+    searched = rc.run_calibration(gold, settings, stage="k_search")
+    again = rc.run_calibration(gold, settings)
+    fingerprint = baseline["meta"]["data_fingerprint"]
+    assert searched["meta"]["data_fingerprint"] == fingerprint == again["meta"]["data_fingerprint"]
+    assert fingerprint["rows"]["totals"] == 48 * len(YEARS)
+    assert "- data_fingerprint: totals" in rc.render_markdown(rc._clean(baseline))
+
+    gold.execute("UPDATE gold.risk_inputs SET expense_anomaly = expense_anomaly + 0.01 WHERE id_parlamentar = 1")
+    changed = rc.run_calibration(gold, settings)["meta"]["data_fingerprint"]
+    assert changed["hashes"]["external"] != fingerprint["hashes"]["external"]
+    for unchanged in ("totals", "pairs", "groups", "intervals"):
+        assert changed["hashes"][unchanged] == fingerprint["hashes"][unchanged]
+
+
+def test_cli_robustness_stage_writes_report(tmp_path: Path) -> None:
+    database = tmp_path / "warehouse.duckdb"
+    con = duckdb.connect(str(database))
+    _build_gold(con)
+    con.close()
+    path = tmp_path / "c.yaml"
+    payload = json.loads(_settings(tmp_path, k={"camara": None, "senado": None}).model_dump_json())
+    path.write_text(yaml.safe_dump({"risk_calibration": payload}), encoding="utf-8")
+    assert rc.main(["--config", str(path), "--database", str(database), "--stage", "robustness"]) == 0
+    saved = json.loads(next((tmp_path / "reports").glob("risk_robustness_*.json")).read_text(encoding="utf-8"))
+    assert saved["meta"]["stage"] == "robustness" and saved["meta"]["config_sha256"]
+    assert next((tmp_path / "reports").glob("risk_robustness_*.md")).read_text(encoding="utf-8").startswith("# ADR-029")
+
+
+def test_robustness_does_not_depend_on_physical_row_order(
+    gold: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    settings = _settings(tmp_path)
+    first = rc.run_calibration(gold, settings, stage="robustness")
+    for table in ("fact_despesa", "dim_parlamentar", "risk_inputs"):
+        gold.execute(f"CREATE OR REPLACE TABLE gold.{table} AS SELECT * FROM gold.{table} ORDER BY random()")
+    second = rc.run_calibration(gold, settings, stage="robustness")
+
+    assert second["meta"]["data_fingerprint"] == first["meta"]["data_fingerprint"]
+    one, two = first["robustness"], second["robustness"]
+    for name in rc.SCORE_COLUMNS:
+        assert two["weights"]["minmax_pooled"][name] == pytest.approx(one["weights"]["minmax_pooled"][name], abs=1e-9)
+        for stat in ("ci_low", "ci_high", "mean"):
+            assert two["bootstrap"]["scores"][name][stat] == pytest.approx(
+                one["bootstrap"]["scores"][name][stat], abs=1e-9
+            )
+    for year in YEARS:
+        for scheme in ("bootstrap_weights", "dirichlet_weights"):
+            a, b = one["sensitivity"][year][scheme], two["sensitivity"][year][scheme]
+            assert b["spearman"]["mean"] == pytest.approx(a["spearman"]["mean"], abs=1e-9)
+            assert b["rank_interval"]["median_width"] == a["rank_interval"]["median_width"]

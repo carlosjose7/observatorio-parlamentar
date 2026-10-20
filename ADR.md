@@ -4149,13 +4149,15 @@ Resultado (veredito, 16/10/2026):
 - A2 (erro LOO médio nos três anos): Câmara 0,2706 (regra do ADR-062)
   vs 0,2711 (k = 8) vs 0,2796 (`casa_only`) → FAIL por 0,0005; Senado
   0,5676 (regra) vs 0,5455 (k = 4) → passa.
-- Variante fora da amostra (`a1_loo`, informativa): mesmo padrão na
-  Câmara (piora em 2024–2025).
+- Variante fora da amostra (`a1_loo`, informativa): reprova em 2 de 3
+  anos na Câmara (passa em 2023, 0,0752 → 0,0684; piora em 2024–2025).
 - Conclusão: A1 e A2 falham na Câmara → **ADR-063 Rejeitado**; vale a
   regra do ADR-062 (`n_min_pares` = 8). A causa é estrutural: nos
   grupos grandes da Câmara a regra binária já remove a localização de
-  UF por inteiro, e o encolhimento retém parte dela (λ_u < 1); o ganho
-  do pooling concentra-se no Senado e no fallback.
+  UF por inteiro, e o encolhimento retém parte dela (λ_u < 1). O ganho
+  observado está no Senado; a hipótese de ganho no fallback da Câmara é
+  interpretação apoiada na simulação sintética e no `a1_loo` — não
+  medida nos dados reais.
 - Evidência: `reports/risk_calibration/risk_k_search_a615ef91.{json,md}`
   e `risk_calibration_721888cc.{json,md}`.
 - Config de cada run: `config/risk_calibration.yaml` (sha256

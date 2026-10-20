@@ -21,6 +21,10 @@ Histórico das alterações, organizado por sprint (ver
   o 8679aa6a, base 10, está superado) — pesos pool C 0.174 /
   D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143; relatório
   `.json`/`.md` em `reports/risk_calibration/`.
+- **Nota de retrato (Gold):** os pesos do `47c704df` são o retrato de
+  08/10; entre 08/10 e 16/10 a entrada mudou (só o `A`: 0,114 → 0,121;
+  passo determinístico na mesma Silver) — o `model_version` 1 será
+  calibrado sobre o retrato vigente.
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.

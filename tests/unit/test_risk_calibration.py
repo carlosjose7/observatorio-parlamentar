@@ -41,6 +41,17 @@ def _settings_dict() -> dict:
             "tolerance": 1e-9,
             "strict_casas": ["camara"],
         },
+        "fingerprint_decimals": 10,
+        "fingerprint_money_decimals": 2,
+        "robustness": {
+            "bootstrap_samples": 20,
+            "random_state": 42,
+            "ci_level": 0.9,
+            "dirichlet_samples": 20,
+            "dirichlet_concentration": 50,
+            "stability_threshold": 0.9,
+            "distribution_quantiles": [0.05, 0.5, 0.95],
+        },
         "output_dir": "reports/risk_calibration",
     }
 
@@ -620,3 +631,242 @@ def test_evaluate_acceptance_a1_loo_is_informative_only() -> None:
     assert result["a1_loo"]["pass"] and result["a1_loo"]["informative"]
     assert result["a1_loo"]["rows"][0]["casa_only"] == 0.30
     assert not _acceptance()["a1_loo"]["pass"]  # no rows -> cannot be verified
+
+
+# --------------------------------- fingerprint, distributions, robustness (Onda 2)
+
+
+def _external_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "id_parlamentar": [2, 1, 1],
+            "periodo": [2023, 2023, 2024],
+            "E": [0.2, 0.1, 0.3],
+            "A": [0.0, 0.5, 0.25],
+            "N": [0.9, 0.8, 0.7],
+        }
+    )
+
+
+def test_frame_fingerprint_ignores_row_order_and_float_noise_but_not_values() -> None:
+    frame = _external_frame()
+    base = rc.frame_fingerprint(frame, ["id_parlamentar", "periodo"], 10)
+    assert rc.frame_fingerprint(frame.iloc[::-1], ["id_parlamentar", "periodo"], 10) == base
+    noisy = frame.assign(E=frame["E"] + 1e-13)
+    assert rc.frame_fingerprint(noisy, ["id_parlamentar", "periodo"], 10) == base
+    changed = frame.assign(E=frame["E"] + 1e-6)
+    assert rc.frame_fingerprint(changed, ["id_parlamentar", "periodo"], 10) != base
+
+
+def _fingerprint_inputs() -> dict[str, pd.DataFrame]:
+    totals = pd.DataFrame(
+        {
+            "id_parlamentar": [1, 2],
+            "periodo": [2023, 2023],
+            "total": [100.0, 50.5],
+            "total_sem_fornecedor": [0.0, 0.0],
+        }
+    )
+    pairs = pd.DataFrame(
+        {
+            "id_parlamentar": [1, 1, 2],
+            "id_fornecedor": ["a", "b", "a"],
+            "periodo": [2023] * 3,
+            "valor": [60.0, 40.0, 50.5],
+        }
+    )
+    groups = pd.DataFrame(
+        {
+            "id_parlamentar": [1, 2],
+            "periodo": [2023, 2023],
+            "casa": ["camara", "senado"],
+            "uf": ["AA", "BB"],
+        }
+    )
+    external = _external_frame().loc[lambda f: f["periodo"] == 2023]
+    intervals = pd.DataFrame(
+        [(1, date(2020, 1, 1), None), (2, date(2021, 1, 1), date(2024, 1, 1))],
+        columns=["id_parlamentar", "start", "end"],
+    )
+    return {"totals": totals, "pairs": pairs, "groups": groups, "external": external, "intervals": intervals}
+
+
+def test_data_fingerprint_structure_and_sensitivity() -> None:
+    inputs = _fingerprint_inputs()
+    first = rc.data_fingerprint(**inputs, decimals=10, money_decimals=2)
+    assert set(first["hashes"]) == {"totals", "pairs", "groups", "external", "intervals"}
+    assert first["rows"] == {"totals": 2, "pairs": 3, "groups": 2, "external": 2, "intervals": 2}
+    assert first["sums_by_year"][2023]["total"] == pytest.approx(150.5)
+    assert first["sums_by_year"][2023]["pairs_valor"] == pytest.approx(150.5)
+    assert first["sums_by_year"][2023]["A"] == pytest.approx(0.5)
+    assert rc.data_fingerprint(**inputs, decimals=10, money_decimals=2) == first  # deterministic
+
+    inputs["external"] = inputs["external"].assign(A=inputs["external"]["A"] + 0.01)
+    second = rc.data_fingerprint(**inputs, decimals=10, money_decimals=2)
+    assert second["hashes"]["external"] != first["hashes"]["external"]
+    assert second["hashes"]["totals"] == first["hashes"]["totals"]
+
+
+def test_data_fingerprint_absorbs_summation_noise_in_money_but_not_real_changes() -> None:
+    inputs = _fingerprint_inputs()
+    base = rc.data_fingerprint(**inputs, decimals=10, money_decimals=2)
+    noisy = {
+        **inputs,
+        "totals": inputs["totals"].assign(total=inputs["totals"]["total"] + 3e-10),
+        "pairs": inputs["pairs"].assign(valor=inputs["pairs"]["valor"] - 2e-10),
+    }
+    assert rc.data_fingerprint(**noisy, decimals=10, money_decimals=2)["hashes"] == base["hashes"]
+    one_cent = {**inputs, "totals": inputs["totals"].assign(total=inputs["totals"]["total"] + 0.01)}
+    changed = rc.data_fingerprint(**one_cent, decimals=10, money_decimals=2)
+    assert changed["hashes"]["totals"] != base["hashes"]["totals"]
+
+
+def test_fingerprint_line_handles_missing_fingerprint() -> None:
+    assert rc._fingerprint_line({}) == "- data_fingerprint: n/a"
+    meta = {"data_fingerprint": {"hashes": {"totals": "a" * 64, "pairs": "b" * 64}}}
+    assert rc._fingerprint_line(meta) == f"- data_fingerprint: totals {'a' * 12} | pairs {'b' * 12}"
+
+
+def test_score_distribution_known_values() -> None:
+    frame = pd.DataFrame({name: [0.0, 0.0, 0.5, 1.0] for name in rc.SCORE_COLUMNS})
+    result = rc.score_distribution(frame, [0.5, 0.99])
+    stats = result["C"]
+    assert stats["n"] == 4 and stats["mean"] == pytest.approx(0.375)
+    assert stats["share_zero"] == pytest.approx(0.5)
+    assert stats["quantiles"]["p50"] == pytest.approx(0.25)
+    assert set(stats["quantiles"]) == {"p50", "p99"}
+    assert stats["skew"] > 0
+
+
+def test_percentile_rank_scores_are_uniform_like_and_keep_constants_constant() -> None:
+    frame = pd.DataFrame({"a": [0.1, 0.9, 0.5, 0.2], "k": [0.5] * 4})
+    ranks = rc.percentile_rank_scores(frame)
+    assert ranks["a"].tolist() == [0.25, 1.0, 0.75, 0.5]
+    assert ranks["k"].nunique() == 1
+
+
+def _year_scores(seed: int, years: tuple[int, ...] = (2023, 2024, 2025), n: int = 60) -> dict[int, pd.DataFrame]:
+    rng = np.random.default_rng(seed)
+    ids = [f"p{i}" for i in range(n)]
+    return {
+        year: pd.DataFrame(rng.random((n, len(rc.SCORE_COLUMNS))), columns=list(rc.SCORE_COLUMNS), index=ids)
+        for year in years
+    }
+
+
+def test_id_positions_groups_rows_by_id() -> None:
+    positions = rc._id_positions(pd.Series(["a", "b", "a", "c", "b"]))
+    assert [p.tolist() for p in positions] == [[0, 2], [1, 4], [3]]
+
+
+def test_id_positions_number_clusters_in_sorted_id_order() -> None:
+    positions = rc._id_positions(pd.Series(["c", "a", "b", "a"]))
+    assert [p.tolist() for p in positions] == [[1, 3], [2], [0]]
+
+
+def test_stack_scores_adds_year_and_id() -> None:
+    year_scores = _year_scores(0, years=(2023, 2024), n=5)
+    stacked = rc.stack_scores(year_scores)
+    assert list(stacked.columns[:2]) == ["year", "id"]
+    assert len(stacked) == 10 and set(stacked["year"]) == {2023, 2024}
+
+
+def test_bootstrap_weights_are_reproducible_and_normalized() -> None:
+    stacked = rc.stack_scores(_year_scores(1))
+    first = rc.bootstrap_critic_weights(stacked, 25, np.random.default_rng(7))
+    again = rc.bootstrap_critic_weights(stacked, 25, np.random.default_rng(7))
+    other = rc.bootstrap_critic_weights(stacked, 25, np.random.default_rng(8))
+    assert first.shape == (25, len(rc.SCORE_COLUMNS))
+    assert np.array_equal(first, again) and not np.array_equal(first, other)
+    assert first.sum(axis=1) == pytest.approx(np.ones(25))
+
+
+def test_summarize_bootstrap_flags_uniform_and_top_weight() -> None:
+    reference = pd.Series(1 / 6, index=list(rc.SCORE_COLUMNS))
+    skewed = np.tile([0.4, 0.12, 0.12, 0.12, 0.12, 0.12], (50, 1))
+    result = rc.summarize_bootstrap(skewed, reference, 0.9)
+    assert result["scores"]["C"]["includes_uniform"] is False
+    assert result["share_top_weight"]["C"] == 1.0 and result["n_draws"] == 50
+    flat = rc.summarize_bootstrap(np.full((50, 6), 1 / 6), reference, 0.9)
+    assert all(stats["includes_uniform"] for stats in flat["scores"].values())
+
+
+def test_dirichlet_weights_mean_and_zero_reference() -> None:
+    reference = np.array([0.5, 0.3, 0.2, 0.0])
+    draws = rc.dirichlet_weights(reference, 500.0, 3000, np.random.default_rng(3))
+    assert draws.sum(axis=1) == pytest.approx(np.ones(3000))
+    assert draws.mean(axis=0) == pytest.approx(reference, abs=0.01)
+    assert draws[:, 3].max() < 1e-3
+
+
+def test_index_ranks_known_matrix_and_stable_ties() -> None:
+    scores = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+    weights = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+    assert rc.index_ranks(scores, weights).tolist() == [[1, 3, 1], [3, 1, 2], [2, 2, 3]]
+
+
+def test_sensitivity_metrics_identical_and_opposite_weights() -> None:
+    rng = np.random.default_rng(4)
+    scores = rng.random((80, 6))
+    reference = np.array([0.3, 0.2, 0.2, 0.1, 0.1, 0.1])
+    common = {"top_fraction": 0.1, "ci_level": 0.9, "stability_threshold": 0.9}
+    same = rc.sensitivity_metrics(scores, reference, np.tile(reference, (3, 1)), intervals=True, **common)
+    assert same["spearman"]["mean"] == pytest.approx(1.0)
+    assert same["jaccard_top"]["mean"] == 1.0 and same["mean_rank_shift"]["mean"] == 0.0
+    assert same["rank_interval"]["median_width"] == 0.0 and same["share_top_stable"] == 1.0
+    assert same["top_k"] == 8 and same["n_weight_vectors"] == 3
+    opposite = rc.sensitivity_metrics(scores, reference, reference[::-1][None, :], intervals=False, **common)
+    assert opposite["spearman"]["mean"] < same["spearman"]["mean"]
+    assert opposite["jaccard_top"]["mean"] < 1.0 and "rank_interval" not in opposite
+
+
+def _settings_from_dict(tmp_path: Path) -> rc.CalibrationSettings:
+    return rc.load_settings(_write_yaml(tmp_path / "c.yaml", _settings_dict()))
+
+
+def test_run_robustness_structure_and_reproducibility(tmp_path: Path) -> None:
+    settings = _settings_from_dict(tmp_path)
+    year_scores = _year_scores(5)
+    first = rc.run_robustness(year_scores, settings)
+    second = rc.run_robustness(year_scores, settings)
+    assert rc._clean(first) == rc._clean(second)
+    assert set(first) == {"config", "weights", "bootstrap", "normalization_agreement", "sensitivity"}
+    assert sum(first["weights"]["minmax_pooled"].values()) == pytest.approx(1.0)
+    assert sum(first["weights"]["rank_pooled"].values()) == pytest.approx(1.0)
+    assert first["bootstrap"]["n_draws"] == 20
+    schemes = first["sensitivity"][2023]
+    assert set(schemes) == {"uniform", "critic_rank_weights", "bootstrap_weights", "dirichlet_weights"}
+    assert schemes["uniform"]["n_weight_vectors"] == 1
+    assert schemes["bootstrap_weights"]["n_weight_vectors"] == 20
+    assert "rank_interval" in schemes["dirichlet_weights"] and "rank_interval" not in schemes["uniform"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda p: p["robustness"].update(bootstrap_samples=1), "greater than or equal to 2"),
+        (lambda p: p["robustness"].update(ci_level=1.0), "less than 1"),
+        (lambda p: p["robustness"].update(dirichlet_concentration=0), "greater than 0"),
+        (lambda p: p["robustness"].update(stability_threshold=1.5), "less than or equal to 1"),
+        (lambda p: p["robustness"].update(distribution_quantiles=[0.5, 0.5]), "unique values in"),
+        (lambda p: p["robustness"].update(distribution_quantiles=[0.0, 0.5]), "unique values in"),
+        (lambda p: p.update(fingerprint_decimals=-1), "greater than or equal to 0"),
+        (lambda p: p["robustness"].pop("random_state"), "random_state"),
+    ],
+)
+def test_robustness_config_validation(tmp_path: Path, mutate, message: str) -> None:  # type: ignore[no-untyped-def]
+    payload = _settings_dict()
+    mutate(payload)
+    with pytest.raises(rc.ConfigError, match=message):
+        rc.load_settings(_write_yaml(tmp_path / "c.yaml", payload))
+
+
+def test_run_robustness_is_independent_of_row_order(tmp_path: Path) -> None:
+    settings = _settings_from_dict(tmp_path)
+    year_scores = _year_scores(11)
+    shuffled = {year: frame.sample(frac=1.0, random_state=year) for year, frame in year_scores.items()}
+    assert not shuffled[2023].index.equals(year_scores[2023].index)
+    original = rc._clean(rc.run_robustness(year_scores, settings))
+    assert rc._clean(rc.run_robustness(shuffled, settings)) == original
+    reversed_ = {year: frame.iloc[::-1] for year, frame in year_scores.items()}
+    assert rc._clean(rc.run_robustness(reversed_, settings)) == original
