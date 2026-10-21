@@ -4278,7 +4278,7 @@ ADR-064
 Título: Contrato do `model_version` do risk_index — artefato, registro, ativação e estabilidade
 
 Status:
-Proposto — Sprint 29, Onda 3 (nenhum código antes do aceite)
+Aceito — Sprint 29, Onda 3 (21/10/2026, branch sprint/29-risk-index)
 
 Relação com ADRs anteriores (explícita para não fragilizar a regra
 "não contradizer sem ADR"):

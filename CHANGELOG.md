@@ -63,6 +63,13 @@ Histórico das alterações, organizado por sprint (ver
   vale a regra do ADR-062 (`n_min_pares` = 8); `V` final para o
   bootstrap = regra ADR-062 (`--stage baseline` é o padrão;
   `k_search`/`full` ficam opt-in).
+- **ADR-064 (Aceito):** contrato do `model_version` do `risk_index`:
+  identificador `risk-MAJOR.MINOR` imutável, manifesto com hashes de
+  código, dados e fontes (hash `external` decomposto por score),
+  registro em `control.risk_model_registry` (um único `active`),
+  ativação condicionada a ADR-029 + estabilidade + aprovação humana, e
+  `τ_w` provisório 5e-3 condicionado ao piso de ruído do passo de
+  anomalias (item 6); nenhum código antes do desenho.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)
