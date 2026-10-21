@@ -4383,6 +4383,25 @@ Decisão:
    problema (estabilidade do `A`), e abre-se item próprio no domínio do
    ADR-002 antes de qualquer ativação.
 
+   (Nota 21/10/2026, ADR-064: item 6 executado — piso de ruído medido
+   em cópia da Gold de 20/10, n = 20 por perturbação, sem artefato.
+   Baseline reproduz os pesos de `c21c193e` a 8e-17. Desvio máximo dos
+   pesos CRITIC: (i) ordem das linhas embaralhada, p95 7,0e-3 (máx
+   8,7e-3); (ii) `random_state` do Isolation Forest trocado, p95
+   8,7e-3; (iii) 312 despesas removidas ao acaso (0,032%), p95 6,7e-3
+   (máx 8,7e-3); argmax quase sempre `A` (efeito de renormalização).
+   Item 6(iv) executado junto: o `A` bruto moveu-se de forma ampla
+   (521/529 parlamentares em 2024, média −0,038; top-5 = 5% do
+   movimento), sem concentração em extremos. A cláusula de alerta
+   dispara: toda perturbação benigna produz desvio da ordem de 7e-3,
+   o mesmo tamanho da anomalia de 16/10 — abre-se item no domínio do
+   ADR-002 sobre estabilidade do `A` antes de qualquer ativação. `τ_w`
+   efetivo = max(5e-3, 2 × p95) ≈ 1,4e-2; o valor provisório do item 5
+   não vale sem essa correção. Caveat: a montagem de entrada do
+   experimento (`gold.fact_despesa`) difere do `risk_scores` em 302
+   linhas de `a_p` (fora da janela; pesos idênticos); os desvios são
+   efeitos causais numa montagem autoconsistente.)
+
 7. Re-calibração. Mudança de janela, de método ou de qualquer
    parâmetro do item 2a gera novo `model_version` (MINOR para
    recalibração, MAJOR para mudança de método), nunca edição de um

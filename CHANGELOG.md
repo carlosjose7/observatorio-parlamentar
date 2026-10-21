@@ -52,9 +52,9 @@ Histórico das alterações, organizado por sprint (ver
   critério 4 (empresa < 12 meses, CNPJ) não acusa em nenhum dos dois
   retratos. Aberto: a causa exata da carga de 16/10 (histórico de
   runs do Airflow de 08→16/10 não verificado) e a periodicidade (só
-  2 snapshots); o piso de ruído do passo de anomalias será medido
-  conforme o ADR-064 (item 6), que condiciona o `τ_w` do critério de
-  estabilidade do `model_version`.
+  2 snapshots). O piso de ruído do passo de anomalias foi medido em
+  21/10 (item 6 do ADR-064) e mostra que desvios da ordem de 7e-3
+  surgem sob perturbações benignas — ver o item do ADR-064 abaixo.
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
@@ -69,7 +69,15 @@ Histórico das alterações, organizado por sprint (ver
   registro em `control.risk_model_registry` (um único `active`),
   ativação condicionada a ADR-029 + estabilidade + aprovação humana, e
   `τ_w` provisório 5e-3 condicionado ao piso de ruído do passo de
-  anomalias (item 6); nenhum código antes do desenho.
+  anomalias (item 6); nenhum código antes do desenho. Item 6 executado
+  em 21/10 (cópia da Gold de 20/10, n=20 por perturbação; baseline =
+  `c21c193e` a 8e-17): p95 do desvio máximo dos pesos = 7,0e-3 (ordem
+  das linhas), 8,7e-3 (`random_state` do IF), 6,7e-3 (312 despesas
+  removidas). Toda perturbação benigna já produz desvio da ordem de
+  7e-3 — cláusula de alerta do item 6 disparada; abre-se item no
+  domínio do ADR-002 (estabilidade do `A`) antes de qualquer
+  ativação, e o `τ_w` efetivo sobe para ≈1,4e-2 (2 × p95). Nota
+  completa no ADR-064.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)
