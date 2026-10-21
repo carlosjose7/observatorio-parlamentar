@@ -4271,3 +4271,146 @@ Resultado (veredito, 16/10/2026):
   no k_search; `risk_calibration_721888cc.config.yaml` (sha256
   `c3a35a4007fc3591ef95454a3be6834b873dad53452f7fdbb7a3163efda3db35`)
   ao lado do relatório do full.
+
+---
+
+ADR-064
+Título: Contrato do `model_version` do risk_index — artefato, registro, ativação e estabilidade
+
+Status:
+Proposto — Sprint 29, Onda 3 (nenhum código antes do aceite)
+
+Relação com ADRs anteriores (explícita para não fragilizar a regra
+"não contradizer sem ADR"):
+- DETALHA o item 7 do ADR-062 (versionamento): o ADR-062 define que
+  existe um `model_version` com artefato e hash; este ADR define o que
+  o artefato contém, onde é registrado, como é ativado e como a
+  estabilidade é medida. Não altera fórmulas, scores nem pesos do
+  ADR-062 e não reabre o ADR-063 (Rejeitado).
+- CUMPRE o critério do ADR-029 de dataset versionado e fixa a
+  condição de ativação que o ADR-062 já declara (itens PENDENTES do
+  Anexo, item s).
+- Não toca o ADR-002 nem o ADR-003; os pesos 0.2 seguem vigentes até a
+  ativação.
+
+Contexto:
+O Anexo do ADR-062 mostrou que o mesmo código e a mesma configuração
+produzem pesos diferentes quando o retrato da Gold muda: o run de
+16/10 (721888cc) diferiu em até 7e-3 do de 08/10 e do de 20/10, que
+concordam entre si a 4e-5. A investigação do CHANGELOG localizou a
+mudança na entrada (só o score A, 599 linhas da janela, mudou).
+Duas consequências para o desenho:
+1. O artefato precisa registrar a identidade dos dados e das fontes
+   de que os pesos dependem, não apenas os pesos.
+2. Congelar os pesos não congela os scores: o Min-Max é recalculado
+   sobre o universo do período (ADR-062, item 1), então um refresh da
+   fonte pode mover os scores e o ranking mesmo com `model_version`
+   fixo. O contrato precisa medir isso, não escondê-lo.
+
+Decisão:
+1. Identificador. `model_version` = `risk-<MAJOR>.<MINOR>`. MAJOR muda
+   quando muda o método (conjunto de scores, composição, regra do V,
+   camada de ML); MINOR muda quando só se recalibra (pesos, parâmetros)
+   sobre um novo retrato. Cada `model_version` é imutável.
+
+2. Conteúdo do artefato (manifesto `manifest.json` + arquivos), tudo
+   com sha256 no manifesto:
+   a) pesos CRITIC (pool) e por ano, janela de referência e `n_min_pares`,
+      `meses_min`, regra do V, λ (item 6 do ADR-062);
+   b) quando existir, o Isolation Forest de risco serializado (joblib)
+      com seus parâmetros e `random_state`;
+   c) versões das bibliotecas que afetam o resultado (scikit-learn,
+      numpy, pandas, duckdb);
+   d) identidade do código: commit do repositório e sha256 do módulo
+      de calibração;
+   e) identidade dos dados de calibração: o `data_fingerprint` completo
+      (hashes de totals, pairs, groups, external, intervals e
+      contagens) e o `config_sha256`;
+   f) identidade das fontes a montante: `run_id` do passo analítico que
+      gerou `risk_scores` e `expense_outliers`, `pipeline_version` e
+      `source_version`, quando existirem;
+   g) ids dos relatórios de calibração e de robustez que sustentam o
+      artefato.
+   O hash `external` passa a ser decomposto por score (E, A, N), para
+   que uma mudança de entrada aponte qual score mudou.
+
+3. Armazenamento. MinIO, prefixo `models/risk/<model_version>/`
+   (ADR-062, item 7). Registro em `control.risk_model_registry`:
+   `model_version`, `status` (`candidate` | `active` | `retired`),
+   `created_at`, `manifest_sha256`, `data_fingerprint` (resumo),
+   relatórios de origem, `activated_at` e a referência da decisão que
+   autorizou a ativação.
+
+4. Ciclo de vida.
+   - Um `model_version` nasce `candidate` por comando explícito; nunca
+     é recalibrado nem ativado automaticamente.
+   - A ativação exige, juntas: (a) os critérios do ADR-029 atendidos
+     (inclui ranking histórico antes (0.2) × depois e validação de
+     face); (b) o critério de estabilidade do item 5; (c) aprovação
+     humana explícita registrada no registro.
+   - Há no máximo um `active`. Reverter = reativar a versão anterior.
+   - Cada linha de `risk_scores` grava `model_version` e
+     `manifest_sha256`, permitindo reproduzir qualquer execução.
+
+5. Estabilidade entre refreshes. A cada mudança de retrato das fontes
+   (detectada por diferença de `data_fingerprint`), roda-se uma
+   recalibração em sombra (estágio `baseline`) e registra-se em
+   `control.risk_model_diagnostics`:
+   - desvio máximo absoluto dos pesos CRITIC em relação aos do
+     `model_version` ativo (por score) e o score que mais mudou;
+   - estabilidade do ranking do `risk_index` entre os pesos ativos e os
+     pesos em sombra sobre os dados novos (Spearman e Jaccard do
+     top-10%, limiares do item 10 do ADR-062);
+   - quais hashes de entrada mudaram (por score, no `external`).
+   Status "revisar" quando o desvio máximo dos pesos excede `τ_w`.
+   `τ_w` tem valor inicial provisório de 5e-3 (o tamanho da anomalia de
+   16/10) e NÃO pode ficar abaixo do piso de ruído medido (item 6).
+   Um refresh que excede `τ_w` bloqueia a ativação de qualquer
+   candidato calibrado sobre o retrato anterior e não altera o
+   `model_version` ativo.
+
+6. Piso de ruído (pré-condição de `τ_w`). Antes de aceitar um valor de
+   `τ_w`, mede-se o desvio dos pesos CRITIC sob perturbações benignas da
+   entrada, em cópia da Gold, sem gerar artefato: (i) ordem das linhas
+   embaralhada, (ii) `random_state` do passo de anomalias trocado,
+   (iii) cerca de 0,03% das despesas removidas ao acaso (o tamanho do
+   crescimento observado fora da janela entre 17/10 e 20/10),
+   (iv) para o `A` bruto (antes do Min-Max), quantas linhas mudam e se
+   a mudança se concentra em poucos parlamentares extremos. O piso é o
+   percentil 95 do desvio máximo dos pesos nessas perturbações; `τ_w`
+   é fixado em pelo menos duas vezes esse piso. Se alguma perturbação
+   benigna já produz desvio da ordem de 7e-3, o passo de anomalias é o
+   problema (estabilidade do `A`), e abre-se item próprio no domínio do
+   ADR-002 antes de qualquer ativação.
+
+7. Re-calibração. Mudança de janela, de método ou de qualquer
+   parâmetro do item 2a gera novo `model_version` (MINOR para
+   recalibração, MAJOR para mudança de método), nunca edição de um
+   existente. Quando 2026 fechar, a inclusão do ano é uma recalibração
+   deliberada.
+
+8. Linguagem. `risk_index` segue "indicador para investigação"; este
+   ADR não altera esse enquadramento.
+
+Não faz parte deste ADR: o treino e a explicabilidade da camada de ML
+(Isolation Forest sobre [C, D, E, N, V] e SHAP, ADR-062 itens 5 e 8) e
+a escolha dos casos públicos. Eles geram artefatos que este contrato
+abriga, mas são decididos depois.
+
+Consequências:
+- Todo score gravado é rastreável a um artefato imutável e aos retratos
+  de dados e fontes que o sustentam; reproduzir uma execução passa a
+  ser verificável e não depende de memória do operador.
+- O sistema deixa de depender de que as fontes sejam estáveis: mudanças
+  de entrada são detectadas, atribuídas a um score e medidas antes de
+  qualquer ativação.
+- Custo: duas tabelas de controle novas, a decomposição do hash
+  `external` por score, um estágio em sombra a cada refresh e o
+  experimento de piso de ruído antes de fixar `τ_w`.
+- Limite conhecido: os scores continuam dependendo do universo do
+  período por causa do Min-Max; a estabilidade do ranking é monitorada,
+  não garantida. Um ADR de normalização robusta de cauda (Anexo do
+  ADR-062, item r) reduziria essa dependência e permanece como
+  encaminhamento futuro.
+- Trabalho da Onda 3 (somente após o aceite): registro e manifesto,
+  decomposição do fingerprint, estágio em sombra, diagnósticos e testes.
