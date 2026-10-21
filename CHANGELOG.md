@@ -26,9 +26,29 @@ Histórico das alterações, organizado por sprint (ver
   `a9212439` (20/10, `data_fingerprint` `9c1285c2…`). O de 16/10 é o
   ponto fora da curva (peso do `A` 0,1212 contra 0,1142 em 08/10 e
   20/10; diferença máxima nos pesos 7e-3 contra 4e-5 entre 08/10 e
-  20/10), de causa ainda não identificada; o passo analítico é
-  determinístico, então a mudança veio da entrada. O `model_version` 1
-  será calibrado sobre um retrato com `data_fingerprint` registrado.
+  20/10). O passo analítico é determinístico, então a mudança veio
+  da entrada; a causa está detalhada no item seguinte. O
+  `model_version` 1 será calibrado sobre um retrato com
+  `data_fingerprint` registrado.
+- **Investigação da anomalia de 16/10 (entrada confirmada):**
+  reprodução — baseline na cópia da Gold de 17/10 reproduz os pesos
+  de 16/10 a 4,5e-6 e difere dos de 20/10 em 7,0e-3. O insumo que
+  mudou é o `A` em `gold.risk_scores` (599 linhas da janela; soma de
+  2024 86,95 → 66,97; runs `6aab26af` 17/10 06:57Z e `8cd7170f`
+  20/10 06:55Z, mesmo `pipeline_version` 0.1.0, sem commits de
+  pipeline no intervalo); `E` e `N` intactos na janela (só mudam em
+  2026) e o conteúdo monetário da Gold por parlamentar-ano idêntico
+  (hashes `totals`/`groups`/`intervals` iguais). Motor: os critérios
+  de anomalia 1–3 (z-score, Isolation Forest com semente fixa,
+  fornecedor com poucos clientes) são globais — qualquer carga que
+  muda a base recalcula estatísticas e vira flags dentro da janela;
+  o critério 4 (empresa < 12 meses, CNPJ) não acusa em nenhum dos
+  dois retratos. Aberto: a causa exata da carga de 16/10 (histórico
+  de runs do Airflow de 08→16/10 não verificado) e a periodicidade
+  (só 2 snapshots); o mecanismo é sensível a qualquer refresh, então
+  o `model_version` deve registrar o retrato das fontes além do
+  `data_fingerprint`, com estabilidade dos pesos entre refreshes
+  como critério de ativação (a calibrar; referência 5e-3).
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
