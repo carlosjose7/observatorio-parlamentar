@@ -21,10 +21,14 @@ Histórico das alterações, organizado por sprint (ver
   o 8679aa6a, base 10, está superado) — pesos pool C 0.174 /
   D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143; relatório
   `.json`/`.md` em `reports/risk_calibration/`.
-- **Nota de retrato (Gold):** os pesos do `47c704df` são o retrato de
-  08/10; entre 08/10 e 16/10 a entrada mudou (só o `A`: 0,114 → 0,121;
-  passo determinístico na mesma Silver) — o `model_version` 1 será
-  calibrado sobre o retrato vigente.
+- **Nota de retrato (Gold):** os relatórios olham retratos diferentes
+  da Gold: `47c704df` (08/10), `721888cc` (16/10) e `c21c193e` /
+  `a9212439` (20/10, `data_fingerprint` `9c1285c2…`). O de 16/10 é o
+  ponto fora da curva (peso do `A` 0,1212 contra 0,1142 em 08/10 e
+  20/10; diferença máxima nos pesos 7e-3 contra 4e-5 entre 08/10 e
+  20/10), de causa ainda não identificada; o passo analítico é
+  determinístico, então a mudança veio da entrada. O `model_version` 1
+  será calibrado sobre um retrato com `data_fingerprint` registrado.
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.

@@ -4017,6 +4017,112 @@ j) Conformidade com os critérios do ADR-029 (estado na aceitação):
    A substituição de `risk.pesos` em produção só ocorre com os itens
    PENDENTES atendidos.
 
+Anexo — Robustez dos pesos e sensibilidade (retrato de 20/10/2026;
+runs c21c193e e a9212439):
+Relatórios: `reports/risk_calibration/risk_calibration_c21c193e.{json,md}`
+(estágio `baseline`) e `risk_robustness_a9212439.{json,md}` (estágio
+`robustness`). Regra do ADR-062 para o `V` (ADR-063 Rejeitado),
+`n_min_pares` = 8.
+
+k) Retrato e reprodutibilidade: Gold reconstruída em 20/10 às 03:55; os
+   dois relatórios foram gerados em sequência sobre o mesmo retrato, com
+   o mesmo `data_fingerprint` (totals 9c1285c2fc20, pairs a682182f403a,
+   groups 79d47e74a015, external c71ecaa19227, intervals 070459fa7a3c;
+   1617 parlamentares-ano, 117791 pares, 2342 intervalos SCD2) e o mesmo
+   `config_sha256` (9b9e6eff…). O estágio é reprodutível: uma nova
+   execução difere apenas em 1e-16 a 1e-14 (ruído de soma do DuckDB), e
+   os sorteios do bootstrap são idênticos. O run a2dc3cb2 foi superado.
+
+l) Pesos CRITIC no retrato de 20/10 (pool | 2023 | 2024 | 2025):
+     C 0.1743 | 0.185 | 0.168 | 0.174
+     D 0.1736 | 0.174 | 0.174 | 0.179
+     E 0.1640 | 0.186 | 0.131 | 0.148
+     A 0.1142 | 0.113 | 0.109 | 0.123
+     N 0.2312 | 0.232 | 0.236 | 0.244
+     V 0.1427 | 0.110 | 0.182 | 0.131
+   Nenhum peso abaixo de `w_min_aviso`. Estes pesos concordam com os do
+   run 47c704df (08/10) com diferença máxima de 4e-5. O run 721888cc
+   (16/10) diferiu em até 7e-3 (A = 0.1212): aquele retrato foi um ponto
+   fora da curva, de causa ainda não identificada, e a reconstrução de
+   20/10 voltou a concordar com 08/10. O `model_version` 1 deve ser
+   calibrado sobre um retrato com `data_fingerprint` registrado, como
+   este.
+
+m) Bootstrap por parlamentar (1000 sorteios, intervalo de 95%; o
+   parlamentar é reamostrado com todas as suas linhas-ano). O peso
+   uniforme é 1/6 = 0.1667:
+     C 0.1743 [0.1605; 0.1888]  contém 1/6
+     D 0.1736 [0.1644; 0.1837]  contém 1/6
+     E 0.1640 [0.1519; 0.1765]  contém 1/6
+     A 0.1142 [0.0992; 0.1287]  abaixo de 1/6
+     N 0.2312 [0.2143; 0.2495]  acima de 1/6 (maior peso em 100% dos
+                                sorteios)
+     V 0.1427 [0.1307; 0.1555]  abaixo de 1/6
+   C, D e E são estatisticamente indistinguíveis do peso uniforme; a
+   diferença do N, do A e do V em relação ao uniforme é real, no sentido
+   de não ser erro amostral dos pesos.
+
+n) Distribuição empírica de cada score (pool, n = 1617):
+     score  zeros   assimetria  p50    p95    p99
+     C      0.2%     2.60       0.131  0.483  0.875
+     D      0.2%    -0.84       0.745  0.959  0.995
+     E      0.7%     2.07       0.128  0.422  0.667
+     A      1.9%     3.51       0.104  0.325  0.650
+     N      0.2%     1.17       0.234  0.628  0.848
+     V     50.2%     2.17       0.000  0.362  0.566
+   C, E, A, N e V têm cauda direita pesada; o Min-Max comprime o corpo
+   da distribuição em torno dos extremos. O `V` tem metade de zeros por
+   construção (`max(0, z)`). O `D` é assimétrico à esquerda.
+
+o) Normalização: CRITIC sobre postos percentílicos (pool) dá C 0.172,
+   D 0.150, E 0.180, A 0.153, N 0.198 e V 0.146 (diferença máxima de
+   0.039 para o Min-Max). O A sobe de 0.114 para 0.153 e o N cai de
+   0.231 para 0.198: parte do contraste que o CRITIC atribui ao N e ao A
+   vem do formato da cauda. Concordância entre o índice Min-Max e o
+   índice por postos, por ano (2023 | 2024 | 2025): Spearman 0.803 |
+   0.826 | 0.776; Jaccard do top-10% 0.385 | 0.309 | 0.231; deslocamento
+   médio de posição 70 | 66 | 77. A escolha de normalização muda a
+   composição do topo mais do que a escolha dos pesos.
+
+p) Sensibilidade do ranking do índice base (referência = pesos CRITIC
+   do pool; índice base de 6 scores, sem a camada de ML). Spearman |
+   Jaccard do top-10% por ano (2023 | 2024 | 2025):
+     pesos uniformes   0.977 0.982 0.975 | 0.688 0.656 0.723
+     pesos por postos  0.989 0.993 0.991 | 0.770 0.860 0.836
+     bootstrap         0.999 0.999 0.999 | 0.923 0.938 0.934
+     Dirichlet(50)     0.947 0.961 0.951 | 0.662 0.645 0.667
+   Intervalo de posição (95%) por parlamentar, largura mediana: bootstrap
+   20 | 20 | 22 posições (3,7% | 3,8% | 4,0% do universo); Dirichlet(50)
+   141 | 134 | 151 posições (26% | 25% | 27%). Fração dos membros do
+   top-10% que permanecem no top em pelo menos 90% dos sorteios:
+   bootstrap 0.907 | 0.906 | 0.911; Dirichlet(50) 0.370 | 0.377 | 0.304.
+
+q) Leitura (condicional às perturbações testadas): o ranking global é
+   robusto aos pesos e ao erro amostral deles; a composição do top-10%
+   é sensível a perturbações de peso da ordem de ±0.05 por score
+   (Dirichlet com concentração 50, valor a calibrar) e, mais ainda, à
+   normalização. Para uso, isto sugere comunicar o `risk_index` como
+   posição relativa ou faixa de prioridade, com o intervalo de posição,
+   e não como um corte rígido do top-10%. O `risk_index` segue sendo um
+   "indicador para investigação"; nada nesta análise afirma algo sobre
+   pessoas.
+
+r) Encaminhamento (não decisório): o efeito da normalização sugere um
+   ADR futuro sobre normalização robusta de cauda (por exemplo,
+   winsorização ou postos percentílicos). Este anexo não altera o
+   Min-Max do ADR-003.
+
+s) Estado dos critérios do ADR-029 (atualiza a matriz do item j):
+   - Distribuições empíricas de cada score ............. ATENDIDO (item n)
+   - Sensibilidade do risk_index por peso (robustez) ... ATENDIDO para o
+     índice base (itens m, o e p); a camada de ML ainda não existe
+   - Dataset de scores versionado + ranking histórico
+     `risk_index` antes (0.2) × depois .................. PENDENTE (Onda 3)
+   - Validação de face (casos públicos, Analista de
+     Controle) ......................................... PENDENTE (Onda 3)
+   A substituição de `risk.pesos` em produção continua condicionada aos
+   itens PENDENTES.
+
 ---
 
 ADR-063
