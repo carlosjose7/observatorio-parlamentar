@@ -28,6 +28,49 @@ Isolation Forests. O de despesas (contamination = 0.05, threshold
 < -0.1, nível despesa) permanece inalterado; o de risco (nível
 parlamentar, score contínuo, sem threshold) é novo e não usa a
 `expense_anomaly` como entrada.)
+(Nota 21/10/2026, ADR-064 item 6: o experimento de piso de ruído
+revelou que o `expense_anomaly_score` (`a_p`) é a fonte dominante de
+variância nos pesos CRITIC — p95 do desvio = 7,0e-3 sob perturbações
+benignas (embaralhamento de linhas, troca de `random_state` do IF,
+remoção de 312 despesas / 0,032%), com a seed de produção (42)
+mantida. Magnitude igual à da anomalia de 16/10, indistinguível de
+ruído de cálculo sem controle adicional. Causa medida: além da
+`random_state`, o `Isolation Forest` de despesas usa
+`max_samples='auto'` — subamostra interna de 256 linhas sorteada por
+posição — tornando o `a_p` sensível à ordem das linhas e a `n` mesmo
+com a seed fixa.
+
+Decisão de estabilização (pré-condição de ativação, domínio ADR-002;
+não altera os 6 critérios, `contamination=0.05` nem o threshold
+`-0.1`, mas altera os flags de saída e portanto exige recalibração —
+MINOR do ADR-064, item 7 —; `gold.risk_scores` anteriores à fixação
+não são comparáveis no componente A, e a comparação 0.2 × novo
+(ADR-029) usa o retrato pós-fixação):
+A. `random_state` do IF de despesas deixa de ser default embutido no
+   código e passa a parâmetro versionado em `config/analytics.yaml`
+   (namespace `analytics.anomalias`, lido via `pipeline.config`,
+   ADR-008), com `config_sha256` no manifesto (ADR-064, itens 2d–2e).
+   Valor inicial: 42. Mudança exige novo ADR.
+B. Subamostra de treino do IF determinística por conteúdo, não por
+   posição, nesta hierarquia: (i) pré-condição universal — ordem
+   canônica das linhas antes do fit (chave estável de deduplicação,
+   ex.: `id_despesa` quando estável entre loads); (ii) solução
+   primária — `max_samples` explícito `None` no modelo (treino em
+   todas as linhas, sem subamostra); (iii) apenas se
+   `analytics.anomalias.sample_frac < 1.0` for deliberadamente
+   ativado, subamostra por hash determinístico de `id_despesa`,
+   nunca por índice de posição. A subamostra efetiva, quando
+   existir, integra o `data_fingerprint` via `config_sha256`
+   (ADR-064, item 2e).
+C. Com A + B, `fact_despesa → expense_outliers → a_p` não tem outra
+   fonte de estocasticidade conhecida: embaralhar linhas ou trocar a
+   seed passa a produzir desvio ~0 (só ponto flutuante).
+D. Verificação antes da comparação de ranking 0.2 × novo (ADR-029):
+   repetir o experimento de piso com A–C fixados. As perturbações (i)
+   e (ii) têm que colapsar para ~0 (desvio > 1e-9 indica caminho
+   estocástico remanescente — investigar antes de prosseguir); (iii)
+   permanece como piso legítimo de sensibilidade a mudança de dado e
+   continua ancorando `τ_w` ≥ 2 × p95(iii) ≈ 1,4e-2.)
 
 Contexto:
 PROJECT_CONTEXT.md §10 já define 6 critérios (Z-score > 2.5,

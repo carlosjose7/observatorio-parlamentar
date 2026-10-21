@@ -77,7 +77,11 @@ Histórico das alterações, organizado por sprint (ver
   7e-3 — cláusula de alerta do item 6 disparada; abre-se item no
   domínio do ADR-002 (estabilidade do `A`) antes de qualquer
   ativação, e o `τ_w` efetivo sobe para ≈1,4e-2 (2 × p95). Nota
-  completa no ADR-064.
+  completa no ADR-064. Nota 21/10 no ADR-002 estabiliza o `a_p`
+  (seed configurável, ordem canônica, `max_samples` explícito
+  `None`) como pré-condição de ativação — altera os flags e exige
+  recalibração MINOR (ADR-064, item 7) antes da comparação
+  0.2 × novo.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)
