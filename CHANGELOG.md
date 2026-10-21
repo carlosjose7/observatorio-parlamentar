@@ -38,17 +38,23 @@ Histórico das alterações, organizado por sprint (ver
   20/10 06:55Z, mesmo `pipeline_version` 0.1.0, sem commits de
   pipeline no intervalo); `E` e `N` intactos na janela (só mudam em
   2026) e o conteúdo monetário da Gold por parlamentar-ano idêntico
-  (hashes `totals`/`groups`/`intervals` iguais). Motor: os critérios
-  de anomalia 1–3 (z-score, Isolation Forest com semente fixa,
-  fornecedor com poucos clientes) são globais — qualquer carga que
-  muda a base recalcula estatísticas e vira flags dentro da janela;
-  o critério 4 (empresa < 12 meses, CNPJ) não acusa em nenhum dos
-  dois retratos. Aberto: a causa exata da carga de 16/10 (histórico
-  de runs do Airflow de 08→16/10 não verificado) e a periodicidade
-  (só 2 snapshots); o mecanismo é sensível a qualquer refresh, então
-  o `model_version` deve registrar o retrato das fontes além do
-  `data_fingerprint`, com estabilidade dos pesos entre refreshes
-  como critério de ativação (a calibrar; referência 5e-3).
+  (hashes `totals`/`groups`/`intervals` iguais). O `A` bruto moveu-se
+  de forma ampla em 2024 (521/529 parlamentares, média −0,038; o
+  top-5 dos deltas explica só 5% do movimento total) — não é
+  amplificação Min-Max de poucos extremos. Motor provável, não
+  confirmado: os critérios de anomalia 1–3 (z-score, Isolation Forest
+  com semente fixa, fornecedor com poucos clientes) são globais e
+  recalculam estatísticas sobre toda a base; a sensibilidade a
+  qualquer refresh não está demonstrada (08/10 e 20/10 concordam a
+  4e-5 apesar de 12 dias de ingestão) e a comparação de flags entre
+  os retratos ficou contaminada pelo run de determinismo `det-2`
+  (17/10 18:28Z), que reescreveu o `expense_outliers` da cópia. O
+  critério 4 (empresa < 12 meses, CNPJ) não acusa em nenhum dos dois
+  retratos. Aberto: a causa exata da carga de 16/10 (histórico de
+  runs do Airflow de 08→16/10 não verificado) e a periodicidade (só
+  2 snapshots); o piso de ruído do passo de anomalias será medido
+  conforme o ADR-064 (item 6), que condiciona o `τ_w` do critério de
+  estabilidade do `model_version`.
 - **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
   conformidade com o ADR-029; notas em ADR-002/003/027;
   PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
