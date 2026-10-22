@@ -82,6 +82,32 @@ Histórico das alterações, organizado por sprint (ver
   `None`) como pré-condição de ativação — altera os flags e exige
   recalibração MINOR (ADR-064, item 7) antes da comparação
   0.2 × novo.
+- **ADR-065 (Aceito):** modelo de anomalia de despesas congelado e
+  versionado — estabilização do `a_p`. Motivo: com o piso medido acima,
+  qualquer perturbação benigna move os pesos CRITIC ~7e-3, da ordem da
+  anomalia de 16/10. Decisões: (1) ordem canônica — vetor de treino
+  ordenado por valor antes do `fit` (supersede a chave `id_despesa` da
+  nota ADR-002, B(i)); (2) IF treinado por comando explícito em anos
+  fechados, serializado (joblib) e registrado como artefato
+  `anomaly-MAJOR.MINOR` sob o contrato ADR-064 (duas famílias no
+  registro, um `active` por família), passo de anomalias
+  inferência-only; (3) hiperparâmetros inalterados
+  (`random_state=42`, `n_estimators=100`, `max_samples='auto'`,
+  `contamination=0.05`) em `config/analytics.yaml`
+  (`analytics.anomalias`), mudança = MAJOR na família `anomaly-*`
+  (emenda à regra MINOR-de-parâmetros do ADR-064, que segue valendo
+  para `risk-*`); (4) seed = parâmetro de treino medido e registrado;
+  (5) retreino só por decisão humana, monitor de deriva informativo;
+  (6) recalibração obrigatória (ADR-064, item 7) antes da comparação
+  0.2 × novo; (7) critérios A1–A3 travados antes do dado real (A1
+  shuffle → 0 flags e pesos ≤1e-9; A2 ±0,03% → 0 flags e p95 ≤1e-3;
+  A3 `τ_w` ≤5e-3). Emenda a nota 21/10 do ADR-002 (B(ii), C, D(ii) e o
+  mecanismo de B(i); `max_samples=None` é rejeitado pelo scikit-learn)
+  com nota de status no ADR-002. Verificação: dados sintéticos (1.8 e
+  1.9.1) reproduzem os números do ADR; run real sobre
+  `gold.fact_despesa` (960.707 linhas) — com o modelo congelado,
+  Δscore 0,0e+00 e 0 flips, contra 808 flags sob embaralhamento e
+  8,0–12,1% por troca de seed no modelo retreinado.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)

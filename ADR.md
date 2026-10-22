@@ -72,6 +72,17 @@ D. Verificação antes da comparação de ranking 0.2 × novo (ADR-029):
    permanece como piso legítimo de sensibilidade a mudança de dado e
    continua ancorando `τ_w` ≥ 2 × p95(iii) ≈ 1,4e-2.)
 
+(Nota de status 21/10/2026, ADR-065 aceito na Sprint 29, Onda 3: este
+texto não é reescrito; os itens B(ii), C e D(ii) são emendados pelas
+medições do ADR-065 (Contexto) — `max_samples=None` é rejeitado pelo
+scikit-learn, a troca de seed não colapsa para ~0 enquanto o modelo é
+retreinado (o colapso exigido em D(ii) só ocorre com o modelo
+congelado) e a ordem de B(i) passa a ser a ordenação por valor do
+vetor de treino, supersede a chave `id_despesa` e mantém a substância
+de ordem canônica. D(iii) mantém a fórmula com o valor re-medido em
+A2/A3 do ADR-065 (sob modelo congelado, p95(iii) ≤ 1e-3 → âncora
+≈ 2e-3, `τ_w` ≤ 5e-3). Itens A, B(iii) e D(i) permanecem.)
+
 Contexto:
 PROJECT_CONTEXT.md §10 já define 6 critérios (Z-score > 2.5,
 Isolation Forest score < -0.1, fornecedor com <3 clientes, empresa
@@ -4476,3 +4487,151 @@ Consequências:
   encaminhamento futuro.
 - Trabalho da Onda 3 (somente após o aceite): registro e manifesto,
   decomposição do fingerprint, estágio em sombra, diagnósticos e testes.
+
+---
+
+ADR-065
+Título: Modelo de anomalia de despesas congelado e versionado — estabilização do `a_p`
+
+Status:
+Aceito — Sprint 29, Onda 3 (21/10/2026, branch sprint/29-risk-index)
+
+Relação com ADRs anteriores (explícita para não fragilizar a regra
+"não contradizar sem ADR"):
+- EMENDA a nota de 21/10/2026 do ADR-002 nos itens B(ii), C e D(ii),
+  que este ADR corrige com medições (Contexto), e no MECANISMO de B(i):
+  a ordem canônica passa a ser a ordenação por valor do vetor de treino
+  (item 1), que supersede a chave estável `id_despesa`; a substância de
+  B(i) (ordem canônica como pré-condição universal) permanece. D(iii)
+  mantém a fórmula `τ_w` ≥ 2 × p95(iii), com o valor re-medido em
+  A2/A3. O texto da nota não é reescrito; ele recebe uma nota de status
+  apontando para este ADR. Os itens A, B(iii) e D(i) permanecem.
+- Não altera os 6 critérios, `contamination = 0.05` nem o threshold
+  `-0.1` do ADR-002 (o threshold continua sendo regra de inferência,
+  como o próprio ADR-002 define).
+- Usa o contrato do ADR-064 (artefato, manifesto, registro, ativação)
+  para o modelo de anomalia, além do modelo de risco.
+
+Contexto:
+O experimento de piso de ruído (ADR-064, item 6) mostrou que o `a_p`
+move os pesos CRITIC em p95 = 7,0e-3 (ordem das linhas), 8,7e-3
+(`random_state`) e 6,7e-3 (remoção de 312 despesas) — o tamanho da
+anomalia de 16/10. O código do passo de anomalias
+(`analytics/anomalies/anomalies.py`) treina, a cada execução, um
+`IsolationForest(contamination=0.05, random_state=42)` com os demais
+parâmetros no default (`n_estimators=100`, `max_samples='auto'`, isto é,
+subamostra de 256 por árvore) sobre uma única feature, `valor_liquido`.
+
+Medições em dados SINTÉTICOS (200 mil valores monetários com cauda
+pesada, scikit-learn 1.8, mesma regra `decision_function < -0.1`;
+3259 linhas sinalizadas na linha de base). Não são evidência sobre os
+dados reais; servem para separar mecanismos e são reproduzíveis com o
+script `if_stability_experiment.py` (material de apoio da sprint, fora do
+pipeline), que também roda sobre os valores reais com `--duckdb`:
+a) embaralhar a ordem das linhas muda 542 flags; ordenar o vetor de
+   treino por valor antes do `fit` leva a 0 flags diferentes;
+b) com treino ordenado, trocar a seed 42 por outras quatro muda 342,
+   549, 968 e 193 flags (5,1% a 25,6% dos sinalizados);
+c) remover 59 linhas (0,03%) em quatro sorteios muda 1433, 980, 38 e 125
+   flags nas linhas mantidas: a mudança de tamanho do dado re-sorteia as
+   subamostras e produz variação da mesma ordem da troca de seed;
+d) `max_samples=None` é REJEITADO pelo scikit-learn
+   (`InvalidParameterError`); `max_samples=1.0` (todas as linhas) é
+   aceito, mas não elimina a sensibilidade à seed (115, 101 e 118 flags
+   diferentes, 16,0% a 18,7% dos sinalizados) e derruba a taxa de
+   sinalização de 1,63% para 0,32%, isto é, muda o comportamento do
+   critério; `max_samples=4096` e `65536` também reduzem a taxa (1,02% e
+   0,48%) e mantêm a sensibilidade à seed (13% a 25%);
+e) aumentar `n_estimators` para 300 não a elimina (4,6% a 22,3% dos
+   sinalizados em três seeds);
+f) com o modelo congelado, os scores das linhas existentes ficam
+   idênticos (diferença máxima 0,0) depois de acrescentar linhas, e os
+   flags das linhas mantidas ficam idênticos depois de remover linhas.
+Conclusão: a ordem é um defeito exato e corrigível; a variação por seed
+e por tamanho do dado é intrínseca ao Isolation Forest retreinado a cada
+carga, e nenhuma configuração testada a elimina. Só desaparece se o
+modelo deixar de ser retreinado.
+
+Decisão:
+1. Ordem canônica. Como o modelo é ajustado apenas sobre `valor_liquido`,
+   o vetor de treino é ordenado por valor antes do `fit` (sem depender
+   de chave de linha nem de `id_despesa`). Pré-condição universal; remove
+   a componente de ordem de forma exata.
+
+2. Modelo congelado. O Isolation Forest de despesas deixa de ser
+   retreinado a cada carga. É treinado por comando explícito sobre uma
+   janela de referência (anos fechados), serializado (joblib) e
+   registrado como artefato `anomaly-<MAJOR>.<MINOR>` sob o contrato do
+   ADR-064 (manifesto com sha256, versões das bibliotecas, identidade
+   dos dados, registro com status candidate | active | retired). O
+   `control.risk_model_registry` passa a abrigar duas famílias,
+   `risk-*` e `anomaly-*`, cada uma com no máximo um `active` (a
+   cláusula "Há no máximo um `active`" do ADR-064, item 4, vale por
+   família; um `active` de cada família coexiste). O passo
+   de anomalias só faz inferência (`decision_function` e threshold
+   `-0.1`), como o ADR-002 já prevê ("regra de decisão aplicada em
+   inferência, sem necessidade de retreinar o modelo").
+
+3. Hiperparâmetros inalterados e versionados. Mantêm-se `n_estimators`
+   e `max_samples='auto'` (256) para preservar o comportamento do
+   critério. `random_state`, `n_estimators`, `max_samples` e
+   `contamination` passam a `config/analytics.yaml` (namespace
+   `analytics.anomalias`, ADR-008) e ao manifesto; mudar qualquer um
+   gera novo MAJOR. Na família `anomaly-*`, mudar hiperparâmetro de
+   treino gera MAJOR — emenda explícita à regra do ADR-064, item 1
+   ("MINOR muda quando só se recalibra (pesos, parâmetros)"), que
+   continua valendo para a família `risk-*`; o modelo de anomalia não
+   é recalibrável, é substituído por retreino. Não se adota
+   `max_samples=None` (inválido) nem `1.0` (ver Contexto, item d).
+
+4. A seed é parâmetro de TREINO, não de inferência. A variabilidade entre
+   seeds é medida no treino e registrada no manifesto (número de flags
+   diferentes entre duas seeds sobre a janela de referência), nunca
+   assumida zero.
+
+5. Política de retreino. Explícita: decisão humana registrada (nota ou
+   ADR), por exemplo ao fechar um ano. Há um monitor informativo de
+   deriva (taxa de sinalização do modelo congelado por ano e comparação
+   da distribuição dos scores contra a janela de referência) em
+   `control.risk_model_diagnostics`; o monitor nunca retreina sozinho.
+
+6. Recalibração. A introdução do modelo congelado altera os flags e,
+   portanto, o `a_p`: exige recalibração (ADR-064, item 7). Os
+   `gold.risk_scores` anteriores não são comparáveis no componente A, e a
+   comparação 0.2 × novo (ADR-029) usa o retrato pós-congelamento.
+
+7. Critérios de aceite (travados antes de ver o resultado nos dados
+   reais). Repetir o experimento de piso (ADR-064, item 6) com o modelo
+   congelado e a ordem canônica:
+   A1. ordem das linhas embaralhada: 0 flags diferentes e desvio dos
+       pesos CRITIC ≤ 1e-9;
+   A2. remoção ou acréscimo de cerca de 0,03% das despesas: 0 flags
+       diferentes nas linhas existentes e p95 do desvio dos pesos ≤ 1e-3
+       (hoje 6,7e-3); o que restar é efeito real da mudança de dado;
+   A3. o piso medido permite `τ_w` ≤ 5e-3 (ADR-064, item 5), isto é, o
+       critério de estabilidade volta a ser informativo.
+   Informativos (não bloqueiam): taxa de sinalização do modelo congelado
+   contra a do passo atual; Jaccard dos conjuntos sinalizados.
+   Se A1, A2 ou A3 falharem, o item 2 é revisto; a ordem canônica
+   (item 1) permanece de qualquer forma.
+
+Alternativas consideradas:
+- A. Só ordem canônica: corrige a ordem, mas deixa a sensibilidade à
+  seed e ao tamanho do dado; insuficiente sozinha.
+- B. `max_samples` maior ou `n_estimators` maior: não elimina a
+  sensibilidade à seed (Contexto, itens d e e), muda a taxa de
+  sinalização e custa tempo e memória; rejeitada.
+- C. Esta decisão (modelo congelado e versionado).
+- D. Trocar o Isolation Forest por regra determinística de valor
+  (quantis ou MAD): remove a aleatoriedade, mas redefine o critério 2 do
+  ADR-002; adiada, fora do escopo.
+
+Consequências:
+- O `a_p` deixa de oscilar com ordem, seed ou volume de carga; só muda
+  quando o dado muda de fato ou quando o modelo é retreinado por decisão.
+- Custo: um estágio de treino explícito, um artefato por versão do modelo
+  de anomalia, monitor de deriva e a recalibração do item 6.
+- Risco conhecido: o modelo congelado envelhece em relação ao dado novo;
+  o monitor de deriva e a política de retreino tratam isso.
+- A nota de 21/10 do ADR-002 recebe nota de status apontando para este
+  ADR quando for aceito; o texto original não é reescrito.
