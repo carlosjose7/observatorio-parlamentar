@@ -1,13 +1,13 @@
 # tests/pipeline/test_anomalies.py
-"""Detecção de anomalias de despesa (Sprint 5, Onda 2).
+"""Detecção de anomalias de despesa (Sprint 5, Onda 2; ADR-065).
 
 Cobre `analytics/anomalies/anomalies.py` — o predicado `regra_anomalia` do §10/ADR-002:
 uma despesa é anomalia quando satisfaz PELO MENOS 2 dos 6 critérios. Verifica:
 
 - Cada um dos 6 critérios isoladamente (`criterio_*`), com thresholds exatos
-  do §10 (Z-score > 2.5; Isolation Forest score < -0.1 com contamination
-  0.05; fornecedor < 3 clientes; empresa < 12 meses; valores idênticos >= 3
-  no mês; dia sem sessão via dim_data.is_dia_util).
+  do §10 (Z-score > 2.5; Isolation Forest score < -0.1 com o MODELO CONGELADO
+  — ADR-065, inferência-only; fornecedor < 3 clientes; empresa < 12 meses;
+  valores idênticos >= 3 no mês; dia sem sessão via dim_data.is_dia_util).
 - O agregado `is_anomalia` (>= 2 critérios) e a rastreabilidade da feature
   `regra_anomalia` no registry (ADR-028).
 - A persistência em `ml_staging.expense_outliers` (ADR-026, Opção A —
@@ -24,7 +24,6 @@ import duckdb
 import pandas as pd
 
 from analytics.anomalies.anomalies import (
-    IF_CONTAMINACAO,
     IF_LIMIAR_SCORE,
     avaliar_criterios,
     contagem_anomalias,
@@ -36,6 +35,12 @@ from analytics.anomalies.anomalies import (
     escrever_expense_outliers_duckdb,
     executar_carga_outliers,
 )
+from analytics.anomalies.model import (
+    ativar_modelo,
+    congelar_e_registrar,
+    treinar_modelo,
+)
+from pipeline.config import AnomaliasSettings
 
 _RAIZ = Path(__file__).resolve().parents[2]
 if str(_RAIZ) not in sys.path:
@@ -58,6 +63,29 @@ def _fatos(
             "data_sk": [data_sk] * len(valores),
             "valor_liquido": valores,
         }
+    )
+
+
+def _modelo_if(valores_treino: list[float] | None = None):
+    """Isolation Forest congelado de teste (treinado via caminho ADR-065)."""
+    base = pd.Series(valores_treino if valores_treino is not None else [100.0] * 50)
+    return treinar_modelo(base, cfg=AnomaliasSettings())
+
+
+def _congelar_ativar(db: Path, store: Path, valores_treino: pd.Series) -> None:
+    """Registra e ativa um modelo `anomaly-1.0` em `db` (store em `store`)."""
+    congelar_e_registrar(
+        valores_treino,
+        anos=[2024],
+        db_path=db,
+        store_dir=store,
+        model_version="anomaly-1.0",
+    )
+    ativar_modelo(
+        "anomaly-1.0",
+        db_path=db,
+        referencia="teste unitário",
+        store_dir=store,
     )
 
 
@@ -93,19 +121,17 @@ def test_zscore_hist_insuficiente_nao_acusa():
 
 
 def test_if_score_usado_como_criterio():
-    """Critério 2: Isolation Forest usa contamination 0.05 e threshold -0.1."""
+    """Critério 2: modelo congelado, threshold de inferência -0.1."""
     # Valor destoante (outlier claro) deve ter score < -0.1.
     valores = [100.0] * 95 + [100000.0]
     fatos = _fatos(valores)
-    # Usamos avaliar_criterios para obter os scores (treino determinístico).
-    resultado = avaliar_criterios(fatos, _dim_data())
+    resultado = avaliar_criterios(fatos, _dim_data(), modelo_if=_modelo_if(valores))
     assert "if_score" in resultado.columns
     assert "criterio_if" in resultado.columns
     outlier = resultado["valor_liquido"] == 100000.0
     assert resultado.loc[outlier, "criterio_if"].any()
-    # contamination é hiperparâmetro de treino (ADR-002) — não confundir com
-    # threshold de inferência.
-    assert IF_CONTAMINACAO == 0.05
+    # contamination é hiperparâmetro de TREINO (config/analytics.yaml,
+    # ADR-065) — não confundir com threshold de inferência.
     assert IF_LIMIAR_SCORE == -0.1
 
 
@@ -218,7 +244,9 @@ def test_anomalia_requer_dois_criterios():
             "valor_liquido": [100, 100, 100, 100, 100, 5000, 100, 100],
         }
     )
-    resultado = avaliar_criterios(fatos, _dim_data())
+    resultado = avaliar_criterios(
+        fatos, _dim_data(), modelo_if=_modelo_if([100, 100, 100, 100, 100, 5000, 100, 100])
+    )
 
     p2 = resultado[resultado["id_parlamentar"] == 2]
     # P1: despesa de 5000 tem z > 2.5 e o fornecedor 10 é exclusivo → 2 critérios.
@@ -238,7 +266,9 @@ def test_anomalia_contagem():
             "valor_liquido": [100, 100, 100, 100, 100, 100, 8000],
         }
     )
-    resultado = avaliar_criterios(fatos, _dim_data())
+    resultado = avaliar_criterios(
+        fatos, _dim_data(), modelo_if=_modelo_if([100, 100, 100, 100, 100, 100, 8000])
+    )
     # Fornecedor exclusivo (criterio 3) + outlier (criterio 1) na mesma
     # despesa → garante ao menos 1 anomalia.
     assert 1 <= contagem_anomalias(resultado) <= 7
@@ -248,7 +278,7 @@ def test_anomalia_contagem():
 def test_avaliar_criterios_degrada_sem_dimensao_ou_fornecedor():
     """Ausência de dados auxiliares nunca cria falso positivo."""
     fatos = _fatos([100, 100, 100]).drop(columns=["id_fornecedor"])
-    resultado = avaliar_criterios(fatos, dim_data=None)
+    resultado = avaliar_criterios(fatos, dim_data=None, modelo_if=_modelo_if())
 
     assert not resultado["criterio_fornecedor_poucos_clientes"].any()
     assert not resultado["criterio_valores_identicos"].any()
@@ -256,7 +286,7 @@ def test_avaliar_criterios_degrada_sem_dimensao_ou_fornecedor():
 
 
 def test_avaliar_criterios_vazio_preserva_schema():
-    resultado = avaliar_criterios(pd.DataFrame(), _dim_data())
+    resultado = avaliar_criterios(pd.DataFrame(), _dim_data(), modelo_if=_modelo_if())
     assert resultado.empty
     assert {"zscore", "if_score", "num_criterios", "is_anomalia"} <= set(resultado.columns)
 
@@ -288,7 +318,9 @@ def test_escrita_ml_staging_expense_outliers(tmp_path):
             "valor_liquido": [100, 100, 100, 100, 100, 100, 8000],
         }
     )
-    resultado = avaliar_criterios(fatos, _dim_data())
+    resultado = avaliar_criterios(
+        fatos, _dim_data(), modelo_if=_modelo_if([100, 100, 100, 100, 100, 100, 8000])
+    )
     assert resultado["is_anomalia"].any()
 
     escrever_expense_outliers_duckdb(
@@ -324,9 +356,16 @@ def test_escrita_outliers_vazia_nao_abre_duckdb(monkeypatch):
     escrever_expense_outliers_duckdb(pd.DataFrame(), run_id="run-vazia")
 
 
-def test_executar_carga_outliers_escreve_e_retorna(tmp_path):
-    """Orquestra avaliar + gravar em ml_staging (ponto de entrada da DAG)."""
+def test_executar_carga_outliers_escreve_e_retorna(tmp_path, monkeypatch):
+    """Orquestra avaliar + gravar em ml_staging (ponto de entrada da DAG).
+
+    O modelo vem congelado e ativo (ADR-065): o teste congela/registra/ativa
+    antes — sem modelo ativo, a carga falha (ver test_anomalias_modelo).
+    """
     db = tmp_path / "pipe.duckdb"
+    store = tmp_path / "models"
+    monkeypatch.setenv("ANOMALY_MODEL_STORE", str(store))
+    _congelar_ativar(db, store, pd.Series([100.0] * 50 + [5040.0]))
     fatos = _fatos([100, 100, 100, 5040], id_fornecedor=10)
     resultado = executar_carga_outliers(
         fatos, run_id="run-onda2", dim_data=_dim_data(), db_path=str(db)
@@ -348,6 +387,6 @@ def test_empresa_nova_na_persistencia(tmp_path):
     fatos = _fatos([100, 100], id_fornecedor=10)
     abertura = pd.Series({10: pd.Timestamp("2023-11-01")})  # 6 meses
     resultado = avaliar_criterios(
-        fatos, _dim_data(), data_abertura_fornecedor=abertura
+        fatos, _dim_data(), modelo_if=_modelo_if(), data_abertura_fornecedor=abertura
     )
     assert resultado["criterio_empresa_nova"].all()

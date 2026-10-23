@@ -18,10 +18,14 @@ Este predicado é a feature **`regra_anomalia`** da Feature Store
 `expense_anomaly_score` e `expense_outliers` — o módulo reusa a referência
 registrada (não recria a lógica solta).
 
-Nota ADR-002 (mantida fielmente): `contamination=0.05` é hiperparâmetro de
-**treino** do Isolation Forest; threshold de score `< -0.1` é regra de
-**decisão em inferência**. São distintos e não redundantes — reajuste de
-qualquer um exige novo ADR.
+Nota ADR-002/ADR-065: `contamination=0.05` é hiperparâmetro de **treino**
+do Isolation Forest, versionado em `config/analytics.yaml`
+(`analytics.anomalias`); threshold de score `< -0.1` é regra de **decisão
+em inferência**. São distintos e não redundantes — reajuste de qualquer um
+exige novo ADR. O modelo deixa de ser retreinado no passo (ADR-065): é
+treinado por comando explícito (`python -m analytics.anomalies.model`),
+congelado como artefato `anomaly-<MAJOR>.<MINOR>` e carregado ativo — este
+módulo só aplica `decision_function` + threshold (inferência-only).
 
 Saída: por exigência do ADR-026 (Opção A), Python escreve **exclusivamente**
 no schema `ml_staging` (DuckDB, single-writer) — aqui via
@@ -44,10 +48,8 @@ logger = structlog.get_logger()
 #: Limiar do critério 1 (Z-score > 2.5) — §10/ADR-002.
 ZSCORE_LIMIAR = 2.5
 
-#: Contamination do Isolation Forest — hiperparâmetro de TREINO (ADR-002).
-IF_CONTAMINACAO = 0.05
-
-#: Limiar de decisão do critério 2 EM INFERÊNCIA — ADR-002.
+#: Limiar de decisão do critério 2 EM INFERÊNCIA — ADR-002 (fixo; o
+#: contamination de treino vive em `analytics.anomalias`, ADR-065).
 IF_LIMIAR_SCORE = -0.1
 
 #: Critério 3 — fornecedor com menos de N clientes parlamentares distintos.
@@ -114,33 +116,26 @@ def _scores_isolation_forest(
     fatos: pd.DataFrame,
     *,
     coluna_valor: str,
-    random_state: int = 42,
+    modelo,
 ) -> pd.Series:
-    """Scores de anomalia do Isolation Forest (critério 2, ADR-002).
+    """Scores de anomalia do Isolation Forest CONGELADO (critério 2, ADR-065).
 
-    Treina um Isolation Forest com `contamination=0.05` (hiperparâmetro de
-    treino) sobre o valor das despesas do período e devolve, por despesa, o
-    `decision_function` — quanto menor o score, mais anômala a despesa. A
-    regra de decisão `< -0.1` é aplicada EM INFERÊNCIA por
-    `_criterio_isolation_forest` (ADR-002: treino e inferência são momentos
+    Aplica apenas `decision_function` do modelo treinado por comando
+    explícito (`analytics.anomalies.model`, artefato `anomaly-<MAJOR>.<MINOR>`)
+    — **inferência-only**; o passo de anomalias nunca retreina (ADR-065,
+    item 2). A regra de decisão `< -0.1` é aplicada por
+    `criterio_isolation_forest` (ADR-002: treino e inferência são momentos
     distintos).
 
     Args:
         fatos: DataFrame no grão de fato (uma linha por despesa).
         coluna_valor: Coluna de valor monetário usada como feature.
-        random_state: Semente fixa — treino determinístico por período.
+        modelo: `IsolationForest` ativo carregado do registro/artefato.
 
     Returns:
         `pd.Series` com os scores (índice = linha do `fatos`).
     """
-    from sklearn.ensemble import IsolationForest
-
     valores = pd.to_numeric(fatos[coluna_valor], errors="coerce").fillna(0.0)
-    modelo = IsolationForest(
-        contamination=IF_CONTAMINACAO,
-        random_state=random_state,
-    )
-    modelo.fit(valores.to_numpy().reshape(-1, 1))
     scores = modelo.decision_function(valores.to_numpy().reshape(-1, 1))
     return pd.Series(scores, index=fatos.index)
 
@@ -162,9 +157,9 @@ def criterio_isolation_forest(
     fatos: pd.DataFrame,
     *,
     coluna_valor: str = "valor_liquido",
-    random_state: int = 42,
+    modelo,
 ) -> tuple[pd.Series, pd.Series]:
-    """Critério 2 — Isolation Forest score < -0.1.
+    """Critério 2 — Isolation Forest (modelo congelado) score < -0.1.
 
     Devolve `(scores, criterio_bool)`: o score é persistido para auditoria;
     o critério aplica o limiar de inferência.
@@ -172,14 +167,12 @@ def criterio_isolation_forest(
     Args:
         fatos: DataFrame no grão de fato.
         coluna_valor: Coluna de valor usada como feature.
-        random_state: Semente do treino determinístico.
+        modelo: `IsolationForest` ativo (ADR-065, inferência-only).
 
     Returns:
         (`pd.Series` de scores, `pd.Series` booleana do critério).
     """
-    scores = _scores_isolation_forest(
-        fatos, coluna_valor=coluna_valor, random_state=random_state
-    )
+    scores = _scores_isolation_forest(fatos, coluna_valor=coluna_valor, modelo=modelo)
     return scores, scores < IF_LIMIAR_SCORE
 
 
@@ -316,12 +309,12 @@ def avaliar_criterios(
     fatos: pd.DataFrame,
     dim_data: pd.DataFrame | None = None,
     *,
+    modelo_if,
     data_abertura_fornecedor: pd.Series | None = None,
     coluna_valor: str = "valor_liquido",
     coluna_id: str = "id_parlamentar",
     coluna_fornecedor: str = "id_fornecedor",
     coluna_data: str = "data_sk",
-    random_state: int = 42,
 ) -> pd.DataFrame:
     """Avalia os seis critérios do §10 sobre as despesas.
 
@@ -338,11 +331,12 @@ def avaliar_criterios(
         dim_data: DataFrame da `dim_data` (com `data_sk`, `ano`, `mes`,
             `is_dia_util` e `data`). Necessária para os critérios 4, 5 e 6;
             se omitida, esses critérios não acusam.
+        modelo_if: `IsolationForest` CONGELADO ativo (critério 2, ADR-065 —
+            obrigatório; este módulo não treina).
         data_abertura_fornecedor: Série `{id_fornecedor: data_de_abertura}`
             para o critério 4; `None` desativa o critério (degradação segura).
         coluna_valor / coluna_id / coluna_fornecedor / coluna_data: Nomes de
             colunas operacionais do `fatos`.
-        random_state: Semente do Isolation Forest (treino determinístico).
 
     Returns:
         DataFrame no grão de `fatos` com colunas `criterio_*`, `zscore`,
@@ -367,7 +361,7 @@ def avaliar_criterios(
         fatos, coluna_valor=coluna_valor, coluna_id=coluna_id
     )
     resultado["if_score"], resultado["criterio_if"] = criterio_isolation_forest(
-        fatos, coluna_valor=coluna_valor, random_state=random_state
+        fatos, coluna_valor=coluna_valor, modelo=modelo_if
     )
     resultado["criterio_zscore"] = (
         resultado["zscore"].fillna(-np.inf) > ZSCORE_LIMIAR
@@ -531,12 +525,15 @@ def executar_carga_outliers(
     data_abertura_fornecedor: pd.Series | None = None,
     db_path: str | None = None,
     source_version: str = "",
+    modelo_store_dir: str | None = None,
 ) -> pd.DataFrame:
     """Fluxo completo da Onda 2: avaliar critérios e gravar `ml_staging`.
 
-    Orquestra `avaliar_criterios` + `escrever_expense_outliers_duckdb` —
-    o ponto de entrada da DAG apontando para o DuckDB do Gold (mesmo padrão
-    de `pipeline/silver.py`).
+    Carrega o modelo de anomalia **ativo** (ADR-065: inferência-only — sem
+    modelo ativo, falha com instrução de treino/ativação) e orquestra
+    `avaliar_criterios` + `escrever_expense_outliers_duckdb` — o ponto de
+    entrada da DAG apontando para o DuckDB do Gold (mesmo padrão de
+    `pipeline/silver.py`).
 
     Args:
         fatos: DataFrame de despesas no grão de fato.
@@ -545,13 +542,28 @@ def executar_carga_outliers(
         data_abertura_fornecedor: Data de abertura dos fornecedores (critério 4).
         db_path: Caminho DuckDB alternativo.
         source_version: Versão da fonte.
+        modelo_store_dir: Store de artefatos do modelo (testes); produção usa
+            `ANOMALY_MODEL_STORE` ou `data/models` (ADR-065).
 
     Returns:
         DataFrame avaliado (mesmo de `avaliar_criterios`).
     """
+    from analytics.anomalies.model import carregar_modelo_ativo
+
+    modelo_if, registro = carregar_modelo_ativo(
+        db_path=db_path or get_env().duckdb_database_path,
+        store_dir=modelo_store_dir,
+    )
+    logger.info(
+        "carga_outliers_modelo_congelado",
+        run_id=run_id,
+        model_version=registro["model_version"],
+        manifest_sha256=registro["manifest_sha256"],
+    )
     resultado = avaliar_criterios(
         fatos,
         dim_data,
+        modelo_if=modelo_if,
         data_abertura_fornecedor=data_abertura_fornecedor,
     )
     escrever_expense_outliers_duckdb(

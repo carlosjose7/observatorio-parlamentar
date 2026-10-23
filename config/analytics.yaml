@@ -20,3 +20,14 @@ analytics:
       supplier_dependency_score: 0.2
       expense_anomaly_score: 0.2
       network_influence_score: 0.2
+  anomalias:
+    # Isolation Forest de despesas — hiperparâmetros de TREINO (ADR-065).
+    # O modelo NÃO é retreinado no passo de anomalias (inferência-only): é
+    # treinado por comando explícito (python -m analytics.anomalies.model
+    # train) sobre anos fechados, serializado (joblib) e versionado como
+    # artefato anomaly-<MAJOR>.<MINOR>. Mudar qualquer valor daqui gera novo
+    # MAJOR na família anomaly-* (ADR-065, item 3).
+    random_state: 42        # parâmetro de TREINO — medido e registrado no manifesto (item 4)
+    n_estimators: 100
+    max_samples: 'auto'     # NUNCA null: o scikit-learn rejeita None no fit (ADR-065, Contexto d)
+    contamination: 0.05     # hiperparâmetro de treino (ADR-002); threshold -0.1 segue em inferência
