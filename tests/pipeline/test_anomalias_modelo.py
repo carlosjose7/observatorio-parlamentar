@@ -45,7 +45,6 @@ from analytics.anomalies.model import (
 )
 from pipeline.config import AnomaliasSettings, load_analytics_settings
 
-
 # ── Config: max_samples (ADR-065, Contexto, item d) ─────────────
 
 

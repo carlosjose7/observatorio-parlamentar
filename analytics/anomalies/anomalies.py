@@ -549,6 +549,7 @@ def executar_carga_outliers(
         DataFrame avaliado (mesmo de `avaliar_criterios`).
     """
     from analytics.anomalies.model import carregar_modelo_ativo
+    from pipeline.config import get_env
 
     modelo_if, registro = carregar_modelo_ativo(
         db_path=db_path or get_env().duckdb_database_path,

@@ -47,15 +47,15 @@ import hashlib
 import io
 import json
 import os
-import structlog
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
+import structlog
 
 from pipeline.config import REPO_ROOT, get_analytics, get_pipeline_version
 
@@ -202,10 +202,9 @@ def construir_manifesto(
     identidade dos dados (janela, contagem, soma, hash dos valores ordenados)
     e a variabilidade medida entre seeds (nunca assumida zero).
     """
-    from sklearn import __version__ as sklearn_version
-
     import joblib
     import pandas as __pandas
+    from sklearn import __version__ as sklearn_version
 
     v = pd.to_numeric(valores, errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
     ordenado = np.sort(v)
