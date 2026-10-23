@@ -289,6 +289,15 @@ def _dim_data_para_fatos(fatos: pd.DataFrame) -> pd.DataFrame:
 def _escrever_ml_staging(db: Path, fatos: pd.DataFrame) -> None:
     """Calcula a regra de anomalia e grava `ml_staging` (ADR-026 single-writer)."""
     from analytics.anomalies.anomalies import executar_carga_outliers
+    from analytics.anomalies.model import ativar_modelo, congelar_e_registrar
+
+    # ADR-065: inferência-only — modelo congelado e ativo antes da carga.
+    store = db.parent / "anomaly_models"
+    anos_fatos = sorted({int(str(int(ts))[:4]) for ts in fatos["data_sk"].unique()})
+    congelar_e_registrar(
+        fatos["valor_liquido"], anos=anos_fatos, db_path=db, store_dir=store
+    )
+    ativar_modelo("anomaly-1.0", db_path=db, referencia="teste", store_dir=store)
 
     datas = _dim_data_para_fatos(fatos)
     executar_carga_outliers(
@@ -297,6 +306,7 @@ def _escrever_ml_staging(db: Path, fatos: pd.DataFrame) -> None:
         dim_data=datas,
         db_path=str(db),
         source_version="v1",
+        modelo_store_dir=str(store),
     )
 
 
@@ -349,9 +359,12 @@ def test_expense_outliers_ignora_nao_anomalia(tmp_path, monkeypatch):
 
     fatos = _fact_despesa(db)
     from analytics.anomalies.anomalies import avaliar_criterios
+    from analytics.anomalies.model import treinar_modelo
+    from pipeline.config import AnomaliasSettings
 
     datas = _dim_data_para_fatos(fatos)
-    resultado = avaliar_criterios(fatos, datas)
+    modelo_if = treinar_modelo(fatos["valor_liquido"], cfg=AnomaliasSettings())
+    resultado = avaliar_criterios(fatos, datas, modelo_if=modelo_if)
     n_avaliadas = len(resultado)
     n_anomalias = int((resultado["is_anomalia"]).sum())
     assert n_anomalias < n_avaliadas

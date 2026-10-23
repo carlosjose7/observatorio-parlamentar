@@ -108,6 +108,24 @@ Histórico das alterações, organizado por sprint (ver
   `gold.fact_despesa` (960.707 linhas) — com o modelo congelado,
   Δscore 0,0e+00 e 0 flips, contra 808 flags sob embaralhamento e
   8,0–12,1% por troca de seed no modelo retreinado.
+- **Implementação do ADR-065 (PR #94, Onda 3):** código de treino/
+  registro/ativação/inferência (`analytics/anomalies/model.py`,
+  inferência-only em `anomalies.py`), config `analytics.anomalias`
+  (2 YAMLs, `max_samples: 'auto'` validado — `null` rejeitado) e
+  monitor de deriva `diagnose` →
+  `control.anomaly_model_diagnostics` (nunca retreina). A1–A3
+  confirmados no dado real com o artefato ativo (61 draws): A1
+  shuffle 0 flags (Δscore 0,0; dev. máx 1,4e-16 ≤1e-9); A2 drop/add
+  de 312 (0,032%) — componente IF 0 flips e p95 8,8e-5 / 4,8e-5
+  (≤1e-3; era 6,7e-3), predicado composto com 75–82 flips/draw
+  (≤0,009%, efeito de lote real dos critérios 1/3/5); A3 τ_w 5e-3
+  (era ≈1,4e-2). Treino determinístico (reproduz o mesmo sha256 do
+  artefato). **Migração:** exige bootstrap antes da primeira carga —
+  `python -m analytics.anomalies.model train --db … --anos
+  2023,2024,2025` + `activate --referencia …` (sem modelo ativo o
+  passo falha de propósito); `data/models/` gitignorado — em deploy,
+  persistir o store (volume ou `ANOMALY_MODEL_STORE`) além do
+  bootstrap do registro.
 - **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
 
 ### Alterado (previsto, com nota de migração)
