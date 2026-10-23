@@ -14,14 +14,7 @@ carga. Este módulo implementa o ciclo de VIDA do modelo (ADR-065, itens 2–4):
   (ADR-065, item 2);
 - **inferência**: `carregar_modelo_ativo` é o único caminho de leitura do
   passo de anomalias (`analytics/anomalies/anomalies.py`, inferência-only
-  com threshold `-0.1` — ADR-002/ADR-065).
-
-Armazenamento: diretório local `data/models/` (dev e testes; gitignored) ou
-o path de `ANOMALY_MODEL_STORE`. O backend MinIO previsto no ADR-064 (prefixo
-por `model_version`) entra junto com os artefatos do modelo de risco — o
-layout do store é o mesmo (`<store>/<model_version>/model.joblib` +
-`manifest.json`).
-
+  com threshold `-0.1` — ADR-002/ADR-065);
 - **monitor de deriva** (`diagnose`, ADR-065, item 5): taxa de sinalização
   do modelo congelado por ano + distribuição dos scores vs. janela de
   referência, gravado em `control.anomaly_model_diagnostics`; **nunca
@@ -178,9 +171,13 @@ def _git_commit() -> str | None:
 
 
 def _sha256_modulos() -> dict:
-    """sha256 dos módulos de anomalia (identidade de código, ADR-064, item 2d)."""
+    """sha256 dos módulos de anomalia (identidade de código, ADR-064, item 2d).
+
+    Inclui `diagnostics.py`: o monitor roda com o mesmo modelo e a mesma
+    janela de referência, então entra na identidade do código do pacote.
+    """
     identidade = {}
-    for nome in ("anomalies.py", "model.py"):
+    for nome in ("anomalies.py", "model.py", "diagnostics.py"):
         caminho = Path(__file__).resolve().parent / nome
         identidade[nome] = _sha256_bytes(caminho.read_bytes())
     return identidade
@@ -579,6 +576,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_diag.add_argument("--db", required=True, help="DuckDB (Gold + registro + diagnóstico)")
     p_diag.add_argument("--store-dir", default=None)
     args = parser.parse_args(argv)
+    import duckdb
+
     try:
         if args.comando == "train":
             anos = sorted({int(a.strip()) for a in args.anos.split(",") if a.strip()})
@@ -611,6 +610,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         logger.error("anomalias_modelo_config_error", error=str(exc))
         return 2
+    except duckdb.Error as exc:
+        logger.error("anomalias_modelo_db_error", error=str(exc))
+        return 1
     except (OSError, RuntimeError) as exc:
         logger.error("anomalias_modelo_failed", error=str(exc))
         return 1
