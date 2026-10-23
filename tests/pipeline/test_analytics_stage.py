@@ -95,9 +95,24 @@ def _contagens(db) -> dict[str, int]:
         con.close()
 
 
-def test_etapa_popula_ml_staging(tmp_path):
+def test_etapa_popula_ml_staging(tmp_path, monkeypatch):
+    import pandas as pd
+
+    from analytics.anomalies.model import ativar_modelo, congelar_e_registrar
+
     db = tmp_path / "gold.duckdb"
     _semear_gold(db)
+    # ADR-065: o passo de anomalias é inferência-only — congela e ativa um
+    # modelo de teste antes de orquestrar as ondas.
+    store = tmp_path / "models"
+    monkeypatch.setenv("ANOMALY_MODEL_STORE", str(store))
+    congelar_e_registrar(
+        pd.Series([1500.0, 80.5, 40.0, 40.0, 90.0, 60.0]),
+        anos=[2026],
+        db_path=db,
+        store_dir=store,
+    )
+    ativar_modelo("anomaly-1.0", db_path=db, referencia="teste", store_dir=store)
 
     resumo = executar_etapa_analytics("run-stage-teste", db_path=str(db))
 

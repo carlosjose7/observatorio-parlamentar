@@ -8,6 +8,133 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Sprint 29 — Revisão do `risk_index` (ADR-062) (em andamento, 08/10/2026)
+
+### Adicionado
+- **ADR-062 (Aceito, rev. 2):** `risk_index` sem rótulo via híbrido
+  (CRITIC + Isolation Forest complementar); supersede ADR-003,
+  altera ADR-027 (`D_p` ponderado por valor), esclarece ADR-002
+  (dois IFs); 6º score `V` (volume por pares); `model_version` próprio.
+- **Calibração offline** (`analytics/parliamentarians/risk_calibration.py`,
+  `config/risk_calibration.yaml`, 73 testes, 99% do módulo):
+  rodada na Gold 2023–2025 (run adotado 47c704df, `n_min_pares = 8`;
+  o 8679aa6a, base 10, está superado) — pesos pool C 0.174 /
+  D 0.174 / E 0.164 / A 0.114 / N 0.231 / V 0.143; relatório
+  `.json`/`.md` em `reports/risk_calibration/`.
+- **Nota de retrato (Gold):** os relatórios olham retratos diferentes
+  da Gold: `47c704df` (08/10), `721888cc` (16/10) e `c21c193e` /
+  `a9212439` (20/10, `data_fingerprint` `9c1285c2…`). O de 16/10 é o
+  ponto fora da curva (peso do `A` 0,1212 contra 0,1142 em 08/10 e
+  20/10; diferença máxima nos pesos 7e-3 contra 4e-5 entre 08/10 e
+  20/10). O passo analítico é determinístico, então a mudança veio
+  da entrada; a causa está detalhada no item seguinte. O
+  `model_version` 1 será calibrado sobre um retrato com
+  `data_fingerprint` registrado.
+- **Investigação da anomalia de 16/10 (entrada confirmada):**
+  reprodução — baseline na cópia da Gold de 17/10 reproduz os pesos
+  de 16/10 a 4,5e-6 e difere dos de 20/10 em 7,0e-3. O insumo que
+  mudou é o `A` em `gold.risk_scores` (599 linhas da janela; soma de
+  2024 86,95 → 66,97; runs `6aab26af` 17/10 06:57Z e `8cd7170f`
+  20/10 06:55Z, mesmo `pipeline_version` 0.1.0, sem commits de
+  pipeline no intervalo); `E` e `N` intactos na janela (só mudam em
+  2026) e o conteúdo monetário da Gold por parlamentar-ano idêntico
+  (hashes `totals`/`groups`/`intervals` iguais). O `A` bruto moveu-se
+  de forma ampla em 2024 (521/529 parlamentares, média −0,038; o
+  top-5 dos deltas explica só 5% do movimento total) — não é
+  amplificação Min-Max de poucos extremos. Motor provável, não
+  confirmado: os critérios de anomalia 1–3 (z-score, Isolation Forest
+  com semente fixa, fornecedor com poucos clientes) são globais e
+  recalculam estatísticas sobre toda a base; a sensibilidade a
+  qualquer refresh não está demonstrada (08/10 e 20/10 concordam a
+  4e-5 apesar de 12 dias de ingestão) e a comparação de flags entre
+  os retratos ficou contaminada pelo run de determinismo `det-2`
+  (17/10 18:28Z), que reescreveu o `expense_outliers` da cópia. O
+  critério 4 (empresa < 12 meses, CNPJ) não acusa em nenhum dos dois
+  retratos. Aberto: a causa exata da carga de 16/10 (histórico de
+  runs do Airflow de 08→16/10 não verificado) e a periodicidade (só
+  2 snapshots). O piso de ruído do passo de anomalias foi medido em
+  21/10 (item 6 do ADR-064) e mostra que desvios da ordem de 7e-3
+  surgem sob perturbações benignas — ver o item do ADR-064 abaixo.
+- **Documentação:** ADR-062 no `ADR.md` com anexo de calibração e
+  conformidade com o ADR-029; notas em ADR-002/003/027;
+  PROJECT_CONTEXT §8/§9, RF-03 e CU-05.
+- **ADR-063 (Rejeitado em 16/10/2026):** partial pooling no `V`
+  não adotado — A1 FAIL (Câmara 2023–2024) e A2 FAIL (Câmara);
+  vale a regra do ADR-062 (`n_min_pares` = 8); `V` final para o
+  bootstrap = regra ADR-062 (`--stage baseline` é o padrão;
+  `k_search`/`full` ficam opt-in).
+- **ADR-064 (Aceito):** contrato do `model_version` do `risk_index`:
+  identificador `risk-MAJOR.MINOR` imutável, manifesto com hashes de
+  código, dados e fontes (hash `external` decomposto por score),
+  registro em `control.risk_model_registry` (um único `active`),
+  ativação condicionada a ADR-029 + estabilidade + aprovação humana, e
+  `τ_w` provisório 5e-3 condicionado ao piso de ruído do passo de
+  anomalias (item 6); nenhum código antes do desenho. Item 6 executado
+  em 21/10 (cópia da Gold de 20/10, n=20 por perturbação; baseline =
+  `c21c193e` a 8e-17): p95 do desvio máximo dos pesos = 7,0e-3 (ordem
+  das linhas), 8,7e-3 (`random_state` do IF), 6,7e-3 (312 despesas
+  removidas). Toda perturbação benigna já produz desvio da ordem de
+  7e-3 — cláusula de alerta do item 6 disparada; abre-se item no
+  domínio do ADR-002 (estabilidade do `A`) antes de qualquer
+  ativação, e o `τ_w` efetivo sobe para ≈1,4e-2 (2 × p95). Nota
+  completa no ADR-064. Nota 21/10 no ADR-002 estabiliza o `a_p`
+  (seed configurável, ordem canônica, `max_samples` explícito
+  `None`) como pré-condição de ativação — altera os flags e exige
+  recalibração MINOR (ADR-064, item 7) antes da comparação
+  0.2 × novo.
+- **ADR-065 (Aceito):** modelo de anomalia de despesas congelado e
+  versionado — estabilização do `a_p`. Motivo: com o piso medido acima,
+  qualquer perturbação benigna move os pesos CRITIC ~7e-3, da ordem da
+  anomalia de 16/10. Decisões: (1) ordem canônica — vetor de treino
+  ordenado por valor antes do `fit` (supersede a chave `id_despesa` da
+  nota ADR-002, B(i)); (2) IF treinado por comando explícito em anos
+  fechados, serializado (joblib) e registrado como artefato
+  `anomaly-MAJOR.MINOR` sob o contrato ADR-064 (duas famílias no
+  registro, um `active` por família), passo de anomalias
+  inferência-only; (3) hiperparâmetros inalterados
+  (`random_state=42`, `n_estimators=100`, `max_samples='auto'`,
+  `contamination=0.05`) em `config/analytics.yaml`
+  (`analytics.anomalias`), mudança = MAJOR na família `anomaly-*`
+  (emenda à regra MINOR-de-parâmetros do ADR-064, que segue valendo
+  para `risk-*`); (4) seed = parâmetro de treino medido e registrado;
+  (5) retreino só por decisão humana, monitor de deriva informativo;
+  (6) recalibração obrigatória (ADR-064, item 7) antes da comparação
+  0.2 × novo; (7) critérios A1–A3 travados antes do dado real (A1
+  shuffle → 0 flags e pesos ≤1e-9; A2 ±0,03% → 0 flags e p95 ≤1e-3;
+  A3 `τ_w` ≤5e-3). Emenda a nota 21/10 do ADR-002 (B(ii), C, D(ii) e o
+  mecanismo de B(i); `max_samples=None` é rejeitado pelo scikit-learn)
+  com nota de status no ADR-002. Verificação: dados sintéticos (1.8 e
+  1.9.1) reproduzem os números do ADR; run real sobre
+  `gold.fact_despesa` (960.707 linhas) — com o modelo congelado,
+  Δscore 0,0e+00 e 0 flips, contra 808 flags sob embaralhamento e
+  8,0–12,1% por troca de seed no modelo retreinado.
+- **Implementação do ADR-065 (PR #94, Onda 3):** código de treino/
+  registro/ativação/inferência (`analytics/anomalies/model.py`,
+  inferência-only em `anomalies.py`), config `analytics.anomalias`
+  (2 YAMLs, `max_samples: 'auto'` validado — `null` rejeitado) e
+  monitor de deriva `diagnose` →
+  `control.anomaly_model_diagnostics` (nunca retreina). A1–A3
+  confirmados no dado real com o artefato ativo (61 draws): A1
+  shuffle 0 flags (Δscore 0,0; dev. máx 1,4e-16 ≤1e-9); A2 drop/add
+  de 312 (0,032%) — componente IF 0 flips e p95 8,8e-5 / 4,8e-5
+  (≤1e-3; era 6,7e-3), predicado composto com 75–82 flips/draw
+  (≤0,009%, efeito de lote real dos critérios 1/3/5); A3 τ_w 5e-3
+  (era ≈1,4e-2). Treino determinístico (reproduz o mesmo sha256 do
+  artefato). **Migração:** exige bootstrap antes da primeira carga —
+  `python -m analytics.anomalies.model train --db … --anos
+  2023,2024,2025` + `activate --referencia …` (sem modelo ativo o
+  passo falha de propósito); `data/models/` gitignorado — em deploy,
+  persistir o store (volume ou `ANOMALY_MODEL_STORE`) além do
+  bootstrap do registro.
+- **`duckdb>=1.0.0` no grupo `analytics`** (mesmo do `pipeline`, ADR-006).
+
+### Alterado (previsto, com nota de migração)
+- `D` antigo vs novo: Spearman ≈ 0,30 (sinal novo — ranking mexe).
+- "5 scores" → "6 scores" (§9, RF-03, CU-05, registry, `analytics.yaml`).
+- `risk.pesos` será removido na integração (`RiskSettings` nova).
+- `n_min_pares` 10 → 8 (config-only; fallback casa-level cai de
+  34–39% para 17–28%, na Câmara e no Senado).
+
 ## Sprint 28 — Freshness granular (30/09/2026)
 
 ### Corrigido

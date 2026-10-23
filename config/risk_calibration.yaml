@@ -1,0 +1,59 @@
+# Calibração do risk_index (ADR-062, Sprint 29).
+# Valores marcados "a calibrar" são baselines da fase Cientista de Dados.
+
+risk_calibration:
+  # Janela de referência: anos civis fechados da legislatura atual (pool + por ano).
+  window_years: [2023, 2024, 2025]
+
+  days_per_month: 30.4375        # divisor de meses em exercício (ADR-062, item 4)
+  n_min_pares: 8                 # calibrado em 08/10/2026 (era 10; 8 = bancada mínima, Spearman 0,90–0,95 vs base)
+  n_min_sensitivity: [5, 8, 10]  # n_min testados na análise de sensibilidade
+  meses_min: 3                   # a calibrar — abaixo disso V = 0 (janela curta)
+  w_min_aviso: 0.05              # a calibrar — peso CRITIC abaixo disso gera aviso
+  min_pair_value: 0.0            # pares fornecedor-parlamentar com valor líquido <= isto saem do HHI
+  top_fraction: 0.10             # fração do top usada no Jaccard
+  dispersion_quantiles: [[0.90, 0.10], [0.99, 0.01]]   # [alto, baixo]
+
+  tables:
+    fact_despesa: gold.fact_despesa
+    dim_parlamentar: gold.dim_parlamentar
+
+  # Origem dos scores E (political_exposure), A (expense_anomaly) e N (network_influence):
+  # Gold risk_scores (grão periodo × parlamentar, já em [0,1]; média = identidade).
+  scores_source:
+    table: gold.risk_scores
+    id_column: id_parlamentar
+    period_expression: periodo
+    aggregation: mean
+    columns:
+      E: political_exposure_score
+      A: expense_anomaly_score
+      N: network_influence_score
+
+  # Partial pooling do V (ADR-063). k = null até a busca por leave-one-out
+  # (--stage k_search); depois, preencher k por casa e rodar --stage full.
+  pooling:
+    k:
+      camara: null
+      senado: null
+    k_grid: [0.5, 1, 2, 4, 8, 16, 32, 64, 128]
+    tolerance: 1.0e-9              # empate numérico (seleção de k e critérios A1/A2)
+    strict_casas: [camara]         # A1 exige melhora estrita; nas demais, não piorar
+
+  # Impressão digital dos dados de entrada (reprodutibilidade): casas decimais mantidas ao gerar o hash.
+  fingerprint_decimals: 10
+  # Somas monetárias (totals, pairs) vêm do banco e a ordem de soma em ponto flutuante não é garantida:
+  # arredondar na grade de centavos absorve esse ruído sem esconder nenhuma mudança real de valor.
+  fingerprint_money_decimals: 2
+
+  # Robustez dos pesos e sensibilidade do índice base (critérios do ADR-029; --stage robustness).
+  robustness:
+    bootstrap_samples: 1000          # reamostragem por parlamentar (cluster bootstrap)
+    random_state: 42
+    ci_level: 0.95
+    dirichlet_samples: 1000          # vetores de pesos perturbados em torno dos pesos CRITIC
+    dirichlet_concentration: 50      # a calibrar — maior = mais próximo dos pesos CRITIC
+    stability_threshold: 0.9         # fração dos vetores em que um membro do top precisa continuar no top
+    distribution_quantiles: [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]
+
+  output_dir: reports/risk_calibration

@@ -305,11 +305,28 @@ def _preparar_staging(db: Path, fatos: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
     `executar_carga_ml_risco` com a Gold `supplier_concentration`.
     """
     from analytics.anomalies.anomalies import executar_carga_outliers
+    from analytics.anomalies.model import ativar_modelo, congelar_e_registrar
     from analytics.network.network import executar_carga_ml_rede
+
+    # ADR-065: inferência-only — modelo congelado e ativo antes da carga.
+    store = db.parent / "anomaly_models"
+    anos_fatos = sorted({int(str(int(ts))[:4]) for ts in fatos["data_sk"].unique()})
+    congelar_e_registrar(
+        fatos["valor_liquido"],
+        anos=anos_fatos,
+        db_path=db,
+        store_dir=store,
+    )
+    ativar_modelo("anomaly-1.0", db_path=db, referencia="teste", store_dir=store)
 
     datas = _dim_data_para_fatos(fatos)
     executar_carga_outliers(
-        fatos, run_id=_FATO_RUN_ID, dim_data=datas, db_path=str(db), source_version="v1"
+        fatos,
+        run_id=_FATO_RUN_ID,
+        dim_data=datas,
+        db_path=str(db),
+        source_version="v1",
+        modelo_store_dir=str(store),
     )
     executar_carga_ml_rede(fatos, run_id=_FATO_RUN_ID, db_path=str(db), source_version="v1")
 

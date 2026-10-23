@@ -1,0 +1,43 @@
+# Calibração do risk_index (ADR-062, Sprint 29).
+# Valores marcados "a calibrar" são baselines da fase Cientista de Dados.
+
+risk_calibration:
+  # Janela de referência: anos civis fechados da legislatura atual (pool + por ano).
+  window_years: [2023, 2024, 2025]
+
+  days_per_month: 30.4375        # divisor de meses em exercício (ADR-062, item 4)
+  n_min_pares: 8                 # calibrado em 08/10/2026 (era 10; 8 = bancada mínima, Spearman 0,90–0,95 vs base)
+  n_min_sensitivity: [5, 8, 10]  # n_min testados na análise de sensibilidade
+  meses_min: 3                   # a calibrar — abaixo disso V = 0 (janela curta)
+  w_min_aviso: 0.05              # a calibrar — peso CRITIC abaixo disso gera aviso
+  min_pair_value: 0.0            # pares fornecedor-parlamentar com valor líquido <= isto saem do HHI
+  top_fraction: 0.10             # fração do top usada no Jaccard
+  dispersion_quantiles: [[0.90, 0.10], [0.99, 0.01]]   # [alto, baixo]
+
+  tables:
+    fact_despesa: gold.fact_despesa
+    dim_parlamentar: gold.dim_parlamentar
+
+  # Origem dos scores E (political_exposure), A (expense_anomaly) e N (network_influence):
+  # Gold risk_scores (grão periodo × parlamentar, já em [0,1]; média = identidade).
+  scores_source:
+    table: gold.risk_scores
+    id_column: id_parlamentar
+    period_expression: periodo
+    aggregation: mean
+    columns:
+      E: political_exposure_score
+      A: expense_anomaly_score
+      N: network_influence_score
+
+  # Partial pooling do V (ADR-063). k = null até a busca por leave-one-out
+  # (--stage k_search); depois, preencher k por casa e rodar --stage full.
+  pooling:
+    k:
+      camara: 8.0
+      senado: 4.0
+    k_grid: [0.5, 1, 2, 4, 8, 16, 32, 64, 128]
+    tolerance: 1.0e-9              # empate numérico (seleção de k e critérios A1/A2)
+    strict_casas: [camara]         # A1 exige melhora estrita; nas demais, não piorar
+
+  output_dir: reports/risk_calibration

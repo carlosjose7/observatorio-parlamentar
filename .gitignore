@@ -43,6 +43,8 @@ data/silver/*
 !data/silver/.gitkeep
 data/gold/*
 !data/gold/.gitkeep
+# Artefatos locais de modelos ML (ADR-064/ADR-065) — em produção vivem no MinIO
+data/models/
 data.hml/
 logs/*
 !logs/.gitkeep

@@ -295,6 +295,58 @@ class RiskSettings(_StrictModel):
         return self
 
 
+class AnomaliasSettings(_StrictModel):
+    """Hiperparâmetros de TREINO do Isolation Forest de despesas (ADR-065).
+
+    O modelo de anomalia NÃO é retreinado no passo (`analytics/anomalies`,
+    inferência-only): é treinado por comando explícito
+    (`python -m analytics.anomalies.model train`) sobre anos fechados,
+    serializado (joblib) e versionado como artefato `anomaly-<MAJOR>.<MINOR>`
+    sob o contrato do ADR-064. Mudar qualquer hiperparâmetro daqui gera novo
+    MAJOR na família `anomaly-*` (ADR-065, item 3) — emenda à regra
+    MINOR-de-parâmetros do ADR-064, que segue valendo para `risk-*`.
+
+    Validação de `max_samples` (ADR-065, Contexto, item d):
+    - `null`/`None` é REJEITADO — o `fit` do scikit-learn lança
+      `InvalidParameterError` ("Got None instead");
+    - `1.0`/`1` é REJEITADO — treinar em todas as linhas muda a taxa de
+      sinalização e não elimina a sensibilidade à seed;
+    - `'auto'` (subamostra de 256 por árvore, default do scikit-learn),
+      inteiro ≥ 2 ou float em (0, 1) são aceitos.
+    """
+
+    random_state: int = 42
+    n_estimators: int = Field(default=100, ge=1)
+    max_samples: str | int | float = "auto"
+    contamination: float = Field(default=0.05, gt=0, lt=0.5)
+
+    @model_validator(mode="after")
+    def _validar_max_samples(self) -> AnomaliasSettings:
+        ms = self.max_samples
+        if isinstance(ms, str):
+            if ms != "auto":
+                raise ValueError(
+                    "analytics.anomalias.max_samples: string aceita somente 'auto' (ADR-065)"
+                )
+        elif isinstance(ms, bool):  # `True`/`False` não são valores de max_samples.
+            raise ValueError(
+                "analytics.anomalias.max_samples: booleano inválido (ADR-065)"
+            )
+        elif isinstance(ms, int):
+            if ms < 2:
+                raise ValueError(
+                    "analytics.anomalias.max_samples: inteiro deve ser ≥ 2 — "
+                    "None/1 são rejeitados pelo scikit-learn ou mudam o critério (ADR-065)"
+                )
+        elif isinstance(ms, float):
+            if not 0.0 < ms < 1.0:
+                raise ValueError(
+                    "analytics.anomalias.max_samples: float deve estar em (0, 1) — "
+                    "1.0 muda a taxa de sinalização e não elimina a seed (ADR-065, Contexto d)"
+                )
+        return self
+
+
 class AnalyticsSettings(_StrictModel):
     """Configuração da camada analítica/ML da Sprint 5.
 
@@ -305,6 +357,7 @@ class AnalyticsSettings(_StrictModel):
 
     rede: RedeSettings = Field(default_factory=RedeSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)
+    anomalias: AnomaliasSettings = Field(default_factory=AnomaliasSettings)
 
 
 # ── config/api.yaml ──────────────────────────────────────────────

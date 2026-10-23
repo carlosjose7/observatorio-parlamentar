@@ -2406,3 +2406,64 @@ decisão registrada aqui, não assumida.
   nomes) + painel freshness mantido observacional (decisão ADR-061/5)
 - [x] Onda 3 — docs (CHANGELOG, BACKLOG FECHADA, pendência SRE
   marcada resolvida) + auditoria
+
+---
+
+## Sprint 29 — Revisão do `risk_index` (ADR-062)
+
+**Branch:** `sprint/29-risk-index` → `develop` (Ondas 0–1 publicadas em `3b2ef72`)
+
+**Sprint 29 ABERTA em 08/10/2026.** Revisa o `risk_index` sem rótulo
+(Regressão/XGBoost seriam circulares contra a `regra_anomalia`).
+
+- [x] Onda 0 — **ADR-062 Aceito (rev. 2):** híbrido C (CRITIC + IF
+  complementar); supersede ADR-003 (pesos 0.2 → derivados dos dados);
+  altera ADR-027 (`D_p` de média simples p/ ponderada por valor);
+  esclarece ADR-002 (dois IFs: despesa inalterado + risco novo,
+  contínuo); 6º score `V` (volume por pares, z robusto em log);
+  `λ = 0,25`, limiares 0,90/0,70 e `model_version` próprio como
+  baselines a calibrar; linguagem "indicador p/ investigação" mantida
+- [x] Onda 1 — calibração offline rodada na Gold real (janela B
+  2023–2025, 535/529/553 pontuados, zero drop): `risk_calibration.py` +
+  `risk_calibration.yaml` (`scores_source = gold.risk_scores`,
+  `n_min_pares = 8`) + 41 testes (98% do módulo, ruff limpo);
+  `duckdb>=1.0.0` no grupo `analytics` (mesmo especificador do
+  `pipeline`, ADR-006). Relatório adotado **47c704df** (base 8; o
+  8679aa6a, base 10, está SUPERADO). Pesos pool C 0.174 / D 0.174 /
+  E 0.164 / A 0.114 / N 0.231 / V 0.143 (V por ano 0.110 / 0.182 /
+  0.131; E 0.186 / 0.131 / 0.148); D antigo vs novo ρ 0,30 / 0,30 /
+  0,35 (sinal novo, nota de migração obrigatória); `Spearman(C,D)`
+  0,16–0,22 (redundância não se materializou); 10x mora nas caudas
+  (residual p99/p1 42 / 13 / 20x; meses+UF+casa explicam 9,5–14,7%
+  de ln(total)); fallback casa-level 28% / 27% / 17% (Câmara e
+  Senado; Senado 27/27 grupos sempre abaixo de `n_min`); Jaccard do
+  top-10% do V entre `n_min` 8 e 10 = 0,74 / 0,77 / 0,56 (cauda
+  sensível à regra de fallback); 499 SCD2 puladas = benignas
+  (`starts_after_horizon`, janela 2026 — sem defeito, sem regra
+  nova); `delta_uf` 6,5 / 9,1 / 6,8pp (gatilho de partial pooling
+  disparado → ADR-063, Onda 2)
+- [x] Onda 1c — documentação: ADR-062 no `ADR.md` (+ anexo de
+  calibração e conformidade com ADR-029), notas em ADR-002/003/027,
+  PROJECT_CONTEXT §8/§9, RF-03 e CU-05 ("5 → 6 scores")
+- [ ] Onda 2 — (1) ADR-063 **Rejeitado em 16/10/2026** (k_search concluído:
+  argmin camara 8 / senado 4; A1 FAIL Câmara 2023–2024 — pooled deixa
+  mais resíduo de UF que a regra binária — e A2 FAIL Câmara —
+  LOO-MAE pooled acima da regra; veredito pré-travado executado:
+  vale a regra do ADR-062 (`V` final; `--stage baseline` é o padrão),
+  `n_min_pares` = 8); (2) a fazer, sobre o `V` do baseline:
+  bootstrap dos pesos + CRITIC sobre postos (diff 2:
+  `bootstrap_samples`, `random_state`) e distribuições empíricas por
+  score + sensibilidade do `risk_index` por peso (ADR-029)
+- [ ] Onda 3 — IF multivariado [C,D,E,N,V], SHAP restrito à camada ML
+  (build ARM ok: shap 0.49.1, 0,2s, pico ~209 MB), `model_version` +
+  artefato MinIO, `control.risk_model_diagnostics`, `risk_scores.sql`,
+  remoção de `risk.pesos`, "5 → 6 scores" em registry/`analytics.yaml`,
+  casos públicos (4 categorias, recall top-k, sem nomes da memória) e
+  ranking histórico `risk_index` antes (0.2) × depois (ADR-029);
+  ativação só com os critérios PENDENTES do ADR-029 atendidos
+- [ ] ADR futuro (backlog) — partial pooling **só no Senado**: no
+  ADR-063 o Senado é 100% casa (sem nível de UF na regra do ADR-062)
+  e o resíduo de UF é forte (baseline 0,243/0,504/0,387 →
+  0,070/0,277/0,265 com k = 4; LOO-MAE 0,5676 → 0,5455); exige ADR
+  novo com critérios travados antes e validação temporal (k escolhido
+  em dois anos, testado no terceiro) — não reabre o ADR-063.
