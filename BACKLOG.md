@@ -2467,3 +2467,21 @@ decisão registrada aqui, não assumida.
   0,070/0,277/0,265 com k = 4; LOO-MAE 0,5676 → 0,5455); exige ADR
   novo com critérios travados antes e validação temporal (k escolhido
   em dois anos, testado no terceiro) — não reabre o ADR-063.
+
+---
+
+## Hotfix — Certificado TLS do nginx (24–25/11/2026)
+
+- [ ] **ADR-067 — ativação de certificado no nginx:** reload
+  condicional por `NGINX_CERT_RELOAD_INTERVAL_SECONDS` (default
+  21600; inteiro > 0), hash de `fullchain.pem` + `privkey.pem`,
+  `nginx -t` antes do reload e nginx como PID 1; critérios A1–A3 do
+  contrato.
+- [ ] **ADR-066 — `blackbox_exporter` + 3 alertas:** alvo interno
+  `https://nginx:443` com SNI/Host do domínio; `CertExpiringSoon`
+  (critical, 21 dias, repeat 24h), `CertExpired` (critical) e
+  `EndpointDown` (critical); limiares em `config/observability.yaml`;
+  `promtool test rules` (A4).
+- [ ] **Probe externo de certificado/disponibilidade:** validar a
+  rota externa (Security List, firewalld, DNS) por um check agendado
+  fora da VPS.
