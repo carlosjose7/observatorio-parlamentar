@@ -263,6 +263,10 @@ Título: Arquitetura de containers e deploy
 
 Status:
 Aceito
+(Nota 25/11/2026, ADR-067 aceito no hotfix/nginx-cert-reload: a
+ativação do certificado renovado no nginx passa a ser definida por este
+ADR — reload condicional por hash de `fullchain.pem` + `privkey.pem`,
+com `nginx -t` antes do reload. O texto original não é reescrito.)
 
 Contexto:
 O projeto precisa de uma estratégia de containerização e deploy que
@@ -4642,8 +4646,8 @@ ADR-066
 Título: Probe de certificado e disponibilidade (blackbox_exporter)
 
 Status:
-Proposto — componente novo; complementa ADR-051, ADR-053, ADR-056
-e ADR-057
+Aceito — hotfix/nginx-cert-reload (25/11/2026); componente novo;
+complementa ADR-051, ADR-053, ADR-056 e ADR-057
 
 Contexto:
 Em 18/11/2026 o certificado servido pelo nginx expirou e ficou seis
@@ -4734,7 +4738,7 @@ ADR-067
 Título: Ativação de certificados no nginx — emenda ao ADR-007
 
 Status:
-Proposto
+Aceito — hotfix/nginx-cert-reload (25/11/2026)
 
 Relação com ADRs anteriores:
 - EMENDA o ADR-007 no que falta definir sobre a ativação do
