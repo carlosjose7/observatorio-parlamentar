@@ -1,8 +1,13 @@
 # Alertmanager — roteamento das regras (Sprint 26, Onda 6, ADR-056 D6;
-# Telegram, ADR-057). Cobre as 14 regras de `alerts.yml` (11 das
-# Sprints 23–25 + 3 da Sprint 26): `critical` → Telegram, demais →
-# `blackhole` (visíveis só no Prometheus UI/Grafana — pager discipline:
-# `warn` no celular vira fadiga; promover `warn` depois é um adendo).
+# Telegram, ADR-057). Cobre as 17 regras de `alerts.yml` (14 até a
+# Sprint 26 + 3 do ADR-066: CertExpiringSoon, CertExpired, EndpointDown):
+# `critical` → Telegram, demais → `blackhole` (visíveis só no Prometheus
+# UI/Grafana — pager discipline: `warn` no celular vira fadiga; promover
+# `warn` depois é um adendo).
+#
+# `CertExpiringSoon` (critical, janela de 21 dias) não se repete a cada
+# 4h: rota filha com `repeat_interval: 24h` evita fadiga; a severidade
+# continua `critical` (sem tier novo, nem emenda ao ADR-057).
 #
 # Receiver `slack` ao final = ESTRUTURA PRONTA, desativada (comentada):
 # soma como segundo destino quando o PO confirmar o webhook via `.env`
@@ -18,6 +23,13 @@ route:
   group_interval: 5m
   repeat_interval: 4h
   routes:
+    # CertExpiringSoon antes da regra crítica genérica: o match mais
+    # específico vence e ganha repeat_interval 24h (janela de 21 dias).
+    - matchers:
+        - alertname = CertExpiringSoon
+      receiver: telegram
+      repeat_interval: 24h
+
     - matchers:
         - severity = critical
       receiver: telegram

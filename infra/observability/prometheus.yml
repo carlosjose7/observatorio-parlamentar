@@ -48,3 +48,35 @@ scrape_configs:
   - job_name: postgres
     static_configs:
       - targets: ["postgres-exporter:9187"]
+
+  # ADR-066: dois jobs sobre o mesmo alvo interno. O primeiro valida a
+  # cadeia/nome/validade (fonte de probe_success); o segundo lê a
+  # validade com skip-verify (fonte exclusiva de
+  # probe_ssl_earliest_cert_expiry). O path é o health leve da API.
+  - job_name: blackbox-https
+    metrics_path: /probe
+    params:
+      module: [https_verified]
+    static_configs:
+      - targets: ["https://nginx:443/api/health"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-https-expiry
+    metrics_path: /probe
+    params:
+      module: [https_expiry]
+    static_configs:
+      - targets: ["https://nginx:443/api/health"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
