@@ -2478,10 +2478,11 @@ decisão registrada aqui, não assumida.
   `nginx -t` antes do reload e nginx como PID 1; critérios A1–A3 do
   contrato.
 - [ ] **ADR-066 — `blackbox_exporter` + 3 alertas:** alvo interno
-  `https://nginx:443` com SNI/Host do domínio; `CertExpiringSoon`
+  `https://nginx:443` com SNI/Host do domínio e health endpoint leve;
+  dois jobs (`https_verified`, `https_expiry`); `CertExpiringSoon`
   (critical, 21 dias, repeat 24h), `CertExpired` (critical) e
   `EndpointDown` (critical); limiares em `config/observability.yaml`;
-  `promtool test rules` (A4).
+  `promtool test rules` (A4) e critério empírico A5.
 - [ ] **Probe externo de certificado/disponibilidade:** validar a
   rota externa (Security List, firewalld, DNS) por um check agendado
   fora da VPS.

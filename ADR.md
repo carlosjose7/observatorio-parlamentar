@@ -4653,45 +4653,80 @@ o log do container `certbot`. O certificado em disco já estava
 renovado (válido até 18/01/2027), mas o que importa é o que o nginx
 serve.
 
+Achado da revisão do Arquiteto (25/11/2026): a métrica
+`probe_ssl_earliest_cert_expiry` só é exportada pelo blackbox_exporter
+quando existe resposta TLS (prober/http.go, `resp.TLS != nil`,
+verificado no código-fonte em 25/11/2026). Com verificação de
+certificado ligada, um certificado expirado falha o handshake e a
+métrica deixa de existir; uma regra baseada nela não dispararia
+justamente no caso que motivou este ADR. Reconfirmar o comportamento
+na versão pinada (critério A5).
+
 Decisão:
 1. Adicionar `blackbox_exporter` (imagem com versão pinada; manifest
    ARM64 validado na A1) com módulo HTTPS.
-2. Alvo interno `https://nginx:443`, com `tls_config.server_name` e
-   `Host` do domínio, vindos da configuração externa (`config/`/`.env`,
-   ADR-008; sem hardcode). Isso valida o certificado como o nginx o
-   serve.
+2. Alvo interno `https://nginx:443` (rede Docker), com
+   `tls_config.server_name` e `Host` do domínio, vindos da
+   configuração externa (`config/`/`.env`, ADR-008; sem hardcode).
+   O path sondado é um endpoint leve de saúde definido na
+   configuração (não `/`), para que lentidão da aplicação não gere
+   alerta falso. Dois módulos/jobs sobre o mesmo alvo:
+   - `https_verified` (verificação TLS ligada): fonte de
+     `probe_success`; valida cadeia, nome e validade como um cliente
+     real.
+   - `https_expiry` (`insecure_skip_verify: true`): fonte exclusiva
+     de `probe_ssl_earliest_cert_expiry`; não decide disponibilidade.
+     O skip-verify é aceito porque o alvo é interno à rede Docker e
+     o job existe apenas para ler a validade, que é exportada com
+     qualquer resposta HTTP.
 3. Alertas em `infra/observability/alerts.yml`, com limiares em
    `config/observability.yaml`:
-   - `CertExpiringSoon`: validade < 21 dias, `for: 1h`, `critical`.
-     Para não repetir o aviso a cada 4h por até 21 dias, a rota
-     `critical` ganha uma rota filha para `alertname =
-     "CertExpiringSoon"` com `repeat_interval: 24h` em
+   - `CertExpiringSoon` (job `https_expiry`): validade < 21 dias,
+     `for: 1h`, `critical`. Para não repetir o aviso a cada 4h por
+     até 21 dias, a rota `critical` ganha uma rota filha para
+     `alertname = "CertExpiringSoon"` com `repeat_interval: 24h` em
      `infra/observability/alertmanager.yml`. A severidade continua
      `critical`; não há tier novo nem emenda ao ADR-057.
-   - `CertExpired`: validade < 0, `for: 5m`, `critical`.
-   - `EndpointDown`: `probe_success == 0`, `for: 5m`, `critical`.
-4. Um certificado expirado também zera o `probe_success`, então
-   `CertExpired` e `EndpointDown` disparam juntos. Isso é aceito e
-   documentado; os dois medem o mesmo efeito por ângulos diferentes.
-5. Escopo: `infra/observability/blackbox.yml`, job em
-   `infra/observability/prometheus.yml`, `alerts.yml`,
+   - `CertExpired` (job `https_expiry`): validade < 0, `for: 5m`,
+     `critical`.
+   - `EndpointDown`: `probe_success == 0` nos dois jobs, `for: 5m`,
+     `critical`. Cobre também a falha do próprio job de validade
+     (sem resposta, sem série).
+4. Com certificado expirado, o job `https_verified` falha o handshake
+   (`probe_success = 0`, sem métrica de validade) e o job
+   `https_expiry` exporta a validade com valor no passado. Assim
+   `CertExpired` e `EndpointDown` disparam juntos; os dois medem o
+   mesmo efeito por ângulos diferentes. Isso é aceito e documentado.
+5. Escopo: `infra/observability/blackbox.yml` (dois módulos), dois
+   jobs em `infra/observability/prometheus.yml`, `alerts.yml`,
    `alertmanager.yml` (apenas a rota filha acima),
    `config/observability.yaml` e o serviço no `docker-compose.yml`.
-6. Teste anti-recaída (padrão ADR-061): as três regras existem e os
-   limiares vêm do YAML; validação das regras com `promtool test
-   rules`.
+6. Validação: teste anti-recaída (padrão ADR-061) garantindo que as
+   três regras existem e que os limiares vêm do YAML; `promtool test
+   rules` com séries sintéticas; e critério de aceite empírico A5,
+   na versão pinada: num nginx descartável com certificado
+   autoassinado já expirado, `https_verified` retorna
+   `probe_success = 0` e `https_expiry` exporta
+   `probe_ssl_earliest_cert_expiry` com valor anterior a `time()`;
+   com certificado válido, ambos exportam e `probe_success = 1`.
 7. Não haverá alerta separado do `certbot renew`: o probe de 21 dias
    cobre tanto a falha de renovação quanto a de ativação, medindo o
    efeito real.
 
 Consequências:
 - O total de regras sobe de 14 para 17; atualizar `PROJECT_CONTEXT.md`
-  §1.3 e o comentário de `infra/observability/alertmanager.yml`.
-- O probe interno não valida a rota externa (Security List, firewalld,
-  DNS). A visão externa fica como item de BACKLOG.
+  §1.3 e o comentário de `infra/observability/alertmanager.yml` no
+  commit do Aceito/implementação, não antes.
+- Dois jobs sobre o mesmo alvo duplicam o scrape (custo desprezível).
+  O skip-verify do `https_expiry` serve só à leitura de validade.
+- Problema de cadeia ou de nome com certificado ainda válido é
+  detectado pelo `https_verified` (`EndpointDown`), não pelo job de
+  validade.
+- O probe interno não valida a rota externa (Security List,
+  firewalld, DNS). A visão externa fica como item de BACKLOG.
 - `CertExpiringSoon` como `critical` usa o único canal humano
-  (Telegram); o `repeat_interval` de 24h evita fadiga durante a janela
-  de 21 dias.
+  (Telegram); o `repeat_interval` de 24h evita fadiga durante a
+  janela de 21 dias.
 
 ---
 
