@@ -210,3 +210,50 @@ def test_compose_external_url_por_env_com_default_localhost():
     am = " ".join(doc["services"]["alertmanager"]["command"])
     assert "--web.external-url=${PROMETHEUS_EXTERNAL_URL:-http://localhost:9090}" in prom
     assert "--web.external-url=${ALERTMANAGER_EXTERNAL_URL:-http://localhost:9093}" in am
+
+
+# ── ADR-066: probe de certificado e disponibilidade (blackbox_exporter) ──
+
+
+def test_alertas_certificado_existem():
+    """As 3 regras de ADR-066 existem com severidade critical (anti-recaída)."""
+    alerts = yaml.safe_load(
+        (_REPO / "infra" / "observability" / "alerts.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    nomes = {r["alert"] for g in alerts["groups"] for r in g["rules"]}
+    severidades = {r["alert"]: r["labels"]["severity"] for g in alerts["groups"] for r in g["rules"]}
+    assert {"CertExpiringSoon", "CertExpired", "EndpointDown"} <= nomes
+    assert severidades["CertExpiringSoon"] == "critical"
+    assert severidades["CertExpired"] == "critical"
+    assert severidades["EndpointDown"] == "critical"
+
+
+def test_cert_expiring_limiar_espelha_config():
+    """Limiar de 21 dias (config) é espelhado em alerts.yml (ADR-008/066)."""
+    slos = yaml.safe_load(
+        (_REPO / "config" / "observability.yaml").read_text(encoding="utf-8")
+    )["observability"]["slos"]
+    texto = (_REPO / "infra" / "observability" / "alerts.yml").read_text(
+        encoding="utf-8"
+    )
+    assert str(slos["cert_expiring_soon_dias"]) in texto
+    assert f"{slos['cert_expiring_soon_dias']} * 24 * 3600" in texto
+
+
+def test_alertmanager_cert_expiring_repeat_24h():
+    """Rota filha CertExpiringSoon com repeat_interval 24h (evita fadiga)."""
+    am = yaml.safe_load(
+        (_REPO / "infra" / "observability" / "alertmanager.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    rotas = am["route"]["routes"]
+    cert = next(
+        (r for r in rotas if any(m == "alertname = CertExpiringSoon" for m in r.get("matchers", []))),
+        None,
+    )
+    assert cert is not None, "rota filha CertExpiringSoon ausente"
+    assert cert["receiver"] == "telegram"
+    assert cert["repeat_interval"] == "24h"

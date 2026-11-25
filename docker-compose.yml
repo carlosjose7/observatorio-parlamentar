@@ -158,6 +158,25 @@ services:
       - observatorio-net
     restart: unless-stopped
 
+  blackbox-exporter:
+    # ADR-066: dois módulos sobre o mesmo alvo interno — `https_verified`
+    # (fonte de probe_success) e `https_expiry` (validade). Versão pinada
+    # v0.29.1, manifest linux/arm64 validado (A1). O domínio vem do .env
+    # e é renderizado no entrypoint (ADR-008, sem hardcode no template).
+    image: prom/blackbox-exporter:v0.29.1
+    platform: linux/arm64
+    entrypoint: ["/bin/sh", "/etc/blackbox_exporter/entrypoint.sh"]
+    environment:
+      - BLACKBOX_DOMAIN=${BLACKBOX_DOMAIN:?Defina BLACKBOX_DOMAIN no .env}
+    volumes:
+      - ./infra/observability/blackbox.yml:/etc/blackbox_exporter/blackbox.yml.template:ro
+      - ./infra/observability/blackbox-entrypoint.sh:/etc/blackbox_exporter/entrypoint.sh:ro
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - observatorio-net
+    restart: unless-stopped
+
   prometheus:
     # Stateless os sidecars (:latest, sem volume — mesmo precedente do
     # certbot); o Prometheus tem volume TSDB, por isso pin de major (v3).
@@ -182,7 +201,8 @@ services:
     restart: unless-stopped
 
   alertmanager:
-    # Sprint 26, Onda 6 (ADR-056 D6): roteador das 14 regras de alerts.yml.
+    # Sprint 26, Onda 6 (ADR-056 D6): roteador das 17 regras de alerts.yml
+    # (14 até a Sprint 26 + 3 do ADR-066).
     # Pin de minor com estado (mesmo precedente do grafana:13.2); UI em
     # 127.0.0.1:9093, sem Nginx. Destino default `blackhole`
     # (infra/observability/alertmanager.yml) — Slack só via .env quando o

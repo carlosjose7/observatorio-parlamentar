@@ -263,6 +263,10 @@ Título: Arquitetura de containers e deploy
 
 Status:
 Aceito
+(Nota 25/11/2026, ADR-067 aceito no hotfix/nginx-cert-reload: a
+ativação do certificado renovado no nginx passa a ser definida por este
+ADR — reload condicional por hash de `fullchain.pem` + `privkey.pem`,
+com `nginx -t` antes do reload. O texto original não é reescrito.)
 
 Contexto:
 O projeto precisa de uma estratégia de containerização e deploy que
@@ -4635,3 +4639,143 @@ Consequências:
   o monitor de deriva e a política de retreino tratam isso.
 - A nota de 21/10 do ADR-002 recebe nota de status apontando para este
   ADR quando for aceito; o texto original não é reescrito.
+
+---
+
+ADR-066
+Título: Probe de certificado e disponibilidade (blackbox_exporter)
+
+Status:
+Aceito — hotfix/nginx-cert-reload (25/11/2026); componente novo;
+complementa ADR-051, ADR-053, ADR-056 e ADR-057
+
+Contexto:
+Em 18/11/2026 o certificado servido pelo nginx expirou e ficou seis
+dias sem detecção. Hoje não existe medição indireta da validade do
+certificado: nem o node-exporter nem o compose a expõem; existe apenas
+o log do container `certbot`. O certificado em disco já estava
+renovado (válido até 18/01/2027), mas o que importa é o que o nginx
+serve.
+
+Achado da revisão do Arquiteto (25/11/2026): a métrica
+`probe_ssl_earliest_cert_expiry` só é exportada pelo blackbox_exporter
+quando existe resposta TLS (prober/http.go, `resp.TLS != nil`,
+verificado no código-fonte em 25/11/2026). Com verificação de
+certificado ligada, um certificado expirado falha o handshake e a
+métrica deixa de existir; uma regra baseada nela não dispararia
+justamente no caso que motivou este ADR. Reconfirmar o comportamento
+na versão pinada (critério A5).
+
+Decisão:
+1. Adicionar `blackbox_exporter` (imagem com versão pinada; manifest
+   ARM64 validado na A1) com módulo HTTPS.
+2. Alvo interno `https://nginx:443` (rede Docker), com
+   `tls_config.server_name` e `Host` do domínio, vindos da
+   configuração externa (`config/`/`.env`, ADR-008; sem hardcode).
+   O path sondado é um endpoint leve de saúde definido na
+   configuração (não `/`), para que lentidão da aplicação não gere
+   alerta falso. Dois módulos/jobs sobre o mesmo alvo:
+   - `https_verified` (verificação TLS ligada): fonte de
+     `probe_success`; valida cadeia, nome e validade como um cliente
+     real.
+   - `https_expiry` (`insecure_skip_verify: true`): fonte exclusiva
+     de `probe_ssl_earliest_cert_expiry`; não decide disponibilidade.
+     O skip-verify é aceito porque o alvo é interno à rede Docker e
+     o job existe apenas para ler a validade, que é exportada com
+     qualquer resposta HTTP.
+3. Alertas em `infra/observability/alerts.yml`, com limiares em
+   `config/observability.yaml`:
+   - `CertExpiringSoon` (job `https_expiry`): validade < 21 dias,
+     `for: 1h`, `critical`. Para não repetir o aviso a cada 4h por
+     até 21 dias, a rota `critical` ganha uma rota filha para
+     `alertname = "CertExpiringSoon"` com `repeat_interval: 24h` em
+     `infra/observability/alertmanager.yml`. A severidade continua
+     `critical`; não há tier novo nem emenda ao ADR-057.
+   - `CertExpired` (job `https_expiry`): validade < 0, `for: 5m`,
+     `critical`.
+   - `EndpointDown`: `probe_success == 0` nos dois jobs, `for: 5m`,
+     `critical`. Cobre também a falha do próprio job de validade
+     (sem resposta, sem série).
+4. Com certificado expirado, o job `https_verified` falha o handshake
+   (`probe_success = 0`, sem métrica de validade) e o job
+   `https_expiry` exporta a validade com valor no passado. Assim
+   `CertExpired` e `EndpointDown` disparam juntos; os dois medem o
+   mesmo efeito por ângulos diferentes. Isso é aceito e documentado.
+5. Escopo: `infra/observability/blackbox.yml` (dois módulos), dois
+   jobs em `infra/observability/prometheus.yml`, `alerts.yml`,
+   `alertmanager.yml` (apenas a rota filha acima),
+   `config/observability.yaml` e o serviço no `docker-compose.yml`.
+6. Validação: teste anti-recaída (padrão ADR-061) garantindo que as
+   três regras existem e que os limiares vêm do YAML; `promtool test
+   rules` com séries sintéticas; e critério de aceite empírico A5,
+   na versão pinada: num nginx descartável com certificado
+   autoassinado já expirado, `https_verified` retorna
+   `probe_success = 0` e `https_expiry` exporta
+   `probe_ssl_earliest_cert_expiry` com valor anterior a `time()`;
+   com certificado válido, ambos exportam e `probe_success = 1`.
+7. Não haverá alerta separado do `certbot renew`: o probe de 21 dias
+   cobre tanto a falha de renovação quanto a de ativação, medindo o
+   efeito real.
+
+Consequências:
+- O total de regras sobe de 14 para 17; atualizar `PROJECT_CONTEXT.md`
+  §1.3 e o comentário de `infra/observability/alertmanager.yml` no
+  commit do Aceito/implementação, não antes.
+- Dois jobs sobre o mesmo alvo duplicam o scrape (custo desprezível).
+  O skip-verify do `https_expiry` serve só à leitura de validade.
+- Problema de cadeia ou de nome com certificado ainda válido é
+  detectado pelo `https_verified` (`EndpointDown`), não pelo job de
+  validade.
+- O probe interno não valida a rota externa (Security List,
+  firewalld, DNS). A visão externa fica como item de BACKLOG.
+- `CertExpiringSoon` como `critical` usa o único canal humano
+  (Telegram); o `repeat_interval` de 24h evita fadiga durante a
+  janela de 21 dias.
+
+---
+
+ADR-067
+Título: Ativação de certificados no nginx — emenda ao ADR-007
+
+Status:
+Aceito — hotfix/nginx-cert-reload (25/11/2026)
+
+Relação com ADRs anteriores:
+- EMENDA o ADR-007 no que falta definir sobre a ativação do
+  certificado renovado. O texto original não é reescrito; ao ser
+  aceito, o ADR-007 recebe nota de status apontando para este ADR
+  (mesmo padrão da nota do ADR-002).
+- A detecção da falha é coberta pelo ADR-066; sem ele, a morte do loop
+  seria silenciosa.
+
+Contexto:
+O container `certbot` renova o certificado e o grava no volume
+compartilhado, mas o nginx só lê `ssl_certificate` no start ou no
+reload. Entre ~20/10 e 18/11/2026 o nginx serviu o certificado antigo
+até ele expirar, com o `certbot` reportando sucesso o tempo todo. O
+ADR-007 cobre a topologia dos containers, mas não define quem ativa o
+certificado renovado.
+
+Decisão:
+1. O container nginx executa um reload condicional a cada
+   `NGINX_CERT_RELOAD_INTERVAL_SECONDS` (padrão 21600). O valor deve
+   ser inteiro maior que 0; um valor inválido faz o container falhar
+   no start (a falha aparece no deploy, não 6h depois).
+2. Condição: mudou o sha256 de `fullchain.pem` + `privkey.pem`. O
+   último hash carregado fica em estado efêmero (`/run`) e é calculado
+   no boot, antes de o nginx subir.
+3. Se mudou: `nginx -t` e, só então, `nginx -s reload`. Se `-t`
+   falhar, não há reload; o erro é logado de forma estruturada e o
+   nginx segue servindo o que já tinha.
+4. O loop é iniciado antes do `exec`, mantendo o nginx como PID 1.
+5. Ficam rejeitadas: (A) `docker.sock` no certbot, por equivaler a
+   root no host; (C) unit systemd `.path`, por acoplar ao layout do
+   volume no host e depender de inotify sobre symlinks que o certbot
+   troca por rename.
+
+Consequências:
+- A ativação passa a ter atraso de até o intervalo configurado, o que
+  é irrelevante para um certificado de 90 dias.
+- Não há privilégio nem superfície nova.
+- Se o loop morrer, a falha é silenciosa; é exatamente isso que o
+  ADR-066 cobre.

@@ -1,5 +1,6 @@
 # Alertas Prometheus (Sprint 23, ADR-053, Onda 3; Sprint 24, ADR-054;
-# Sprint 28, ADR-061: freshness granular por fonte).
+# Sprint 28, ADR-061: freshness granular por fonte; hotfix 25/11/2026,
+# ADR-066: certificado/endpoint via blackbox_exporter).
 # Réguas espelham os SLOs de config/observability.yaml — freshness
 # medida por granularidade da fonte (anual/mensal/progresso, ADR-061),
 # não mais em 24h/26h absolutos (aposentados: categoria errada de
@@ -148,3 +149,33 @@ groups:
           severity: warn
         annotations:
           summary: "Último span da task não é success (ver heatmap task×dia)"
+
+  # ADR-066: probe de certificado e disponibilidade (blackbox_exporter).
+  # `CertExpiringSoon` exige validade > 0 para não duplicar `CertExpired`
+  # quando o certificado já venceu; o limiar de 21 dias espelha
+  # `config/observability.yaml:slos.cert_expiring_soon_dias`.
+  - name: observatorio.certificado
+    rules:
+      - alert: CertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-https-expiry"} > time() and probe_ssl_earliest_cert_expiry{job="blackbox-https-expiry"} < time() + 21 * 24 * 3600
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Certificado TLS expira em menos de 21 dias"
+
+      - alert: CertExpired
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-https-expiry"} < time()
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Certificado TLS expirado"
+
+      - alert: EndpointDown
+        expr: probe_success{job=~"blackbox-https(-expiry)?"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Probe HTTPS do nginx falhou"

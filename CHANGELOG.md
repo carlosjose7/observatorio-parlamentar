@@ -8,6 +8,43 @@ Histórico das alterações, organizado por sprint (ver
 
 ---
 
+## Hotfix — Certificado TLS servido pelo nginx expirado (18–25/11/2026)
+
+### Contexto
+- Em 18/11/2026 15:02 UTC o leaf servido pelo nginx expirou — emitido
+  em 20/08/2026, com validade até 18/11/2026.
+- O `certbot` renovou o certificado no volume compartilhado por volta
+  de 20/10/2026 (novo leaf válido até 18/01/2027), mas o nginx só lê o
+  certificado no start ou no reload; continuou servindo o antigo.
+- Detecção em 24/11/2026 23:45 (aviso de certificado expirado no
+  navegador); correção aplicada em 25/11/2026 com reload manual do
+  nginx.
+
+### Causa raiz
+- Ativação não automatizada: a renovação estava coberta pelo container
+  `certbot`, mas nenhum deploy-hook recarregava o nginx, não havia
+  reload periódico e nenhum alerta media o certificado efetivamente
+  servido.
+
+### Fix aplicado (25/11/2026)
+- **Hotfix manual:** `nginx -t` + `nginx -s reload` no container
+  `observatorio-parlamentar-nginx-1`; o nginx passou a servir o
+  certificado válido até 18/01/2027, sem restart.
+- **ADR-067 (Proposto):** reload condicional no container nginx por
+  hash de `fullchain.pem` + `privkey.pem`, com `nginx -t` antes do
+  reload e PID 1 preservado.
+- **ADR-066 (Proposto):** `blackbox_exporter` + 3 alertas
+  (`CertExpiringSoon`, `CertExpired`, `EndpointDown`); o primeiro é
+  `critical` com `repeat_interval` de 24h.
+
+### Prevenção em aberto
+- Implementar os ADR-066/067 antes de 18/01/2027 (próxima expiração do
+  certificado servido).
+- Validar o probe externo (Security List, firewalld, DNS) como item de
+  BACKLOG.
+
+---
+
 ## Sprint 29 — Revisão do `risk_index` (ADR-062) (em andamento, 08/10/2026)
 
 ### Adicionado

@@ -31,6 +31,9 @@ observability:
     freshness_anual_critical_anos_atraso: 2
     # Latência p95 da API para consultas simples, em milissegundos.
     api_p95_ms: 500
+    # Janela de aviso de expiração do certificado TLS (dias); espelhada em
+    # alerts.yml (ADR-066, regras CertExpiringSoon/CertExpired).
+    cert_expiring_soon_dias: 21
 
   # Threshold de FK órfã: REFERÊNCIA, não duplicação (ADR-051 §3, ADR-008).
   # O valor canônico vive em config/pipeline.yaml:data_quality

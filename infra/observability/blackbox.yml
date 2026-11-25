@@ -1,0 +1,28 @@
+# blackbox_exporter — probe TLS do nginx (ADR-066).
+# Template: `${BLACKBOX_DOMAIN}` é substituído no entrypoint do container
+# (infra/observability/blackbox-entrypoint.sh) a partir do `.env`; o
+# módulo não carrega o domínio hardcoded (ADR-008).
+modules:
+  # Verificação TLS ligada: valida cadeia, nome e validade como um
+  # cliente real. É a fonte de `probe_success`/`EndpointDown`.
+  https_verified:
+    prober: http
+    timeout: 5s
+    http:
+      tls_config:
+        server_name: ${BLACKBOX_DOMAIN}
+      headers:
+        Host: ${BLACKBOX_DOMAIN}
+
+  # Fonte exclusiva de `probe_ssl_earliest_cert_expiry`. O skip-verify
+  # é aceito porque o alvo é interno à rede Docker e o job só lê a
+  # validade; não decide disponibilidade (ADR-066, achado A5).
+  https_expiry:
+    prober: http
+    timeout: 5s
+    http:
+      tls_config:
+        server_name: ${BLACKBOX_DOMAIN}
+        insecure_skip_verify: true
+      headers:
+        Host: ${BLACKBOX_DOMAIN}
