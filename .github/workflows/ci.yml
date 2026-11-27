@@ -55,3 +55,10 @@ jobs:
           python -m pip install -e ".[api,pipeline,dashboard,analytics,dev]"
       - name: Run tests with coverage gate
         run: python -m pytest --cov --cov-report=term-missing -q
+      - name: Validate alert rules with promtool
+        run: |
+          docker run --rm \
+            --entrypoint promtool \
+            -v "$PWD/infra/observability:/rules" \
+            -w /rules \
+            prom/prometheus:v3 test rules alerts_test.yml

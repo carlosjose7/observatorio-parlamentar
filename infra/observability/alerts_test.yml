@@ -1,0 +1,54 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox-https-expiry"}'
+        values: '604800x180'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: CertExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              job: blackbox-https-expiry
+              severity: critical
+            exp_annotations:
+              summary: "Certificado TLS expira em menos de 21 dias"
+
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox-https-expiry"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CertExpired
+        exp_alerts:
+          - exp_labels:
+              job: blackbox-https-expiry
+              severity: critical
+            exp_annotations:
+              summary: "Certificado TLS expirado"
+
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-https"}'
+        values: '0x10'
+      - series: 'probe_success{job="blackbox-https-expiry"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: EndpointDown
+        exp_alerts:
+          - exp_labels:
+              job: blackbox-https
+              severity: critical
+            exp_annotations:
+              summary: "Probe HTTPS do nginx falhou"
+          - exp_labels:
+              job: blackbox-https-expiry
+              severity: critical
+            exp_annotations:
+              summary: "Probe HTTPS do nginx falhou"
