@@ -4732,6 +4732,11 @@ Consequências:
   (Telegram); o `repeat_interval` de 24h evita fadiga durante a
   janela de 21 dias.
 
+Errata (27/11/2026):
+- A contagem "14 → 17" acima estava defasada: o ADR-061 já elevara o
+  total para 16 antes deste ADR; com as 3 regras novas, o total
+  correto é 19. `PROJECT_CONTEXT.md` §1.3 foi atualizado para 19.
+
 ---
 
 ADR-067

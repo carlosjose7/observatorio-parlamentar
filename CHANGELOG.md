@@ -30,16 +30,25 @@ Histórico das alterações, organizado por sprint (ver
 - **Hotfix manual:** `nginx -t` + `nginx -s reload` no container
   `observatorio-parlamentar-nginx-1`; o nginx passou a servir o
   certificado válido até 18/01/2027, sem restart.
-- **ADR-067 (Proposto):** reload condicional no container nginx por
-  hash de `fullchain.pem` + `privkey.pem`, com `nginx -t` antes do
-  reload e PID 1 preservado.
-- **ADR-066 (Proposto):** `blackbox_exporter` + 3 alertas
+- **ADR-067 (Aceito e implementado):** reload condicional no container
+  nginx por hash de `fullchain.pem` + `privkey.pem`, com `nginx -t`
+  antes do reload e PID 1 preservado.
+- **ADR-066 (Aceito e implementado):** `blackbox_exporter` + 3 alertas
   (`CertExpiringSoon`, `CertExpired`, `EndpointDown`); o primeiro é
-  `critical` com `repeat_interval` de 24h.
+  `critical` com `repeat_interval` de 24h. A5 validado na imagem
+  pinada; A4 em `infra/observability/alerts_test.yml`.
+
+### Correção pós-merge (27/11/2026)
+- CI da `main` falhou em `tests/integration/test_observability_exporter.py`:
+  `config/observability.yaml` já tinha `slos.cert_expiring_soon_dias`,
+  mas o campo não existia em `ObservabilitySlosSettings` (loader com
+  `extra="forbid"`). Campo adicionado ao schema.
+- A4 (`promtool test rules`) adicionado em
+  `infra/observability/alerts_test.yml` e ao job de testes do CI.
+- Contagem de alertas corrigida para 19 em `PROJECT_CONTEXT.md` —
+  o ADR-061 já elevara o total para 16 antes do ADR-066 (+3).
 
 ### Prevenção em aberto
-- Implementar os ADR-066/067 antes de 18/01/2027 (próxima expiração do
-  certificado servido).
 - Validar o probe externo (Security List, firewalld, DNS) como item de
   BACKLOG.
 

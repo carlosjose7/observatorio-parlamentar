@@ -646,6 +646,7 @@ class ObservabilitySlosSettings(_StrictModel):
     freshness_anual_mes_inicio: int = Field(default=3, ge=1, le=12)
     freshness_anual_critical_anos_atraso: int = Field(default=2, ge=1)
     api_p95_ms: float = Field(default=500, gt=0)
+    cert_expiring_soon_dias: int = Field(default=21, ge=1)
 
 
 class ObservabilityDataQualityRefSettings(_StrictModel):

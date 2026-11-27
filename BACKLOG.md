@@ -2472,17 +2472,18 @@ decisão registrada aqui, não assumida.
 
 ## Hotfix — Certificado TLS do nginx (24–25/11/2026)
 
-- [ ] **ADR-067 — ativação de certificado no nginx:** reload
+- [x] **ADR-067 — ativação de certificado no nginx:** reload
   condicional por `NGINX_CERT_RELOAD_INTERVAL_SECONDS` (default
   21600; inteiro > 0), hash de `fullchain.pem` + `privkey.pem`,
   `nginx -t` antes do reload e nginx como PID 1; critérios A1–A3 do
   contrato.
-- [ ] **ADR-066 — `blackbox_exporter` + 3 alertas:** alvo interno
+- [x] **ADR-066 — `blackbox_exporter` + 3 alertas:** alvo interno
   `https://nginx:443` com SNI/Host do domínio e health endpoint leve;
   dois jobs (`https_verified`, `https_expiry`); `CertExpiringSoon`
   (critical, 21 dias, repeat 24h), `CertExpired` (critical) e
   `EndpointDown` (critical); limiares em `config/observability.yaml`;
-  `promtool test rules` (A4) e critério empírico A5.
+  `promtool test rules` (A4, `infra/observability/alerts_test.yml`)
+  e critério empírico A5.
 - [ ] **Probe externo de certificado/disponibilidade:** validar a
   rota externa (Security List, firewalld, DNS) por um check agendado
   fora da VPS.
